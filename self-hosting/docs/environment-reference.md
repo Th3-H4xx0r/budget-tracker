@@ -30,7 +30,7 @@ boot; everything else is optional.
 ## Traefik overlay only
 
 Ignored unless you use the [Traefik overlay](traefik-overlay.md)
-(`docker-compose.traefik.yml`).
+(`../docker-compose.traefik.yml`).
 
 | Variable                                   | Purpose                                       |
 | ------------------------------------------ | --------------------------------------------- |
@@ -99,9 +99,9 @@ the container's env at start, not inlined at build time. `docker-compose.yml`
 maps them onto the unprefixed names the image expects (`VITE_POSTHOG_KEY` →
 `POSTHOG_KEY`, and so on).
 
-## Build-from-source only
+## Source-build stack only
 
-Used with `docker-compose.build.yml` (`--build`).
+Used with `docker-compose.self-hosting.yml` (`--build`).
 
 | Variable                                            | Purpose                                                         |
 | --------------------------------------------------- | --------------------------------------------------------------- |
@@ -116,7 +116,7 @@ after an image already exists only changes the runtime value — rebuild
 
 ## Set for you
 
-`IS_SELF_HOST` is written straight into `docker-compose.yml`, on both the
+`IS_SELF_HOST` is written straight into both root-level Compose files, on the
 backend and the frontend. There is nothing to put in `.env` — anything you set
 there is ignored. It marks the stack as yours rather than the hosted service,
 which turns on two things:

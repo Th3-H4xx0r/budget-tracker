@@ -10,8 +10,8 @@ trial.
 
 ```bash
 git clone https://github.com/letehaha/budget-tracker.git
-cd budget-tracker/self-hosting
-cp .env.example .env   # then fill the REQUIRED section
+cd budget-tracker
+cp self-hosting/.env.example .env   # then fill the REQUIRED section
 docker compose up -d
 ```
 
@@ -32,14 +32,14 @@ Open `http://<host>:8080`. Full walkthrough:
 
 ## What's in this folder
 
-| Path                         | Purpose                                                 |
-| ---------------------------- | ------------------------------------------------------- |
-| `docker-compose.yml`         | Base stack – pulls published images, one host port      |
-| `docker-compose.traefik.yml` | Optional overlay: bundled Traefik + Let's Encrypt TLS   |
-| `docker-compose.build.yml`   | Optional overlay: build the images from source          |
-| `.env.example`               | Configuration template – copy to `.env` and fill in     |
-| `backend/`, `frontend/`      | Dockerfiles + entrypoints for the published images      |
-| `docs/`                      | Setup guide, proxy docs, env reference, troubleshooting |
+| Path                                 | Purpose                                                 |
+| ------------------------------------ | ------------------------------------------------------- |
+| `../docker-compose.yml`              | Base stack – pulls published images, one host port      |
+| `../docker-compose.self-hosting.yml` | Equivalent stack – builds frontend and backend locally  |
+| `../docker-compose.traefik.yml`      | Optional overlay: bundled Traefik + Let's Encrypt TLS   |
+| `.env.example`                       | Configuration template – copy to `.env` and fill in     |
+| `backend/`, `frontend/`              | Dockerfiles + entrypoints for the published images      |
+| `docs/`                              | Setup guide, proxy docs, env reference, troubleshooting |
 
 ## Where to get help
 

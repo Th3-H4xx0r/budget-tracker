@@ -247,7 +247,8 @@ the proxy stack.
 **Start order matters.** The app stack has to be up first, because it is the one
 that creates the `budget-tracker` network. If the proxy starts first, it fails with
 `network budget-tracker declared as external, but could not be found`. Fix: start the
-app first (`docker compose up -d` from `self-hosting/`), then start the proxy.
+app first (`docker compose up -d` from the repository root), then start the
+proxy.
 
 ### Nginx Proxy Manager field values
 

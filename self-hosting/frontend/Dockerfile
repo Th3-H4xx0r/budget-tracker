@@ -10,7 +10,7 @@ WORKDIR /app
 # Deployment configuration (API origin, analytics keys, CSP hosts) enters at
 # container start via the entrypoint's runtime env — it is NOT baked here.
 # Build args carry only build-identity values and the Sentry source-map upload
-# credentials (compose interpolates them from the user's self-hosting/.env;
+# credentials (compose interpolates them from the user's root .env;
 # that file itself is NEVER copied into the image — it contains DB passwords +
 # auth secrets that must not leak into pushed image layers).
 ARG VITE_SENTRY_RELEASE=

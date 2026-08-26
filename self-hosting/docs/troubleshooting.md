@@ -121,7 +121,7 @@ don't mark it `internal: true` – the rates container will log resolution
 errors continuously and rate syncing stalls. The shipped `budget-tracker` network is
 a regular bridge and works as-is.
 
-## Frontend build OOMs (build-from-source overlay only)
+## Frontend build OOMs (source-build stack only)
 
 The frontend build is memory-heavy. Add 2 GB of swap:
 

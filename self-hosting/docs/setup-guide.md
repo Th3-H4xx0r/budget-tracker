@@ -11,7 +11,7 @@ This guide assumes:
 - A host with Docker Engine + the Compose plugin (a fresh Ubuntu 22.04 / 24.04
   or Debian 12 VPS is the common case, but any Docker host works).
 - 2 GB RAM minimum. The pull-based path is light; only the optional
-  build-from-source overlay is memory-heavy.
+  source-build stack is memory-heavy.
 
 The stack is: the **frontend** (nginx serving the SPA and reverse-proxying
 `/api` to the backend), the **backend** (Node + Express), **Postgres** for
@@ -62,7 +62,7 @@ rate-data sidecar are reachable only from the `budget-tracker` network.
 1. [Prerequisites](#1-prerequisites)
 2. [Quickstart](#2-quickstart)
 3. [Behind your own reverse proxy](#3-behind-your-own-reverse-proxy)
-4. [Optional: build from source](#4-optional-build-from-source)
+4. [Optional: self-host from source](#4-optional-self-host-from-source)
 5. [Backups](#5-backups)
 6. [Updating](#6-updating)
 
@@ -86,17 +86,15 @@ docker compose version
 
 ## 2. Quickstart
 
-You need two things on the host: the compose file(s) and a filled-in `.env`,
-side by side. Cloning the repo is the simplest way to get them, but for the
-pull-based path you can also just download the `self-hosting/` folder on its
-own – it is self-contained: the compose file, the overlays, and your `.env` all
-live in it, and the backend reads `.env` from that same directory. (Building
-from source still needs the full repo checkout.)
+You need the repository-root compose file(s) and a filled-in
+`.env` at its root. Cloning the repository is required, because the Compose
+files now live at its root; building from source also uses the checkout as its
+build context.
 
 ```bash
 git clone https://github.com/letehaha/budget-tracker.git
-cd budget-tracker/self-hosting
-cp .env.example .env
+cd budget-tracker
+cp self-hosting/.env.example .env
 ```
 
 Open `.env` and fill the **REQUIRED** section. The minimum to boot:
@@ -129,7 +127,7 @@ APPLICATION_DB_PASSWORD=<paste output of: openssl rand -base64 32>
 > that same origin, so there is no separate API URL to configure. When you
 > later put the app behind a domain, update both to that URL and restart.
 
-Start the stack from the `self-hosting/` folder:
+Start the published-image stack from the repository root:
 
 ```bash
 docker compose up -d
@@ -158,12 +156,10 @@ laptop this is a complete localhost trial – no domain, no TLS, no reverse
 proxy needed. For a public deployment, put a reverse proxy in front (next
 section).
 
-> **Keep `.env` on the host, not in an image.** Compose auto-loads it as
-> `./.env` beside the compose file – for interpolation into the frontend
-> `environment:` block and the compose-level settings, and via `env_file:` for
-> the backend container's runtime env. It is never copied into any image, so DB
-> password and auth secrets stay out of pushed image layers. Do **not** commit
-> it to git.
+> **Keep `.env` at the repository root, not in an image.** Compose auto-loads
+> it for interpolation and the backend receives it through `env_file:`. It is
+> never copied into any image, so DB passwords and auth secrets stay out of
+> pushed image layers. Do **not** commit it to git.
 
 ## 3. Behind your own reverse proxy
 
@@ -226,21 +222,20 @@ confusing login loop. How to close it depends on where your proxy runs:
 No reverse proxy yet? The stack can handle HTTPS itself with the bundled
 Traefik overlay – see [traefik-overlay.md](traefik-overlay.md).
 
-## 4. Optional: build from source
+## 4. Optional: self-host from source
 
-Contributors and forks can build the images locally instead of pulling them.
-Add the build overlay and pass `--build`:
+Contributors and forks can build the frontend and backend locally instead of
+pulling them. Use the root-level self-hosting Compose file:
 
 ```bash
-docker compose -f docker-compose.yml \
-  -f docker-compose.build.yml up -d --build
+docker compose -f docker-compose.self-hosting.yml up -d --build
 ```
 
 Runtime configuration is unchanged – the frontend is still configured through
 the `environment:` block and the backend through `env_file:`. The build args
 only feed build-time concerns (e.g. Sentry source-map upload) and are all
 optional; see the **BUILD-FROM-SOURCE ONLY** section of
-`.env.example`. This path is memory-heavy: if the frontend build
+`self-hosting/.env.example`. This path is memory-heavy: if the frontend build
 OOMs, add 2 GB of swap (see [troubleshooting.md](troubleshooting.md)).
 
 ## 5. Backups
@@ -302,12 +297,12 @@ Let's Encrypt problems, and more – are covered in
   internally, so app and API share one origin and there is no CORS to manage.
   A separate API origin (`API_HTTP` + split-domain Traefik) remains possible
   but is opt-in.
-- **The stack knows it is self-hosted.** `docker-compose.yml` marks both
-  containers as a self-hosted install, with nothing for you to configure. Two
-  things follow from it: a custom AI endpoint may point at a model server on
-  your own network (the hosted service only allows public addresses), and
-  restoring a backup fetches your stocks' and crypto's past prices again so
-  charts cover their full history. See
+- **The stacks know they are self-hosted.** Both root-level Compose files mark
+  their frontend and backend containers as self-hosted, with nothing for you to
+  configure. Two things follow from it: a custom AI endpoint may point at a
+  model server on your own network (the hosted service only allows public
+  addresses), and restoring a backup fetches your stocks' and crypto's past
+  prices again so charts cover their full history. See
   [environment-reference.md](environment-reference.md#set-for-you).
 - **Runtime-configurable frontend image.** The published frontend image reads
   its config from env at container start (writing `window.__APP_CONFIG__` and

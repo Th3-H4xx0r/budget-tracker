@@ -1,7 +1,7 @@
 # Optional overlay: bundle Traefik as the reverse proxy with automatic
 # Let's Encrypt TLS. Use this only if you do NOT already run a reverse proxy.
 #
-# Usage (merge on top of the base file, from this folder):
+# Usage (merge on top of either root-level base file):
 #   docker compose -f docker-compose.yml -f docker-compose.traefik.yml up -d
 #
 # Single-domain by default: the whole app is served on SELFHOST_FRONTEND_DOMAIN

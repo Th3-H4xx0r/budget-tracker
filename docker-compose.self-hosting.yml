@@ -1,22 +1,19 @@
-# Self-host base stack for Budget Tracker — pull-based and reverse-proxy-agnostic.
+# Self-host stack for Budget Tracker — build locally and reverse-proxy-agnostic.
 #
-# Pulls the published images and exposes the whole app on ONE host port
+# Builds the frontend and backend from this checkout and exposes the whole app on ONE host port
 # (${HTTP_PORT:-8080}). The frontend container serves the SPA and reverse-proxies
 # /api to the backend on the internal network, so the browser talks to a single
 # origin. Point whatever reverse proxy you already run (Nginx Proxy Manager,
 # npmplus, Caddy, Traefik, or none) at http://HOST:${HTTP_PORT:-8080}.
 #
-# Quickstart (from this folder):
-#   1. cd self-hosting
-#   2. cp .env.example .env   # then fill the REQUIRED section
-#   3. docker compose up -d
+# Quickstart (from the repository root):
+#   1. cp self-hosting/.env.example .env   # then fill REQUIRED values
+#   2. docker compose -f docker-compose.self-hosting.yml up -d --build
 #   4. open http://HOST:${HTTP_PORT:-8080}
 #
-# Optional overlays (compose merges them left-to-right):
+# Optional overlay (compose merges it on top of this file):
 #   • Bundled Traefik + Let's Encrypt TLS:
-#       docker compose -f docker-compose.yml -f docker-compose.traefik.yml up -d
-#   • Build the images from source instead of pulling:
-#       docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
+#       docker compose -f docker-compose.self-hosting.yml -f docker-compose.traefik.yml up -d --build
 
 # Pin the compose project name so resources are namespaced consistently
 # regardless of which directory `docker compose` is invoked from. Kept as
@@ -31,7 +28,11 @@ x-logging: &default-logging
 
 services:
   backend:
-    image: letehaha/budget-tracker-be:${IMAGE_TAG:-latest}
+    build:
+      context: .
+      dockerfile: self-hosting/backend/Dockerfile
+      args:
+        SENTRY_RELEASE: ${VITE_SENTRY_RELEASE:-}
     restart: unless-stopped
     networks: [budget-tracker]
     # Internal-only: the frontend container reaches it over the `budget-tracker`
@@ -69,7 +70,14 @@ services:
     logging: *default-logging
 
   frontend:
-    image: letehaha/budget-tracker-fe:${IMAGE_TAG:-latest}
+    build:
+      context: .
+      dockerfile: self-hosting/frontend/Dockerfile
+      args:
+        SENTRY_AUTH_TOKEN: ${SENTRY_AUTH_TOKEN:-}
+        SENTRY_ORG: ${SENTRY_ORG:-}
+        SENTRY_PROJECT: ${SENTRY_PROJECT:-}
+        VITE_SENTRY_RELEASE: ${VITE_SENTRY_RELEASE:-}
     restart: unless-stopped
     networks:
       budget-tracker:
