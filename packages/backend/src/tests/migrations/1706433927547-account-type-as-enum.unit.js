@@ -1,4 +1,4 @@
-const migration = require('./1706433927547-account-type-as-enum');
+const migration = require('../../migrations/1706433927547-account-type-as-enum');
 
 describe('1706433927547-account-type-as-enum migration', () => {
   it('removes the legacy Monobank account-type foreign key before dropping AccountTypes', async () => {
