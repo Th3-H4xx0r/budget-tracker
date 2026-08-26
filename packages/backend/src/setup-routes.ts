@@ -14,6 +14,7 @@ import bankDataProvidersRoutes from './routes/bank-data-providers.route';
 import betterAuthExtensionsRoutes from './routes/better-auth-extensions.route';
 import brandLogosRoutes from './routes/brand-logos.route';
 import budgetsRoutes from './routes/budgets.route';
+import futureBudgetsRoutes from './routes/future-budgets.route';
 import categoriesRoutes from './routes/categories.route';
 import modelsCurrenciesRoutes from './routes/currencies.route';
 import demoRoutes from './routes/demo.route';
@@ -177,6 +178,7 @@ export function setupRoutes(app: Express) {
   app.use(`${API_PREFIX}/account-group`, accountGroupsRoutes);
   app.use(`${API_PREFIX}/currencies/rates`, exchangeRatesRoutes);
   app.use(`${API_PREFIX}/budgets`, budgetsRoutes);
+  app.use(`${API_PREFIX}/future-budgets`, futureBudgetsRoutes);
   app.use(`${API_PREFIX}/subscriptions`, subscriptionsRoutes);
   app.use(`${API_PREFIX}/tags`, tagsRoutes);
   app.use(`${API_PREFIX}/tag-reminders`, tagRemindersRoutes);

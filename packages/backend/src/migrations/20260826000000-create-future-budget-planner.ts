@@ -14,6 +14,7 @@ module.exports = {
           },
           salaryAmount: { type: DataTypes.BIGINT, allowNull: false, defaultValue: 0 },
           salaryFrequency: { type: DataTypes.STRING(20), allowNull: false, defaultValue: 'monthly' },
+          salaryIntervalDays: { type: DataTypes.INTEGER, allowNull: true },
           salaryAnchorDate: { type: DataTypes.DATEONLY, allowNull: true },
           salaryCategoryId: {
             type: DataTypes.UUID,
@@ -44,6 +45,7 @@ module.exports = {
           endDate: { type: DataTypes.DATEONLY, allowNull: false },
           salaryAmount: { type: DataTypes.BIGINT, allowNull: false, defaultValue: 0 },
           salaryFrequency: { type: DataTypes.STRING(20), allowNull: false, defaultValue: 'monthly' },
+          salaryIntervalDays: { type: DataTypes.INTEGER, allowNull: true },
           salaryAnchorDate: { type: DataTypes.DATEONLY, allowNull: true },
           salaryCategoryId: {
             type: DataTypes.UUID,
@@ -85,13 +87,48 @@ module.exports = {
         },
         { transaction },
       );
+      await queryInterface.createTable(
+        'FutureBudgetRecurringOverrides',
+        {
+          id: { type: DataTypes.UUID, primaryKey: true, allowNull: false },
+          planId: {
+            type: DataTypes.UUID,
+            allowNull: false,
+            references: { model: 'FutureBudgetPlans', key: 'id' },
+            onDelete: 'CASCADE',
+          },
+          subscriptionId: {
+            type: DataTypes.UUID,
+            allowNull: false,
+            references: { model: 'Subscriptions', key: 'id' },
+            onDelete: 'CASCADE',
+          },
+          isIncluded: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: true },
+          amount: { type: DataTypes.BIGINT, allowNull: true },
+          categoryId: {
+            type: DataTypes.UUID,
+            allowNull: true,
+            references: { model: 'Categories', key: 'id' },
+            onDelete: 'SET NULL',
+          },
+          nextOccurrenceDate: { type: DataTypes.DATEONLY, allowNull: true },
+          createdAt: { type: DataTypes.DATE, allowNull: false, defaultValue: DataTypes.NOW },
+          updatedAt: { type: DataTypes.DATE, allowNull: false, defaultValue: DataTypes.NOW },
+        },
+        { transaction },
+      );
       await queryInterface.addIndex('FutureBudgetPlans', ['userId', 'startDate', 'endDate'], { transaction });
       await queryInterface.addIndex('FutureBudgetEntries', ['planId', 'date'], { transaction });
+      await queryInterface.addIndex('FutureBudgetRecurringOverrides', ['planId', 'subscriptionId'], {
+        unique: true,
+        transaction,
+      });
     });
   },
   down: async (queryInterface: QueryInterface): Promise<void> => {
     await queryInterface.sequelize.transaction(async (transaction) => {
       await queryInterface.dropTable('FutureBudgetEntries', { transaction });
+      await queryInterface.dropTable('FutureBudgetRecurringOverrides', { transaction });
       await queryInterface.dropTable('FutureBudgetPlans', { transaction });
       await queryInterface.dropTable('FutureBudgetSettings', { transaction });
     });

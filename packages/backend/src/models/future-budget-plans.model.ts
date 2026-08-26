@@ -16,6 +16,7 @@ export default class FutureBudgetPlans extends Model {
   @Column({ type: DataType.DATEONLY, allowNull: false }) endDate!: string;
   @MoneyField({ storage: 'cents', allowNull: false }) declare salaryAmount: Money;
   @Column({ type: DataType.STRING(20), allowNull: false }) salaryFrequency!: string;
+  @Column({ type: DataType.INTEGER, allowNull: true }) salaryIntervalDays!: number | null;
   @Column({ type: DataType.DATEONLY, allowNull: true }) salaryAnchorDate!: string | null;
   @Column({ type: DataType.UUID, allowNull: true }) salaryCategoryId!: RecordId | null;
   @Column({ type: DataType.INTEGER, allowNull: false }) salaryProfileRevision!: number;

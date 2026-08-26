@@ -189,6 +189,16 @@ const routes: RouteRecordRaw[] = [
               i18nChunks: ['pages/budgets', 'pages/budget-details', 'pages/transactions'] as I18nChunkName[],
             },
           },
+          {
+            path: 'planned-budgets',
+            name: ROUTES_NAMES.plannedFutureBudgets,
+            component: () => import('@/pages/planned/future-budgets/index.vue'),
+          },
+          {
+            path: 'planned-budgets/:id',
+            name: ROUTES_NAMES.plannedFutureBudgetDetails,
+            component: () => import('@/pages/planned/future-budgets/details.vue'),
+          },
         ],
       },
       // Backward-compat redirects for old budget URLs

@@ -82,7 +82,9 @@ const isPlannedRoute = computed(
     route.name === ROUTES_NAMES.plannedSubscriptions ||
     route.name === ROUTES_NAMES.plannedSubscriptionDetails ||
     route.name === ROUTES_NAMES.plannedBudgets ||
-    route.name === ROUTES_NAMES.plannedBudgetDetails,
+    route.name === ROUTES_NAMES.plannedBudgetDetails ||
+    route.name === ROUTES_NAMES.plannedFutureBudgets ||
+    route.name === ROUTES_NAMES.plannedFutureBudgetDetails,
 );
 
 watch(
@@ -290,6 +292,18 @@ watch(
           >
             <WalletIcon :class="[navIconBase, isActive && navIconActive]" />
             <span>{{ $t('navigation.planned.budgets') }}</span>
+          </ui-button>
+        </router-link>
+        <router-link v-slot="{ isActive }" :to="{ name: ROUTES_NAMES.plannedFutureBudgets }">
+          <ui-button
+            variant="ghost"
+            as="span"
+            :class="['w-full justify-start gap-2 px-3', isActive && navItemActive]"
+            size="sm"
+          >
+            <CalendarClockIcon :class="[navIconBase, isActive && navIconActive]" />
+            <span>Planned Budgets</span
+            ><span class="bg-primary/15 text-primary ml-auto rounded px-1.5 py-0.5 text-[10px] font-bold">NEW</span>
           </ui-button>
         </router-link>
       </div>
