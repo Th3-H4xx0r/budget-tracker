@@ -9,6 +9,7 @@ import {
 import Button from '@/components/lib/ui/button/Button.vue';
 import CategorySelectField from '@/components/fields/category-select-field.vue';
 import CategoryMultiSelectField from '@/components/fields/category-multi-select-field.vue';
+import FutureBudgetDateField from './components/future-budget-date-field.vue';
 import Input from '@/components/fields/input-field.vue';
 import { ROUTES_NAMES } from '@/routes';
 import { useCategoriesStore } from '@/stores';
@@ -119,7 +120,7 @@ const frequencyLabel = computed(() =>
           <option value="quarterly">Quarterly</option>
           <option value="annual">Yearly</option>
           <option value="custom">Custom interval</option></select
-        ><Input v-model="salary.salaryAnchorDate" type="date" /><Input
+        ><FutureBudgetDateField v-model="salary.salaryAnchorDate" label="Pay date" /><Input
           v-if="salary.salaryFrequency === 'custom'"
           v-model.number="salary.salaryIntervalDays"
           type="number"
@@ -180,8 +181,8 @@ const frequencyLabel = computed(() =>
           @update:model-value="(value) => (form.categoryIds = value)"
         />
         <div class="grid grid-cols-2 gap-3">
-          <label class="text-sm">From<Input v-model="form.startDate" required type="date" /></label
-          ><label class="text-sm">To<Input v-model="form.endDate" required type="date" /></label>
+          <FutureBudgetDateField v-model="form.startDate" label="From" />
+          <FutureBudgetDateField v-model="form.endDate" label="To" />
         </div>
         <div class="border-t pt-4">
           <p class="mb-2 text-sm font-medium">Salary projection</p>
@@ -196,7 +197,7 @@ const frequencyLabel = computed(() =>
               <option value="quarterly">Quarterly</option>
               <option value="annual">Yearly</option>
               <option value="custom">{{ frequencyLabel }}</option></select
-            ><Input v-model="form.salaryAnchorDate" type="date" /><Input
+            ><FutureBudgetDateField v-model="form.salaryAnchorDate" label="Pay date" /><Input
               v-if="form.salaryFrequency === 'custom'"
               v-model.number="form.salaryIntervalDays"
               type="number"

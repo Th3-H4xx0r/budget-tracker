@@ -7,8 +7,8 @@ import FutureBudgetPlanCategories from '@models/future-budget-plan-categories.mo
 import FutureBudgetPlans from '@models/future-budget-plans.model';
 import FutureBudgetRecurringOverrides from '@models/future-budget-recurring-overrides.model';
 import FutureBudgetSettings from '@models/future-budget-settings.model';
-import SubscriptionTransactions from '@models/subscription-transactions.model';
 import Subscriptions from '@models/subscriptions.model';
+import Transactions from '@models/transactions.model';
 import { z } from 'zod';
 
 const frequencyValues = ['weekly', 'biweekly', 'monthly', 'quarterly', 'semi_annual', 'annual', 'custom'] as const;
@@ -84,6 +84,18 @@ function serializePlan(plan: FutureBudgetPlans) {
 function amountAsNumber(amount: Money | number): number {
   return Money.isMoney(amount) ? amount.toNumber() : amount;
 }
+
+/** Only subscriptions backed by at least one active, real bank transaction are projected. */
+export const realBankRecurringTransactionsInclude = () => ({
+  model: Transactions,
+  attributes: [],
+  required: true,
+  where: { isPlanned: false },
+  through: {
+    attributes: [],
+    where: { status: SUBSCRIPTION_LINK_STATUS.active },
+  },
+});
 
 async function getPlan(userId: number, id: RecordId) {
   const plan = await FutureBudgetPlans.findOne({ where: { id, userId } });
@@ -223,9 +235,7 @@ export const getPlanDetails = createController(
       // Manually-created reminders have no link and are excluded by `required: true`.
       Subscriptions.findAll({
         where: { userId: user.id, isActive: true },
-        include: [
-          { model: SubscriptionTransactions, required: true, where: { status: SUBSCRIPTION_LINK_STATUS.active } },
-        ],
+        include: [realBankRecurringTransactionsInclude()],
       }),
     ]);
     const categoryIds = new Set(categories.map((category) => category.categoryId));

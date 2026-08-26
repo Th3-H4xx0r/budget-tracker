@@ -9,6 +9,7 @@ import {
 } from '@/api/future-budgets';
 import Button from '@/components/lib/ui/button/Button.vue';
 import CategorySelectField from '@/components/fields/category-select-field.vue';
+import FutureBudgetDateField from './components/future-budget-date-field.vue';
 import Input from '@/components/fields/input-field.vue';
 import { useCategoriesStore } from '@/stores';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/vue-query';
@@ -129,11 +130,9 @@ const currency = (amount: number) => amount.toLocaleString(undefined, { style: '
         <select v-model="entry.transactionType" class="border-input bg-background h-10 rounded-md border px-3">
           <option value="expense">Expense</option>
           <option value="income">Income</option></select
-        ><Input v-model.number="entry.amount" required min="0" type="number" placeholder="Amount" /><Input
-          v-model="entry.date"
-          required
-          type="date"
-        /><CategorySelectField
+        ><Input v-model.number="entry.amount" required min="0" type="number" placeholder="Amount" />
+        <FutureBudgetDateField v-model="entry.date" label="Date" />
+        <CategorySelectField
           :model-value="selectedCategory"
           :values="formattedCategories"
           placeholder="Category or group"
@@ -216,15 +215,14 @@ const currency = (amount: number) => amount.toLocaleString(undefined, { style: '
                 }
               "
             />
-            <Input
+            <FutureBudgetDateField
               class="w-36"
-              type="date"
               :model-value="item.date"
-              aria-label="Override next occurrence date"
-              @change="
+              label="Next date"
+              @update:model-value="
                 updateRecurring.mutate({
                   subscriptionId: item.subscriptionId,
-                  nextOccurrenceDate: ($event.target as HTMLInputElement).value,
+                  nextOccurrenceDate: $event,
                 })
               "
             />
