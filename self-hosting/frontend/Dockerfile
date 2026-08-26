@@ -69,8 +69,8 @@ FROM nginx:1.27-alpine AS production-stage
 ARG VITE_SENTRY_RELEASE=
 ENV DEFAULT_SENTRY_RELEASE=$VITE_SENTRY_RELEASE
 
-# envsubst (gettext) renders CSP placeholders into nginx.conf at container start.
-RUN apk add --no-cache gettext
+# The official nginx image already ships `envsubst` for its built-in template
+# support. Reusing it avoids an APK mirror dependency during image builds.
 
 # Create app directories with proper permissions
 RUN mkdir -p /app /landing /etc/nginx/includes /etc/nginx/templates \
