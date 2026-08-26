@@ -25,7 +25,8 @@ COPY self-hosting ./self-hosting
 
 # Build the backend
 WORKDIR /app/packages/backend
-RUN npm run build
+ARG BACKEND_BUILD_NODE_OPTIONS=--max-old-space-size=2048
+RUN NODE_OPTIONS="$BACKEND_BUILD_NODE_OPTIONS" npm run build
 
 # 🚀 Stage 2️⃣: Production
 FROM node:23.11.0-alpine AS production

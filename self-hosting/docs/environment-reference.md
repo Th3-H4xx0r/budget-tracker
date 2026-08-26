@@ -103,10 +103,12 @@ maps them onto the unprefixed names the image expects (`VITE_POSTHOG_KEY` →
 
 Used with `docker-compose.self-hosting.yml` (`--build`).
 
-| Variable                                            | Purpose                                                         |
-| --------------------------------------------------- | --------------------------------------------------------------- |
-| `SENTRY_AUTH_TOKEN`, `SENTRY_ORG`, `SENTRY_PROJECT` | Sentry source-map upload at build time                          |
-| `VITE_SENTRY_RELEASE`                               | Names the uploaded source maps; baked in as the release default |
+| Variable                                            | Purpose                                                                                   |
+| --------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| `SENTRY_AUTH_TOKEN`, `SENTRY_ORG`, `SENTRY_PROJECT` | Sentry source-map upload at build time                                                    |
+| `VITE_SENTRY_RELEASE`                               | Names the uploaded source maps; baked in as the release default                           |
+| `BACKEND_BUILD_NODE_OPTIONS`                        | Node options for the backend build; defaults to `--max-old-space-size=2048`               |
+| `FRONTEND_BUILD_NODE_OPTIONS`                       | Node options for the frontend and landing builds; defaults to `--max-old-space-size=4096` |
 
 `VITE_SENTRY_RELEASE` is the one value that is both a build arg and runtime env.
 The build stamps it into the image as the release the SDK reports by default, so

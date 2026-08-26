@@ -52,11 +52,12 @@ COPY packages/landing ./packages/landing
 
 # Build frontend SPA
 WORKDIR /app/packages/frontend
-RUN npm run build
+ARG FRONTEND_BUILD_NODE_OPTIONS=--max-old-space-size=4096
+RUN NODE_OPTIONS="$FRONTEND_BUILD_NODE_OPTIONS" npm run build
 
 # Build Astro landing
 WORKDIR /app/packages/landing
-RUN npm run build
+RUN NODE_OPTIONS="$FRONTEND_BUILD_NODE_OPTIONS" npm run build
 
 # 🚀 Stage 2️⃣: Production
 FROM nginx:1.27-alpine AS production-stage

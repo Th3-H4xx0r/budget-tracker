@@ -228,7 +228,7 @@ Contributors and forks can build the frontend and backend locally instead of
 pulling them. Use the root-level self-hosting Compose file:
 
 ```bash
-docker compose -f docker-compose.self-hosting.yml up -d --build
+npm run docker:selfhost
 ```
 
 Runtime configuration is unchanged – the frontend is still configured through
@@ -237,6 +237,13 @@ only feed build-time concerns (e.g. Sentry source-map upload) and are all
 optional; see the **BUILD-FROM-SOURCE ONLY** section of
 `self-hosting/.env.example`. This path is memory-heavy: if the frontend build
 OOMs, add 2 GB of swap (see [troubleshooting.md](troubleshooting.md)).
+
+`npm run docker:selfhost` builds the backend and frontend one after the other
+before starting the stack, avoiding their peak memory use overlapping. By
+default, Node's build heap is capped at 2 GB for the backend and 4 GB for the
+frontend. Override `BACKEND_BUILD_NODE_OPTIONS` or
+`FRONTEND_BUILD_NODE_OPTIONS` in `.env` only if your build needs a different
+limit.
 
 ## 5. Backups
 

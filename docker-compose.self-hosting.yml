@@ -8,7 +8,7 @@
 #
 # Quickstart (from the repository root):
 #   1. cp self-hosting/.env.example .env   # then fill REQUIRED values
-#   2. docker compose -f docker-compose.self-hosting.yml up -d --build
+#   2. npm run docker:selfhost
 #   4. open http://HOST:${HTTP_PORT:-8080}
 #
 # Optional overlay (compose merges it on top of this file):
@@ -33,6 +33,7 @@ services:
       dockerfile: self-hosting/backend/Dockerfile
       args:
         SENTRY_RELEASE: ${VITE_SENTRY_RELEASE:-}
+        BACKEND_BUILD_NODE_OPTIONS: ${BACKEND_BUILD_NODE_OPTIONS:---max-old-space-size=2048}
     restart: unless-stopped
     networks: [budget-tracker]
     # Internal-only: the frontend container reaches it over the `budget-tracker`
@@ -78,6 +79,7 @@ services:
         SENTRY_ORG: ${SENTRY_ORG:-}
         SENTRY_PROJECT: ${SENTRY_PROJECT:-}
         VITE_SENTRY_RELEASE: ${VITE_SENTRY_RELEASE:-}
+        FRONTEND_BUILD_NODE_OPTIONS: ${FRONTEND_BUILD_NODE_OPTIONS:---max-old-space-size=4096}
     restart: unless-stopped
     networks:
       budget-tracker:
