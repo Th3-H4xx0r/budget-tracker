@@ -44,6 +44,24 @@ module.exports = {
         transaction,
       });
 
+      // The account-unification migration normally removes this legacy table.
+      // Some older installations still have it, however, and its foreign key
+      // must be removed before AccountTypes can be dropped.
+      const monobankAccountsExists = await queryInterface.tableExists('MonobankAccounts', { transaction });
+      if (monobankAccountsExists) {
+        const foreignKeys = await queryInterface.getForeignKeyReferencesForTable('MonobankAccounts', { transaction });
+        const legacyAccountTypeForeignKey = foreignKeys.find(
+          ({ constraintName, referencedTableName }) =>
+            constraintName === 'MonobankAccounts_accountTypeId_fkey' && referencedTableName === 'AccountTypes',
+        );
+
+        if (legacyAccountTypeForeignKey) {
+          await queryInterface.removeConstraint('MonobankAccounts', legacyAccountTypeForeignKey.constraintName, {
+            transaction,
+          });
+        }
+      }
+
       // Drop the AccountTypes table
       await queryInterface.dropTable('AccountTypes', { transaction });
 
