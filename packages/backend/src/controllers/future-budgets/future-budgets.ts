@@ -3,6 +3,7 @@ import { recordId } from '@common/lib/zod/custom-types';
 import { Money } from '@common/types/money';
 import { createController } from '@controllers/helpers/controller-factory';
 import FutureBudgetEntries from '@models/future-budget-entries.model';
+import FutureBudgetPlanCategories from '@models/future-budget-plan-categories.model';
 import FutureBudgetPlans from '@models/future-budget-plans.model';
 import FutureBudgetRecurringOverrides from '@models/future-budget-recurring-overrides.model';
 import FutureBudgetSettings from '@models/future-budget-settings.model';
@@ -123,6 +124,7 @@ export const createPlan = createController(
       .object({
         name: z.string().min(1).max(200).trim(),
         type: z.enum(budgetTypeValues).default(BUDGET_TYPES.manual),
+        categoryIds: z.array(recordId()).optional().default([]),
         startDate: dateString,
         endDate: dateString,
         ...salaryShape,
@@ -130,6 +132,10 @@ export const createPlan = createController(
       .refine((value) => value.startDate <= value.endDate, {
         path: ['endDate'],
         message: 'End date must be on or after start date',
+      })
+      .refine((value) => value.type !== BUDGET_TYPES.category || value.categoryIds.length > 0, {
+        path: ['categoryIds'],
+        message: 'Category plans require at least one category',
       }),
   }),
   async ({ user, body }) => {
@@ -149,6 +155,11 @@ export const createPlan = createController(
       salaryProfileRevision: settings.revision,
       dismissedSalaryProfileRevision: null,
     });
+    if (body.categoryIds.length) {
+      await FutureBudgetPlanCategories.bulkCreate(
+        body.categoryIds.map((categoryId) => ({ planId: plan.id, categoryId })),
+      );
+    }
     return { data: serializePlan(plan), statusCode: 201 };
   },
 );
@@ -203,9 +214,10 @@ export const getPlanDetails = createController(
   z.object({ params: z.object({ id: recordId() }) }),
   async ({ user, params }) => {
     const plan = await getPlan(user.id, params.id);
-    const [settings, entries, overrides, subscriptions] = await Promise.all([
+    const [settings, entries, categories, overrides, subscriptions] = await Promise.all([
       getSettings(user.id),
       FutureBudgetEntries.findAll({ where: { planId: plan.id }, order: [['date', 'ASC']] }),
+      FutureBudgetPlanCategories.findAll({ where: { planId: plan.id } }),
       FutureBudgetRecurringOverrides.findAll({ where: { planId: plan.id } }),
       // A subscription only projects when it still has a live link to real activity.
       // Manually-created reminders have no link and are excluded by `required: true`.
@@ -216,6 +228,7 @@ export const getPlanDetails = createController(
         ],
       }),
     ]);
+    const categoryIds = new Set(categories.map((category) => category.categoryId));
     const overrideBySubscription = new Map(overrides.map((override) => [override.subscriptionId, override]));
     const salaryOccurrences = plan.salaryAmount.isPositive()
       ? occurrences({
@@ -261,7 +274,9 @@ export const getPlanDetails = createController(
         intervalDays: entry.intervalDays,
       }).map((date) => ({ ...entry.toJSON(), source: 'manual', date })),
     );
-    const all = [...salaryOccurrences, ...recurringOccurrences, ...manualOccurrences] as Array<{
+    const all = [...salaryOccurrences, ...recurringOccurrences, ...manualOccurrences].filter(
+      (item) => plan.type !== BUDGET_TYPES.category || (item.categoryId && categoryIds.has(item.categoryId)),
+    ) as Array<{
       transactionType: TRANSACTION_TYPES;
       amount: Money | number;
       date: string;
@@ -276,6 +291,7 @@ export const getPlanDetails = createController(
     return {
       data: {
         plan: serializePlan(plan),
+        categoryIds: [...categoryIds],
         entries: entries.map((entry) => entry.toJSON()),
         overrides: overrides.map((override) => override.toJSON()),
         occurrences: all.toSorted((a, b) => a.date.localeCompare(b.date)),

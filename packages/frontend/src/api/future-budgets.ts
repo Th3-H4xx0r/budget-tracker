@@ -23,6 +23,10 @@ export type FutureBudgetPlan = {
   salaryProfileRevision: number;
   dismissedSalaryProfileRevision: number | null;
 };
+export type CreateFutureBudgetPlan = Omit<
+  FutureBudgetPlan,
+  'id' | 'status' | 'salaryProfileRevision' | 'dismissedSalaryProfileRevision'
+> & { categoryIds?: string[] };
 export type SalarySettings = {
   salaryAmount: number;
   salaryFrequency: FutureBudgetFrequency;
@@ -46,9 +50,8 @@ export const loadFutureBudgetPlans = (): Promise<FutureBudgetPlan[]> => api.get(
 export const loadSalarySettings = (): Promise<SalarySettings> => api.get('/future-budgets/salary-settings');
 export const updateSalarySettings = (payload: Omit<SalarySettings, 'revision'>): Promise<SalarySettings> =>
   api.put('/future-budgets/salary-settings', payload);
-export const createFutureBudgetPlan = (
-  payload: Omit<FutureBudgetPlan, 'id' | 'status' | 'salaryProfileRevision' | 'dismissedSalaryProfileRevision'>,
-): Promise<FutureBudgetPlan> => api.post('/future-budgets', payload);
+export const createFutureBudgetPlan = (payload: CreateFutureBudgetPlan): Promise<FutureBudgetPlan> =>
+  api.post('/future-budgets', payload);
 export const loadFutureBudgetPlan = (
   id: string,
 ): Promise<{

@@ -2,8 +2,11 @@ import { BUDGET_STATUSES, BUDGET_TYPES, RecordId } from '@bt/shared/types';
 import { IdColumn } from '@common/types/id-column';
 import { Money } from '@common/types/money';
 import { MoneyField } from '@common/types/money-column';
+import Categories from '@models/categories.model';
 import Users from '@models/users.model';
-import { BelongsTo, Column, DataType, ForeignKey, Model, Table } from 'sequelize-typescript';
+import { BelongsTo, BelongsToMany, Column, DataType, ForeignKey, Model, Table } from 'sequelize-typescript';
+
+import FutureBudgetPlanCategories from './future-budget-plan-categories.model';
 
 @Table({ tableName: 'FutureBudgetPlans', timestamps: true, freezeTableName: true })
 export default class FutureBudgetPlans extends Model {
@@ -22,4 +25,5 @@ export default class FutureBudgetPlans extends Model {
   @Column({ type: DataType.INTEGER, allowNull: false }) salaryProfileRevision!: number;
   @Column({ type: DataType.INTEGER, allowNull: true }) dismissedSalaryProfileRevision!: number | null;
   @BelongsTo(() => Users) user!: Users;
+  @BelongsToMany(() => Categories, () => FutureBudgetPlanCategories) categories!: Categories[];
 }

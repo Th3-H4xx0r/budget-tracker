@@ -8,6 +8,7 @@ import {
 } from '@/api/future-budgets';
 import Button from '@/components/lib/ui/button/Button.vue';
 import CategorySelectField from '@/components/fields/category-select-field.vue';
+import CategoryMultiSelectField from '@/components/fields/category-multi-select-field.vue';
 import Input from '@/components/lib/ui/input/Input.vue';
 import { ROUTES_NAMES } from '@/routes';
 import { useCategoriesStore } from '@/stores';
@@ -24,6 +25,8 @@ const plans = computed(() => plansQuery.data.value ?? []);
 const { data: salarySettings } = useQuery({ queryKey: ['future-budget-salary'], queryFn: loadSalarySettings });
 const form = reactive({
   name: '',
+  type: 'manual' as 'manual' | 'category',
+  categoryIds: [] as string[],
   startDate: new Date().toISOString().slice(0, 10),
   endDate: new Date(new Date().setMonth(new Date().getMonth() + 1)).toISOString().slice(0, 10),
   salaryAmount: 0,
@@ -69,7 +72,7 @@ const saveSalary = useMutation({
   onSuccess: () => queryClient.invalidateQueries({ queryKey: ['future-budget-salary'] }),
 });
 const createPlan = useMutation({
-  mutationFn: () => createFutureBudgetPlan({ ...form, type: 'manual' }),
+  mutationFn: () => createFutureBudgetPlan(form),
   onSuccess: () => {
     queryClient.invalidateQueries({ queryKey: ['future-budget-plans'] });
     showCreate.value = false;
@@ -162,6 +165,20 @@ const frequencyLabel = computed(() =>
           <Button type="button" variant="ghost" @click="showCreate = false">Cancel</Button>
         </div>
         <Input v-model="form.name" required placeholder="Plan name" />
+        <div class="grid grid-cols-2 gap-3 text-sm">
+          <label class="border-input flex cursor-pointer items-center gap-2 rounded-md border p-3"
+            ><input v-model="form.type" value="manual" type="radio" /> Manual plan</label
+          >
+          <label class="border-input flex cursor-pointer items-center gap-2 rounded-md border p-3"
+            ><input v-model="form.type" value="category" type="radio" /> Category plan</label
+          >
+        </div>
+        <CategoryMultiSelectField
+          v-if="form.type === 'category'"
+          :model-value="form.categoryIds"
+          label="Categories or groups to track"
+          @update:model-value="(value) => (form.categoryIds = value)"
+        />
         <div class="grid grid-cols-2 gap-3">
           <label class="text-sm">From<Input v-model="form.startDate" required type="date" /></label
           ><label class="text-sm">To<Input v-model="form.endDate" required type="date" /></label>

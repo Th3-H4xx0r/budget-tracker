@@ -16,6 +16,7 @@ import { connection } from './connection';
 import CurrenciesModel from './currencies.model';
 import ExchangeRatesModel from './exchange-rates.model';
 import FutureBudgetEntriesModel from './future-budget-entries.model';
+import FutureBudgetPlanCategoriesModel from './future-budget-plan-categories.model';
 import FutureBudgetPlansModel from './future-budget-plans.model';
 import FutureBudgetRecurringOverridesModel from './future-budget-recurring-overrides.model';
 import FutureBudgetSettingsModel from './future-budget-settings.model';
@@ -90,6 +91,7 @@ const models = [
   CurrenciesModel,
   ExchangeRatesModel,
   FutureBudgetPlansModel,
+  FutureBudgetPlanCategoriesModel,
   FutureBudgetEntriesModel,
   FutureBudgetRecurringOverridesModel,
   FutureBudgetSettingsModel,
