@@ -9,7 +9,7 @@ import {
 } from '@/api/future-budgets';
 import Button from '@/components/lib/ui/button/Button.vue';
 import CategorySelectField from '@/components/fields/category-select-field.vue';
-import Input from '@/components/lib/ui/input/Input.vue';
+import Input from '@/components/fields/input-field.vue';
 import { useCategoriesStore } from '@/stores';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/vue-query';
 import { ArrowLeftIcon, PlusIcon, Trash2Icon } from '@lucide/vue';

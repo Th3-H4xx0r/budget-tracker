@@ -9,7 +9,7 @@ import {
 import Button from '@/components/lib/ui/button/Button.vue';
 import CategorySelectField from '@/components/fields/category-select-field.vue';
 import CategoryMultiSelectField from '@/components/fields/category-multi-select-field.vue';
-import Input from '@/components/lib/ui/input/Input.vue';
+import Input from '@/components/fields/input-field.vue';
 import { ROUTES_NAMES } from '@/routes';
 import { useCategoriesStore } from '@/stores';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/vue-query';
