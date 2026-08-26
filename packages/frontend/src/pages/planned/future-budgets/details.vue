@@ -126,12 +126,12 @@ const currency = (amount: number) => amount.toLocaleString(undefined, { style: '
       <p class="text-muted-foreground mb-4 text-sm">
         These entries stay in this plan only and never affect your real transactions.
       </p>
-      <form class="grid gap-3 md:grid-cols-6" @submit.prevent="addEntry.mutate()">
+      <form class="grid gap-3 md:grid-cols-7" @submit.prevent="addEntry.mutate()">
         <select v-model="entry.transactionType" class="border-input bg-background h-10 rounded-md border px-3">
           <option value="expense">Expense</option>
           <option value="income">Income</option></select
         ><Input v-model.number="entry.amount" required min="0" type="number" placeholder="Amount" />
-        <FutureBudgetDateField v-model="entry.date" label="Date" />
+        <FutureBudgetDateField v-model="entry.date" class="min-w-0" />
         <CategorySelectField
           :model-value="selectedCategory"
           :values="formattedCategories"
