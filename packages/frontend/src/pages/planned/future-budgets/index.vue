@@ -7,13 +7,17 @@ import {
   type FutureBudgetFrequency,
 } from '@/api/future-budgets';
 import Button from '@/components/lib/ui/button/Button.vue';
+import CategorySelectField from '@/components/fields/category-select-field.vue';
 import Input from '@/components/lib/ui/input/Input.vue';
 import { ROUTES_NAMES } from '@/routes';
+import { useCategoriesStore } from '@/stores';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/vue-query';
 import { PlusIcon, SparklesIcon } from '@lucide/vue';
+import { storeToRefs } from 'pinia';
 import { computed, reactive, ref, watch } from 'vue';
 
 const queryClient = useQueryClient();
+const { formattedCategories } = storeToRefs(useCategoriesStore());
 const showCreate = ref(false);
 const plansQuery = useQuery({ queryKey: ['future-budget-plans'], queryFn: loadFutureBudgetPlans });
 const plans = computed(() => plansQuery.data.value ?? []);
@@ -42,6 +46,17 @@ const salary = reactive({
   salaryAnchorDate: null as string | null,
   salaryCategoryId: null as string | null,
 });
+const findCategory = (id: string | null) => {
+  const find = (categories: typeof formattedCategories.value): (typeof formattedCategories.value)[0] | null => {
+    for (const category of categories) {
+      if (category.id === id) return category;
+      const found = category.subCategories?.length ? find(category.subCategories) : null;
+      if (found) return found;
+    }
+    return null;
+  };
+  return find(formattedCategories.value);
+};
 watch(
   salarySettings,
   (settings) => {
@@ -90,7 +105,7 @@ const frequencyLabel = computed(() =>
           </p>
         </div>
       </div>
-      <div class="grid gap-3 md:grid-cols-4">
+      <div class="grid gap-3 md:grid-cols-5">
         <Input v-model.number="salary.salaryAmount" type="number" min="0" placeholder="Salary amount" /><select
           v-model="salary.salaryFrequency"
           class="border-input bg-background h-10 rounded-md border px-3"
@@ -107,6 +122,11 @@ const frequencyLabel = computed(() =>
           type="number"
           min="1"
           placeholder="Days between payments"
+        /><CategorySelectField
+          :model-value="findCategory(salary.salaryCategoryId)"
+          :values="formattedCategories"
+          placeholder="Income category/group"
+          @update:model-value="(value: any) => (salary.salaryCategoryId = value?.id ?? null)"
         />
       </div>
       <Button class="mt-3" variant="outline" :disabled="saveSalary.isPending.value" @click="saveSalary.mutate()"
@@ -165,6 +185,11 @@ const frequencyLabel = computed(() =>
               type="number"
               min="1"
               placeholder="Days between payments"
+            /><CategorySelectField
+              :model-value="findCategory(form.salaryCategoryId)"
+              :values="formattedCategories"
+              placeholder="Income category/group"
+              @update:model-value="(value: any) => (form.salaryCategoryId = value?.id ?? null)"
             />
           </div>
         </div>

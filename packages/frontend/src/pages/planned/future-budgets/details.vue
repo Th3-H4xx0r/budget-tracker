@@ -138,6 +138,20 @@ const currency = (amount: number) => amount.toLocaleString(undefined, { style: '
           :values="formattedCategories"
           placeholder="Category or group"
           @update:model-value="(value: any) => (entry.categoryId = value?.id ?? null)"
+        /><select v-model="entry.frequency" class="border-input bg-background h-10 rounded-md border px-3">
+          <option :value="null">One time</option>
+          <option value="weekly">Weekly</option>
+          <option value="biweekly">Biweekly</option>
+          <option value="monthly">Monthly</option>
+          <option value="quarterly">Quarterly</option>
+          <option value="annual">Yearly</option>
+          <option value="custom">Custom interval</option></select
+        ><Input
+          v-if="entry.frequency === 'custom'"
+          v-model.number="entry.intervalDays"
+          type="number"
+          min="1"
+          placeholder="Days"
         /><Input v-model="entry.note" placeholder="Note" /><Button type="submit"
           ><PlusIcon class="mr-2 size-4" />Add</Button
         >

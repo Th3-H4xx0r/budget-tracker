@@ -1,11 +1,4 @@
-import {
-  BUDGET_STATUSES,
-  BUDGET_TYPES,
-  RecordId,
-  SUBSCRIPTION_LINK_STATUS,
-  SUBSCRIPTION_FREQUENCIES,
-  TRANSACTION_TYPES,
-} from '@bt/shared/types';
+import { BUDGET_STATUSES, BUDGET_TYPES, RecordId, SUBSCRIPTION_LINK_STATUS, TRANSACTION_TYPES } from '@bt/shared/types';
 import { recordId } from '@common/lib/zod/custom-types';
 import { Money } from '@common/types/money';
 import { createController } from '@controllers/helpers/controller-factory';
@@ -85,6 +78,10 @@ function occurrences(input: {
 
 function serializePlan(plan: FutureBudgetPlans) {
   return plan.toJSON();
+}
+
+function amountAsNumber(amount: Money | number): number {
+  return Money.isMoney(amount) ? amount.toNumber() : amount;
 }
 
 async function getPlan(userId: number, id: RecordId) {
@@ -266,13 +263,13 @@ export const getPlanDetails = createController(
     );
     const all = [...salaryOccurrences, ...recurringOccurrences, ...manualOccurrences] as Array<{
       transactionType: TRANSACTION_TYPES;
-      amount: Money;
+      amount: Money | number;
       date: string;
     }>;
     const summary = all.reduce(
       (value, item) => ({
-        income: value.income + (item.transactionType === TRANSACTION_TYPES.income ? Number(item.amount) : 0),
-        expense: value.expense + (item.transactionType === TRANSACTION_TYPES.expense ? Number(item.amount) : 0),
+        income: value.income + (item.transactionType === TRANSACTION_TYPES.income ? amountAsNumber(item.amount) : 0),
+        expense: value.expense + (item.transactionType === TRANSACTION_TYPES.expense ? amountAsNumber(item.amount) : 0),
       }),
       { income: 0, expense: 0 },
     );
@@ -281,7 +278,7 @@ export const getPlanDetails = createController(
         plan: serializePlan(plan),
         entries: entries.map((entry) => entry.toJSON()),
         overrides: overrides.map((override) => override.toJSON()),
-        occurrences: all.sort((a, b) => a.date.localeCompare(b.date)),
+        occurrences: all.toSorted((a, b) => a.date.localeCompare(b.date)),
         summary: { ...summary, net: summary.income - summary.expense },
         salaryProfileChanged:
           settings.revision !== plan.salaryProfileRevision && settings.revision !== plan.dismissedSalaryProfileRevision,
