@@ -68,6 +68,22 @@ router.delete(
   controller.deleteEntry.handler,
 );
 router.put(
+  '/:id/entries/:entryId',
+  authenticateSession,
+  blockDemoUsers,
+  checkBaseCurrencyLock,
+  validateEndpoint(controller.updateEntry.schema),
+  controller.updateEntry.handler,
+);
+router.delete(
+  '/:id',
+  authenticateSession,
+  blockDemoUsers,
+  checkBaseCurrencyLock,
+  validateEndpoint(controller.deletePlan.schema),
+  controller.deletePlan.handler,
+);
+router.put(
   '/:id/recurring/:subscriptionId',
   authenticateSession,
   blockDemoUsers,

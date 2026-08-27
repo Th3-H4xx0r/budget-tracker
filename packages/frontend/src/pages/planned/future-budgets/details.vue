@@ -2,30 +2,46 @@
 import {
   createFutureBudgetEntry,
   deleteFutureBudgetEntry,
+  deleteFutureBudgetPlan,
   loadFutureBudgetPlan,
   resolveSalaryChange,
+  updateFutureBudgetEntry,
   updateFutureBudgetPlan,
   updateRecurringOverride,
   type FutureBudgetFrequency,
 } from '@/api/future-budgets';
 import Button from '@/components/lib/ui/button/Button.vue';
+import ActionButton from '@/components/lib/ui/action-button/action-button.vue';
 import { Switch } from '@/components/lib/ui/switch';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/lib/ui/table';
 import CategorySelectField from '@/components/fields/category-select-field.vue';
 import FutureBudgetDateField from './components/future-budget-date-field.vue';
 import Input from '@/components/fields/input-field.vue';
+import ResponsiveDialog from '@/components/common/responsive-dialog.vue';
+import ResponsiveAlertDialog from '@/components/common/responsive-alert-dialog.vue';
 import SortHeaderButton from '@/pages/settings/subpages/payees/components/sort-header-button.vue';
 import { DesktopOnlyTooltip } from '@/components/lib/ui/tooltip';
+import { useNotificationCenter } from '@/components/notification-center';
 import { useCategoriesStore } from '@/stores';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/vue-query';
-import { ArrowLeftIcon, PlusIcon, Trash2Icon } from '@lucide/vue';
+import {
+  ArchiveIcon,
+  ArchiveRestoreIcon,
+  ArrowLeftIcon,
+  CalendarClockIcon,
+  PencilIcon,
+  PlusIcon,
+  Trash2Icon,
+} from '@lucide/vue';
 import { storeToRefs } from 'pinia';
 import { computed, reactive, ref, watch } from 'vue';
-import { useRoute } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 
 type OccurrenceSortKey = 'name' | 'date' | 'source' | 'amount';
 
 const route = useRoute();
+const router = useRouter();
+const { addSuccessNotification } = useNotificationCenter();
 const { formattedCategories } = storeToRefs(useCategoriesStore());
 const planId = computed(() => String(route.params.id));
 const queryClient = useQueryClient();
@@ -74,6 +90,67 @@ const removeEntry = useMutation({
 const updatePlanSettings = useMutation({
   mutationFn: (payload: { autoAddSyncedTransactions: boolean }) => updateFutureBudgetPlan(planId.value, payload),
   onSuccess: refresh,
+});
+const isEditPlanOpen = ref(false);
+const planNameDraft = ref('');
+const renamePlan = useMutation({
+  mutationFn: () => updateFutureBudgetPlan(planId.value, { name: planNameDraft.value }),
+  onSuccess: () => {
+    refresh();
+    isEditPlanOpen.value = false;
+    addSuccessNotification('Plan updated');
+  },
+});
+const openEditPlan = () => {
+  planNameDraft.value = data.value?.plan.name ?? '';
+  isEditPlanOpen.value = true;
+};
+const toggleArchivePlan = async () => {
+  const nextStatus = data.value?.plan.status === 'archived' ? 'active' : 'archived';
+  await updateFutureBudgetPlan(planId.value, { status: nextStatus });
+  await refresh();
+};
+const isDeletePlanOpen = ref(false);
+const deletePlan = useMutation({
+  mutationFn: () => deleteFutureBudgetPlan(planId.value),
+  onSuccess: () => {
+    queryClient.invalidateQueries({ queryKey: ['future-budget-plans'] });
+    addSuccessNotification('Plan deleted');
+    router.push({ name: 'dashboard.planned.future-budgets' });
+  },
+});
+const editingEntryId = ref<string | null>(null);
+const entryDraft = reactive({
+  transactionType: 'expense' as 'income' | 'expense',
+  amount: 0,
+  date: new Date().toISOString().slice(0, 10),
+  categoryId: null as string | null,
+  note: null as string | null,
+});
+const selectedEntryDraftCategory = computed(() => findCategory(entryDraft.categoryId));
+const openEditEntry = (item: {
+  id?: string;
+  transactionType: 'income' | 'expense';
+  amount: number;
+  date: string;
+  categoryId: string | null;
+  note?: string | null;
+}) => {
+  if (!item.id) return;
+  editingEntryId.value = item.id;
+  entryDraft.transactionType = item.transactionType;
+  entryDraft.amount = item.amount;
+  entryDraft.date = item.date;
+  entryDraft.categoryId = item.categoryId;
+  entryDraft.note = item.note ?? null;
+};
+const editEntry = useMutation({
+  mutationFn: () => updateFutureBudgetEntry(planId.value, editingEntryId.value as string, { ...entryDraft }),
+  onSuccess: () => {
+    refresh();
+    editingEntryId.value = null;
+    addSuccessNotification('Entry updated');
+  },
 });
 const resolveSalary = useMutation({
   mutationFn: (apply: boolean) => resolveSalaryChange(planId.value, apply),
@@ -147,24 +224,79 @@ const sortedOccurrences = computed(() => {
       class="text-muted-foreground hover:text-foreground inline-flex items-center gap-1 text-sm"
       ><ArrowLeftIcon class="size-4" /> Planned Budgets</router-link
     >
-    <div class="flex flex-wrap justify-between gap-4">
-      <div>
-        <h1 class="text-2xl font-semibold">{{ data.plan.name }}</h1>
-        <p class="text-muted-foreground mt-1">{{ data.plan.startDate }} – {{ data.plan.endDate }}</p>
+    <div class="flex flex-wrap items-start justify-between gap-4">
+      <div class="flex items-center gap-4">
+        <div class="bg-muted flex size-12 shrink-0 items-center justify-center rounded-xl">
+          <CalendarClockIcon class="text-muted-foreground size-6" />
+        </div>
+        <div>
+          <div class="flex flex-wrap items-center gap-3">
+            <h1 class="text-2xl font-semibold">{{ data.plan.name }}</h1>
+            <span
+              v-if="data.plan.status === 'archived'"
+              class="bg-muted text-muted-foreground inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium"
+            >
+              <ArchiveIcon class="size-3" />
+              Archived
+            </span>
+          </div>
+          <p class="text-muted-foreground mt-1">{{ data.plan.startDate }} – {{ data.plan.endDate }}</p>
+        </div>
       </div>
-      <div class="grid grid-cols-3 gap-3 text-right">
-        <div>
-          <p class="text-muted-foreground text-xs">Income</p>
-          <p class="text-app-income-color font-semibold">{{ currency(data.summary.income) }}</p>
-        </div>
-        <div>
-          <p class="text-muted-foreground text-xs">Expenses</p>
-          <p class="text-app-expense-color font-semibold">{{ currency(data.summary.expense) }}</p>
-        </div>
-        <div>
-          <p class="text-muted-foreground text-xs">Net</p>
-          <p class="font-semibold">{{ currency(data.summary.net) }}</p>
-        </div>
+
+      <div class="flex flex-wrap items-center gap-2">
+        <ActionButton
+          :action="toggleArchivePlan"
+          :label="data.plan.status === 'archived' ? 'Unarchive' : 'Archive'"
+          :icon="data.plan.status === 'archived' ? ArchiveRestoreIcon : ArchiveIcon"
+          size="sm"
+        />
+        <Button variant="outline" size="sm" @click="openEditPlan"><PencilIcon class="size-4" />Edit</Button>
+        <DesktopOnlyTooltip content="Delete plan">
+          <Button
+            variant="outline"
+            size="sm"
+            class="text-destructive-text hover:bg-destructive-text/10"
+            @click="isDeletePlanOpen = true"
+          >
+            <Trash2Icon class="size-4" />
+          </Button>
+        </DesktopOnlyTooltip>
+        <ResponsiveAlertDialog
+          v-model:open="isDeletePlanOpen"
+          confirm-label="Delete"
+          confirm-variant="destructive"
+          :confirm-disabled="deletePlan.isPending.value"
+          @confirm="deletePlan.mutate()"
+        >
+          <template #title>Delete plan?</template>
+          <template #description>This will permanently delete this planned budget and its entries.</template>
+        </ResponsiveAlertDialog>
+      </div>
+    </div>
+
+    <ResponsiveDialog v-model:open="isEditPlanOpen">
+      <template #title>Edit plan</template>
+      <div class="grid gap-4">
+        <Input v-model="planNameDraft" placeholder="Plan name" :disabled="renamePlan.isPending.value" />
+        <Button :disabled="renamePlan.isPending.value" @click="renamePlan.mutate()">
+          {{ renamePlan.isPending.value ? 'Saving…' : 'Save changes' }}
+        </Button>
+      </div>
+    </ResponsiveDialog>
+
+    <div class="grid grid-cols-3 gap-3 text-right">
+      <div>
+        <p class="text-muted-foreground text-xs">Income</p>
+        <p class="text-app-income-color font-semibold">{{ currency(data.summary.income) }}</p>
+      </div>
+      <div>
+        <p class="text-muted-foreground text-xs">Expenses</p>
+        <p class="text-app-expense-color font-semibold">{{ currency(data.summary.expense) }}</p>
+      </div>
+      <div>
+        <p class="text-muted-foreground text-xs">Net</p>
+        <p class="font-semibold">{{ currency(data.summary.net) }}</p>
       </div>
     </div>
     <section class="flex items-center justify-between gap-4 rounded-lg border p-5">
@@ -337,15 +469,61 @@ const sortedOccurrences = computed(() => {
                   /></Button>
                 </DesktopOnlyTooltip>
               </div>
-              <DesktopOnlyTooltip v-else-if="item.source === 'manual' && item.id" content="Delete">
-                <Button variant="ghost-destructive" size="icon-sm" @click="removeEntry.mutate(item.id!)"
-                  ><Trash2Icon class="size-4"
-                /></Button>
-              </DesktopOnlyTooltip>
+              <div v-else-if="item.source === 'manual' && item.id" class="flex items-center gap-2">
+                <DesktopOnlyTooltip content="Edit">
+                  <Button variant="ghost" size="icon-sm" @click="openEditEntry(item)"
+                    ><PencilIcon class="size-4"
+                  /></Button>
+                </DesktopOnlyTooltip>
+                <DesktopOnlyTooltip content="Delete">
+                  <Button variant="ghost-destructive" size="icon-sm" @click="removeEntry.mutate(item.id!)"
+                    ><Trash2Icon class="size-4"
+                  /></Button>
+                </DesktopOnlyTooltip>
+              </div>
             </TableCell>
           </TableRow>
         </TableBody>
       </Table>
     </section>
+
+    <ResponsiveDialog
+      :open="editingEntryId !== null"
+      @update:open="(value: boolean) => !value && (editingEntryId = null)"
+    >
+      <template #title>Edit entry</template>
+      <div class="grid gap-4">
+        <div class="flex flex-wrap gap-3">
+          <select
+            v-model="entryDraft.transactionType"
+            class="border-input bg-background h-10 min-w-36 flex-1 rounded-md border px-3"
+          >
+            <option value="expense">Expense</option>
+            <option value="income">Income</option>
+          </select>
+          <Input
+            v-model.number="entryDraft.amount"
+            type="number"
+            min="0"
+            placeholder="Amount"
+            class="min-w-36 flex-1"
+          />
+        </div>
+        <div class="flex flex-wrap gap-3">
+          <FutureBudgetDateField v-model="entryDraft.date" class="min-w-36 flex-1" />
+          <CategorySelectField
+            :model-value="selectedEntryDraftCategory"
+            :values="formattedCategories"
+            placeholder="Category or group"
+            class="min-w-36 flex-1"
+            @update:model-value="(value: any) => (entryDraft.categoryId = value?.id ?? null)"
+          />
+        </div>
+        <Input v-model="entryDraft.note" placeholder="Note" />
+        <Button :disabled="editEntry.isPending.value" @click="editEntry.mutate()">
+          {{ editEntry.isPending.value ? 'Saving…' : 'Save changes' }}
+        </Button>
+      </div>
+    </ResponsiveDialog>
   </div>
 </template>

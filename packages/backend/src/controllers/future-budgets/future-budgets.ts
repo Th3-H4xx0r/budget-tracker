@@ -360,6 +360,31 @@ export const deleteEntry = createController(
   },
 );
 
+export const updateEntry = createController(
+  z.object({
+    params: z.object({ id: recordId(), entryId: recordId() }),
+    body: z.object(entryShape).partial(),
+  }),
+  async ({ user, params, body }) => {
+    const plan = await getPlan(user.id, params.id);
+    const entry = await FutureBudgetEntries.findOne({ where: { id: params.entryId, planId: plan.id } });
+    if (!entry) throw new Error('Future budget entry not found');
+    const data = { ...body } as Record<string, unknown>;
+    if (typeof data.amount === 'number') data.amount = Money.fromDecimal(data.amount);
+    await entry.update(data);
+    return { data: entry.toJSON() };
+  },
+);
+
+export const deletePlan = createController(
+  z.object({ params: z.object({ id: recordId() }) }),
+  async ({ user, params }) => {
+    const plan = await getPlan(user.id, params.id);
+    await plan.destroy();
+    return {};
+  },
+);
+
 export const updateRecurringOverride = createController(
   z.object({
     params: z.object({ id: recordId(), subscriptionId: recordId() }),

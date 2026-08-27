@@ -7,6 +7,7 @@ import {
   type FutureBudgetFrequency,
 } from '@/api/future-budgets';
 import Button from '@/components/lib/ui/button/Button.vue';
+import { Card } from '@/components/lib/ui/card';
 import CategorySelectField from '@/components/fields/category-select-field.vue';
 import CategoryMultiSelectField from '@/components/fields/category-multi-select-field.vue';
 import FutureBudgetDateField from './components/future-budget-date-field.vue';
@@ -14,9 +15,33 @@ import Input from '@/components/fields/input-field.vue';
 import { ROUTES_NAMES } from '@/routes';
 import { useCategoriesStore } from '@/stores';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/vue-query';
-import { PlusIcon, SparklesIcon } from '@lucide/vue';
+import { differenceInCalendarDays, format, isPast } from 'date-fns';
+import { CalendarClockIcon, CalendarIcon, PlusIcon, SparklesIcon } from '@lucide/vue';
 import { storeToRefs } from 'pinia';
 import { computed, reactive, ref, watch } from 'vue';
+
+type FutureBudgetPlanTimeStatus = { status: 'ended' | 'upcoming' | 'active'; text: string };
+
+function planTimeStatus(startDate: string, endDate: string): FutureBudgetPlanTimeStatus | null {
+  const start = new Date(startDate);
+  const end = new Date(endDate);
+  if (isNaN(start.getTime()) || isNaN(end.getTime())) return null;
+
+  const now = new Date();
+  if (isPast(end)) return { status: 'ended', text: 'Ended' };
+
+  if (!isPast(start)) {
+    const daysUntil = differenceInCalendarDays(start, now);
+    if (daysUntil === 0) return { status: 'upcoming', text: 'Starts today' };
+    if (daysUntil === 1) return { status: 'upcoming', text: 'Starts tomorrow' };
+    return { status: 'upcoming', text: `Starts in ${daysUntil} days` };
+  }
+
+  const daysLeft = differenceInCalendarDays(end, now);
+  if (daysLeft === 0) return { status: 'active', text: 'Last day' };
+  if (daysLeft === 1) return { status: 'active', text: '1 day left' };
+  return { status: 'active', text: `${daysLeft} days left` };
+}
 
 const queryClient = useQueryClient();
 const { formattedCategories } = storeToRefs(useCategoriesStore());
@@ -109,29 +134,43 @@ const frequencyLabel = computed(() =>
           </p>
         </div>
       </div>
-      <div class="grid gap-3 md:grid-cols-5">
-        <Input v-model.number="salary.salaryAmount" type="number" min="0" placeholder="Salary amount" /><select
-          v-model="salary.salaryFrequency"
-          class="border-input bg-background h-10 rounded-md border px-3"
-        >
-          <option value="monthly">Monthly</option>
-          <option value="biweekly">Biweekly</option>
-          <option value="weekly">Weekly</option>
-          <option value="quarterly">Quarterly</option>
-          <option value="annual">Yearly</option>
-          <option value="custom">Custom interval</option></select
-        ><FutureBudgetDateField v-model="salary.salaryAnchorDate" label="Pay date" /><Input
-          v-if="salary.salaryFrequency === 'custom'"
-          v-model.number="salary.salaryIntervalDays"
-          type="number"
-          min="1"
-          placeholder="Days between payments"
-        /><CategorySelectField
-          :model-value="findCategory(salary.salaryCategoryId)"
-          :values="formattedCategories"
-          placeholder="Income category/group"
-          @update:model-value="(value: any) => (salary.salaryCategoryId = value?.id ?? null)"
-        />
+      <div class="grid gap-4 md:grid-cols-5">
+        <div>
+          <span class="text-muted-foreground mb-1.5 block text-xs font-medium">Amount</span>
+          <Input v-model.number="salary.salaryAmount" type="number" min="0" placeholder="Salary amount" />
+        </div>
+        <div>
+          <span class="text-muted-foreground mb-1.5 block text-xs font-medium">Frequency</span>
+          <select
+            v-model="salary.salaryFrequency"
+            class="border-input bg-background h-10 w-full rounded-md border px-3"
+          >
+            <option value="monthly">Monthly</option>
+            <option value="biweekly">Biweekly</option>
+            <option value="weekly">Weekly</option>
+            <option value="quarterly">Quarterly</option>
+            <option value="annual">Yearly</option>
+            <option value="custom">Custom interval</option>
+          </select>
+        </div>
+        <div>
+          <span class="text-muted-foreground mb-1.5 block text-xs font-medium">Pay date</span>
+          <FutureBudgetDateField v-model="salary.salaryAnchorDate" class="w-full" />
+        </div>
+        <div v-if="salary.salaryFrequency === 'custom'">
+          <span class="text-muted-foreground mb-1.5 block text-xs font-medium">Days between payments</span>
+          <Input v-model.number="salary.salaryIntervalDays" type="number" min="1" placeholder="Days" />
+        </div>
+        <div>
+          <span class="text-muted-foreground mb-1.5 block text-xs font-medium">Income category</span>
+          <CategorySelectField
+            :model-value="findCategory(salary.salaryCategoryId)"
+            :values="formattedCategories"
+            placeholder="Income category/group"
+            class="w-full"
+            @update:model-value="(value: any) => (salary.salaryCategoryId = value?.id ?? null)"
+          />
+        </div>
       </div>
       <Button class="mt-3" variant="outline" :disabled="saveSalary.isPending.value" @click="saveSalary.mutate()"
         >Save salary profile</Button
@@ -142,16 +181,51 @@ const frequencyLabel = computed(() =>
         v-for="plan in plans"
         :key="plan.id"
         :to="{ name: ROUTES_NAMES.plannedFutureBudgetDetails, params: { id: plan.id } }"
-        class="hover:border-primary rounded-lg border p-5 transition"
-        ><div class="flex justify-between gap-3">
-          <h2 class="font-semibold">{{ plan.name }}</h2>
-          <span class="text-muted-foreground text-sm">{{ plan.startDate }} – {{ plan.endDate }}</span>
-        </div>
-        <p class="text-muted-foreground mt-3 text-sm">
-          Salary: {{ plan.salaryAmount.toLocaleString(undefined, { style: 'currency', currency: 'USD' }) }} ·
-          {{ plan.salaryFrequency }}
-        </p></router-link
+        class="block"
       >
+        <Card
+          :class="[
+            'group relative flex cursor-pointer flex-col overflow-hidden transition-all duration-200 hover:border-white/20 hover:bg-white/2',
+            plan.status === 'archived' && 'opacity-50',
+          ]"
+        >
+          <div
+            v-if="planTimeStatus(plan.startDate, plan.endDate)"
+            :class="[
+              'flex items-center justify-center py-1.5 text-xs font-medium',
+              planTimeStatus(plan.startDate, plan.endDate)!.status === 'ended'
+                ? 'bg-muted text-muted-foreground'
+                : planTimeStatus(plan.startDate, plan.endDate)!.status === 'upcoming'
+                  ? 'bg-blue-500/15 text-blue-400'
+                  : 'bg-success-text/15 text-success-text',
+            ]"
+          >
+            {{ planTimeStatus(plan.startDate, plan.endDate)!.text }}
+          </div>
+
+          <div class="flex flex-1 flex-col p-4">
+            <div class="mb-3 flex items-center gap-3">
+              <div class="bg-muted flex size-10 shrink-0 items-center justify-center rounded-lg">
+                <CalendarClockIcon class="text-muted-foreground size-5" />
+              </div>
+              <div class="min-w-0 flex-1">
+                <h3 class="truncate font-medium">{{ plan.name }}</h3>
+                <p class="text-muted-foreground text-sm">
+                  {{ plan.salaryAmount.toLocaleString(undefined, { style: 'currency', currency: 'USD' }) }} ·
+                  {{ plan.salaryFrequency }}
+                </p>
+              </div>
+            </div>
+            <div class="text-muted-foreground flex items-center gap-1.5 text-xs">
+              <CalendarIcon class="size-3.5" />
+              <span
+                >{{ format(new Date(plan.startDate), 'MMM d, yyyy') }} –
+                {{ format(new Date(plan.endDate), 'MMM d, yyyy') }}</span
+              >
+            </div>
+          </div>
+        </Card>
+      </router-link>
     </div>
     <div v-else class="text-muted-foreground rounded-lg border border-dashed p-12 text-center">
       Create a plan for a pay period, trip, or any future date range.

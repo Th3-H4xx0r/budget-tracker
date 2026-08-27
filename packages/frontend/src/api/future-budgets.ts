@@ -67,12 +67,18 @@ export const loadFutureBudgetPlan = (
 }> => api.get(`/future-budgets/${id}`);
 export const updateFutureBudgetPlan = (
   id: string,
-  payload: Partial<Pick<FutureBudgetPlan, 'autoAddSyncedTransactions'>>,
+  payload: Partial<Pick<FutureBudgetPlan, 'name' | 'status' | 'autoAddSyncedTransactions'>>,
 ): Promise<FutureBudgetPlan> => api.put(`/future-budgets/${id}`, payload);
+export const deleteFutureBudgetPlan = (id: string) => api.delete(`/future-budgets/${id}`);
 export const resolveSalaryChange = (id: string, apply: boolean) =>
   api.post(`/future-budgets/${id}/salary-profile`, { apply });
 export const createFutureBudgetEntry = (planId: string, payload: Omit<FutureEntry, 'id'>): Promise<FutureEntry> =>
   api.post(`/future-budgets/${planId}/entries`, payload);
+export const updateFutureBudgetEntry = (
+  planId: string,
+  entryId: string,
+  payload: Partial<Omit<FutureEntry, 'id'>>,
+): Promise<FutureEntry> => api.put(`/future-budgets/${planId}/entries/${entryId}`, payload);
 export const deleteFutureBudgetEntry = (planId: string, entryId: string) =>
   api.delete(`/future-budgets/${planId}/entries/${entryId}`);
 export const updateRecurringOverride = (

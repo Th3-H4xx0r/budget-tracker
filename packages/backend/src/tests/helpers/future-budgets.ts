@@ -90,3 +90,53 @@ export async function updateFutureBudgetPlan<R extends boolean | undefined = und
     raw,
   });
 }
+
+export async function deleteFutureBudgetPlan<R extends boolean | undefined = undefined>({
+  id,
+  raw,
+}: {
+  id: string;
+  raw?: R;
+}) {
+  return makeRequest<null, R>({
+    method: 'delete',
+    url: `/future-budgets/${id}`,
+    raw,
+  });
+}
+
+export async function createFutureBudgetEntry<R extends boolean | undefined = undefined>({
+  id,
+  payload,
+  raw,
+}: {
+  id: string;
+  payload: Record<string, unknown>;
+  raw?: R;
+}) {
+  return makeRequest<{ id: string; date: string; amount: number; note: string | null; categoryId: string | null }, R>({
+    method: 'post',
+    url: `/future-budgets/${id}/entries`,
+    payload,
+    raw,
+  });
+}
+
+export async function updateFutureBudgetEntry<R extends boolean | undefined = undefined>({
+  id,
+  entryId,
+  payload,
+  raw,
+}: {
+  id: string;
+  entryId: string;
+  payload: Record<string, unknown>;
+  raw?: R;
+}) {
+  return makeRequest<{ id: string; date: string; amount: number; note: string | null; categoryId: string | null }, R>({
+    method: 'put',
+    url: `/future-budgets/${id}/entries/${entryId}`,
+    payload,
+    raw,
+  });
+}
