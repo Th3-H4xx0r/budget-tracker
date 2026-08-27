@@ -55,6 +55,7 @@ module.exports = {
           },
           salaryProfileRevision: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 1 },
           dismissedSalaryProfileRevision: { type: DataTypes.INTEGER, allowNull: true },
+          autoAddSyncedTransactions: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
           createdAt: { type: DataTypes.DATE, allowNull: false, defaultValue: DataTypes.NOW },
           updatedAt: { type: DataTypes.DATE, allowNull: false, defaultValue: DataTypes.NOW },
         },

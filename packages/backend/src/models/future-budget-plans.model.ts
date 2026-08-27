@@ -24,6 +24,7 @@ export default class FutureBudgetPlans extends Model {
   @Column({ type: DataType.UUID, allowNull: true }) salaryCategoryId!: RecordId | null;
   @Column({ type: DataType.INTEGER, allowNull: false }) salaryProfileRevision!: number;
   @Column({ type: DataType.INTEGER, allowNull: true }) dismissedSalaryProfileRevision!: number | null;
+  @Column({ type: DataType.BOOLEAN, allowNull: false, defaultValue: false }) autoAddSyncedTransactions!: boolean;
   @BelongsTo(() => Users) user!: Users;
   @BelongsToMany(() => Categories, () => FutureBudgetPlanCategories) categories!: Categories[];
 }

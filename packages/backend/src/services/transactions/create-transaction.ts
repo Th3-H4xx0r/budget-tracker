@@ -21,6 +21,7 @@ import * as Transactions from '@models/transactions.model';
 import * as UsersCurrencies from '@models/users-currencies.model';
 import { calculateRefAmount } from '@services/calculate-ref-amount.service';
 import { DOMAIN_EVENTS, eventBus } from '@services/common/event-bus';
+import { autoAddSyncedTransaction } from '@services/future-budgets/auto-add-synced-transaction';
 import { assertLoanPaymentAllowed } from '@services/loans/assert-loan-payment-allowed';
 import { applyPayeeCategorization } from '@services/payees/apply-categorization';
 import { applyPayeeDefaultTags } from '@services/payees/apply-default-tags';
@@ -730,6 +731,31 @@ export const createTransaction = withTransaction(
             accountOwnerUserId,
             transactionId: baseTransaction!.id,
             payeeId: resolvedPayeeId,
+          });
+        }
+      }
+
+      // Plan-only rows (`isPlanned`) are intentions the sync is expected to confirm later,
+      // not real activity, so they must never seed a plan entry themselves. Transfers move
+      // money between the user's own accounts rather than representing income/expense against
+      // a budget, so both legs are excluded too.
+      if (!payload.isPlanned && !isTwoLegTransfer(transferNature)) {
+        try {
+          const finalTransaction = transactions[0]!;
+          await autoAddSyncedTransaction({
+            accountOwnerUserId,
+            transactionType: finalTransaction.transactionType,
+            amount: finalTransaction.amount,
+            date: finalTransaction.time.toISOString().slice(0, 10),
+            categoryId: finalTransaction.categoryId ?? null,
+            note: finalTransaction.note ?? null,
+          });
+        } catch (error) {
+          if (abortsTransaction(error)) throw error;
+
+          logger.error({
+            message: `Failed to auto-add transaction ${baseTransaction!.id} to future budget plans`,
+            error: error as Error,
           });
         }
       }

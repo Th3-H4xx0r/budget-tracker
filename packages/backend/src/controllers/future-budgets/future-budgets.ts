@@ -183,6 +183,7 @@ export const updatePlan = createController(
       .object({
         name: z.string().min(1).max(200).trim().optional(),
         status: z.enum(budgetStatusValues).optional(),
+        autoAddSyncedTransactions: z.boolean().optional(),
         ...salaryShape,
       })
       .partial(),

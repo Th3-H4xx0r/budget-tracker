@@ -22,10 +22,11 @@ export type FutureBudgetPlan = {
   salaryCategoryId: string | null;
   salaryProfileRevision: number;
   dismissedSalaryProfileRevision: number | null;
+  autoAddSyncedTransactions: boolean;
 };
 export type CreateFutureBudgetPlan = Omit<
   FutureBudgetPlan,
-  'id' | 'status' | 'salaryProfileRevision' | 'dismissedSalaryProfileRevision'
+  'id' | 'status' | 'salaryProfileRevision' | 'dismissedSalaryProfileRevision' | 'autoAddSyncedTransactions'
 > & { categoryIds?: string[] };
 export type SalarySettings = {
   salaryAmount: number;
@@ -64,6 +65,10 @@ export const loadFutureBudgetPlan = (
   salaryProfileChanged: boolean;
   salarySettings: SalarySettings;
 }> => api.get(`/future-budgets/${id}`);
+export const updateFutureBudgetPlan = (
+  id: string,
+  payload: Partial<Pick<FutureBudgetPlan, 'autoAddSyncedTransactions'>>,
+): Promise<FutureBudgetPlan> => api.put(`/future-budgets/${id}`, payload);
 export const resolveSalaryChange = (id: string, apply: boolean) =>
   api.post(`/future-budgets/${id}/salary-profile`, { apply });
 export const createFutureBudgetEntry = (planId: string, payload: Omit<FutureEntry, 'id'>): Promise<FutureEntry> =>
