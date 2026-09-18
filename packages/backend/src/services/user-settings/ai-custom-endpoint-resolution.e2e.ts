@@ -457,7 +457,8 @@ describe('AI custom endpoint resolution', () => {
   });
 
   describe('Feature status matches what the run dials', () => {
-    it('reports the fallback endpoint for a feature with no config of its own', async () => {
+    it('keeps reporting the fallback endpoint even once the server holds a key for the configured model', async () => {
+      const userId = await getTestUserId();
       const endpoint = await createFirstEndpoint();
 
       const { features } = await helpers.getAiFeaturesStatus({ raw: true });
@@ -469,11 +470,6 @@ describe('AI custom endpoint resolution', () => {
       expect(categorization?.customEndpointId).toBe(endpoint.id);
       expect(categorization?.endpointName).toBe(FIRST_ENDPOINT_NAME);
       expect(categorization?.usingUserKey).toBe(true);
-    });
-
-    it('reports the fallback endpoint for a config whose provider has no key anywhere', async () => {
-      const userId = await getTestUserId();
-      const endpoint = await createFirstEndpoint();
 
       const saved = await helpers.setAiFeatureConfig({
         feature: AI_FEATURE.categorization,
@@ -497,21 +493,17 @@ describe('AI custom endpoint resolution', () => {
       expect(await readStoredFeatureConfigs({ userId })).toEqual([
         { feature: AI_FEATURE.categorization, modelId: KEYLESS_CATALOG_MODEL_ID },
       ]);
-    });
 
-    it('reports the configured catalog model once the server holds its key', async () => {
-      await createFirstEndpoint();
+      // The server key only serves the feature default, so a keyless premium pick keeps
+      // dialling the user's endpoint.
       process.env.ANTHROPIC_API_KEY = 'server-side-anthropic-key';
 
-      await helpers.setAiFeatureConfig({ feature: AI_FEATURE.categorization, modelId: KEYLESS_CATALOG_MODEL_ID });
+      const withServerKey = await helpers.getAiFeatureConfig({ feature: AI_FEATURE.categorization, raw: true });
 
-      const config = await helpers.getAiFeatureConfig({ feature: AI_FEATURE.categorization, raw: true });
-
-      expect(config.modelId).toBe(KEYLESS_CATALOG_MODEL_ID);
-      expect(config.customEndpointId).toBeUndefined();
-      expect(config.endpointName).toBeUndefined();
-      expect(config.usingUserKey).toBe(false);
-      expect(config.modelName).not.toBe(CUSTOM_ENDPOINT_MODEL);
+      expect(withServerKey.modelId).toBe(FIRST_CUSTOM_MODEL_ID);
+      expect(withServerKey.customEndpointId).toBe(endpoint.id);
+      expect(withServerKey.endpointName).toBe(FIRST_ENDPOINT_NAME);
+      expect(withServerKey.usingUserKey).toBe(true);
     });
 
     it('keeps naming the endpoint when it is flagged invalid', async () => {

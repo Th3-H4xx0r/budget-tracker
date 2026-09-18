@@ -5,7 +5,7 @@
  * API Documentation: https://enablebanking.com/docs/api/reference
  */
 import { t } from '@i18n/index';
-import { BadGateway, BadRequestError, ForbiddenError, ValidationError } from '@js/errors';
+import { BadGateway, BadRequestError, ForbiddenError, TooManyRequests, ValidationError } from '@js/errors';
 import { logger } from '@js/utils/logger';
 import axios, { AxiosInstance } from 'axios';
 
@@ -66,11 +66,11 @@ type AspspAuthFailureReason = 'nested-code' | 'nested-status' | 'keyword-match';
  * forbidden by bank during maintenance") into connection deactivations.
  */
 const ASPSP_AUTH_FAILURE_KEYWORDS =
-  /refresh.?token|token.*(?:expired|invalid|revoked)|session.*(?:expired|invalid|revoked)|consent.*(?:expired|invalid|revoked|withdrawn)|reauthorization|reauthenticate|access.*(?:token|not\s+allowed)|forbidden.*authenticated|authenticated.*forbidden|psd2.*consent/;
+  /refresh.?token|token.*(?:expired|invalid|revoked)|session.*(?:expired|invalid|revoked)|consent.*(?:expired|invalid|revoked|withdrawn)|consent\s+status.*(?:not|n['’]t)\s+allow|reauthorization|reauthenticate|access.*(?:token|not\s+allowed)|forbidden.*authenticated|authenticated.*forbidden|psd2.*consent/;
 
 /**
- * Detect when an Enable Banking ASPSP_ERROR (HTTP 400) actually represents an
- * upstream session/token/consent failure. Matches on either:
+ * Detect when an Enable Banking 4xx actually represents an upstream
+ * session/token/consent failure. Matches on either:
  *   - nested HTTP code/status of 401 or 403 (string "401"/"403 FORBIDDEN" or numeric)
  *   - strict keyword pattern in the wrapper or nested message
  *
@@ -119,21 +119,23 @@ export function classifyAspspError({
  * with no API to query the limit up-front.
  *
  * Match: concept anchor + limit verb + time window, all three required.
- *   concept    – datefrom/dateto OR range/period/window/lookback/history/interval/transactions
- *   limit verb – within/exceed/maximum/limited to/older than
+ *   concept    – datefrom/dateto/date OR range/period/window/lookback/history/interval/transactions
+ *   limit verb – within/exceed/maximum/limited to/older than/less than/no more than
  *   time       – N day/week/month/year
  * Each alone is too permissive (e.g. "account opened within last 30 days" hits
- * limit + time but has no concept anchor).
+ * limit + time but has no concept anchor). Bare "date" is an anchor because
+ * BNP Paribas rejects with "The date must be equal or less than 13 months".
+ * The wrapper `error` tag is not checked: BNP puts its own code there
+ * (WRONG_TRANSACTIONS_PERIOD), not "ASPSP_ERROR".
  */
 export function isAspspDateRangeRejection(error: unknown): boolean {
   if (!(error instanceof BadRequestError)) return false;
 
   const details = error.details as
-    | { method?: unknown; aspspError?: unknown; aspspMessage?: unknown; aspspErrorDataStr?: unknown }
+    | { method?: unknown; aspspMessage?: unknown; aspspErrorDataStr?: unknown }
     | undefined;
   if (!details) return false;
   if (details.method !== 'getAccountTransactions') return false;
-  if (details.aspspError !== 'ASPSP_ERROR') return false;
 
   const parts: string[] = [];
   if (typeof details.aspspMessage === 'string') parts.push(details.aspspMessage);
@@ -142,11 +144,12 @@ export function isAspspDateRangeRejection(error: unknown): boolean {
   const haystack = parts.join(' ').toLowerCase();
   if (haystack === '') return false;
 
-  const hasLimitVerb = /\b(?:within|exceed|exceeds|maximum|max|limited?\s+to|older\s+than)\b/.test(haystack);
+  const hasLimitVerb =
+    /\b(?:within|exceed|exceeds|maximum|max|limited?\s+to|older\s+than|less\s+than|no\s+more\s+than)\b/.test(haystack);
   const hasTimeWindow = /\b\d+\s*(?:day|week|month|year)s?\b/.test(haystack);
   if (!hasLimitVerb || !hasTimeWindow) return false;
 
-  const hasFieldName = /\b(?:datefrom|dateto)\b/.test(haystack);
+  const hasFieldName = /\b(?:datefrom|dateto|dates?)\b/.test(haystack);
   const hasRangeNoun = /\b(?:range|period|window|lookback|history|interval|transactions?)\b/.test(haystack);
   return hasFieldName || hasRangeNoun;
 }
@@ -225,8 +228,9 @@ export class EnableBankingApiClient {
       const httpUrl = error.config?.url;
       const httpMethod = error.config?.method?.toUpperCase();
 
-      // Enable Banking wraps upstream bank failures as HTTP 400 with
-      // `error: "ASPSP_ERROR"` and nests the real payload in `detail.error_data`.
+      // Enable Banking wraps upstream bank failures as HTTP 4xx with
+      // `error: "ASPSP_ERROR"` (some ASPSPs put their own code there instead)
+      // and nests the real payload in `detail.error_data`.
       // Flatten those fields to top-level primitives so Sentry's default
       // `normalizeDepth: 3` doesn't truncate them to "[Object]".
       const detail = (data.detail ?? {}) as Record<string, unknown>;
@@ -255,27 +259,6 @@ export class EnableBankingApiClient {
         rawData: safeStringify(data),
       };
 
-      // Detect ASPSP-wrapped session/token expiry. Upstream returns 401/403 but
-      // Enable Banking surfaces it as 400 ASPSP_ERROR – promote to ForbiddenError
-      // so the provider's handleProviderError marks the connection inactive and
-      // the UI prompts the user to reconnect.
-      if (status === 400 && aspspError === 'ASPSP_ERROR') {
-        const classification = classifyAspspError({ detail, aspspMessage });
-        if (classification.matched) {
-          // Audit log so we can review classifications in Sentry – the wrong
-          // call here either silently lets a broken connection keep failing
-          // (false negative) or kills a working one (false positive).
-          logger.warn(
-            `[EnableBankingApiClient] Classified ASPSP_ERROR as auth failure (reason=${classification.reason})`,
-            { ...errorDetails, message },
-          );
-          throw new ForbiddenError({
-            message: t({ key: 'bankDataProviders.enableBanking.sessionExpiredReconnect' }),
-            details: errorDetails,
-          });
-        }
-      }
-
       if (status === 401 || status === 403) {
         throw new ForbiddenError({
           message: t({ key: 'bankDataProviders.enableBanking.authenticationFailed', variables: { message } }),
@@ -283,7 +266,36 @@ export class EnableBankingApiClient {
         });
       }
 
+      // A throttle is transient, so it must not reach the 4xx auth classifier below:
+      // "Rate limit exceeded for this access token" matches its keywords, which
+      // would deactivate the connection until the user redoes the bank consent.
+      if (status === 429) {
+        throw new TooManyRequests({
+          message: t({ key: 'bankDataProviders.enableBanking.apiBadRequestError', variables: { message } }),
+          details: errorDetails,
+        });
+      }
+
+      // Session/token/consent expiry can arrive as any 4xx: wrapped in an
+      // ASPSP_ERROR envelope, or as Enable Banking's own top-level error body.
+      // Promote to ForbiddenError so handleProviderError deactivates the
+      // connection and the UI prompts a reconnect.
       if (status && status >= 400 && status < 500) {
+        const classification = classifyAspspError({ detail, aspspMessage: message });
+        if (classification.matched) {
+          // Audit log so we can review classifications in Sentry – the wrong
+          // call here either silently lets a broken connection keep failing
+          // (false negative) or kills a working one (false positive).
+          logger.warn(`[EnableBankingApiClient] Classified 4xx as auth failure (reason=${classification.reason})`, {
+            ...errorDetails,
+            message,
+          });
+          throw new ForbiddenError({
+            message: t({ key: 'bankDataProviders.enableBanking.sessionExpiredReconnect' }),
+            details: errorDetails,
+          });
+        }
+
         throw new BadRequestError({
           message: t({ key: 'bankDataProviders.enableBanking.apiBadRequestError', variables: { message } }),
           details: errorDetails,

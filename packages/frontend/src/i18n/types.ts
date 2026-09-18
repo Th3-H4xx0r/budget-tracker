@@ -36,6 +36,7 @@ const I18N_CHUNKS = [
   'pages/import-history',
   'pages/import-budget-bakers-wallet',
   'pages/import-ms-money',
+  'pages/import-ofx',
   'pages/investments-import',
   'pages/planned',
   'pages/optimizations',
@@ -58,6 +59,7 @@ const I18N_CHUNKS = [
   'settings/admin',
   'settings/ai-integrations',
   'settings/subscriptions',
+  'settings/plan-billing',
   // Auth pages (OAuth)
   'auth/oauth-authorize',
 ] as const;

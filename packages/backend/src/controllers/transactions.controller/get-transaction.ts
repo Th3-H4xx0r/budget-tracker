@@ -1,5 +1,6 @@
 import {
   ACCOUNT_TYPES,
+  BLANK_FILTER_VALUE,
   CATEGORIZATION_SOURCE,
   FILTER_OPERATION,
   SORT_DIRECTIONS,
@@ -19,6 +20,8 @@ const parseCommaSeparatedStrings = (value: string) =>
     .split(',')
     .map((term) => term.trim())
     .filter(Boolean);
+
+const idOrBlank = z.union([recordId(), z.literal(BLANK_FILTER_VALUE)]);
 
 const schema = z.object({
   query: withDateOrder(
@@ -53,7 +56,7 @@ const schema = z.object({
           .preprocess((val) => (typeof val === 'string' ? parseCommaSeparatedStrings(val) : val), z.array(recordId()))
           .optional(),
         tagIds: z
-          .preprocess((val) => (typeof val === 'string' ? parseCommaSeparatedStrings(val) : val), z.array(recordId()))
+          .preprocess((val) => (typeof val === 'string' ? parseCommaSeparatedStrings(val) : val), z.array(idOrBlank))
           .optional(),
         excludedTagIds: z
           .preprocess((val) => (typeof val === 'string' ? parseCommaSeparatedStrings(val) : val), z.array(recordId()))
@@ -62,7 +65,7 @@ const schema = z.object({
           .preprocess((val) => (typeof val === 'string' ? parseCommaSeparatedStrings(val) : val), z.array(recordId()))
           .optional(),
         payeeIds: z
-          .preprocess((val) => (typeof val === 'string' ? parseCommaSeparatedStrings(val) : val), z.array(recordId()))
+          .preprocess((val) => (typeof val === 'string' ? parseCommaSeparatedStrings(val) : val), z.array(idOrBlank))
           .optional(),
         excludeAccountIds: z
           .preprocess((val) => (typeof val === 'string' ? parseCommaSeparatedStrings(val) : val), z.array(recordId()))
@@ -70,6 +73,7 @@ const schema = z.object({
         includeSplits: booleanQuery().optional(),
         includeTags: booleanQuery().optional(),
         includeGroups: booleanQuery().optional(),
+        includeHasAttachments: booleanQuery().optional(),
         excludeTransfer: booleanQuery().optional(),
         excludeRefunds: booleanQuery().optional(),
         // Excludes the refund side of refund links; originals that carry refunds stay.
@@ -77,6 +81,8 @@ const schema = z.object({
         // With excludeRefundTxs: keep refunds linked to this transaction visible.
         keepRefundsForTxId: recordId().optional(),
         excludeBalanceAdjustments: booleanQuery().optional(),
+        // Absent = both, true = only with attachments, false = only without.
+        hasAttachment: booleanQuery().optional(),
         // Absent = both, true = only planned, false = exclude planned.
         isPlanned: booleanQuery().optional(),
         transferFilter: z.nativeEnum(FILTER_OPERATION).optional(),

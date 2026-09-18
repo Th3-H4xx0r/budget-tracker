@@ -1,5 +1,5 @@
 import type { RecordId } from '@bt/shared/types';
-import { UserModel, USER_ROLES, UserRole } from '@bt/shared/types';
+import { Plan, UserModel, USER_ROLES, UserRole } from '@bt/shared/types';
 import { Table, Column, Model, BelongsToMany, Length, DataType } from 'sequelize-typescript';
 
 import Currencies from './currencies.model';
@@ -32,13 +32,6 @@ export default class Users extends Model {
     type: DataType.STRING,
   })
   username!: string;
-
-  @Column({
-    unique: true,
-    allowNull: true,
-    type: DataType.STRING,
-  })
-  email!: string;
 
   @Column({ allowNull: true, type: DataType.STRING })
   firstName!: string;
@@ -79,6 +72,14 @@ export default class Users extends Model {
     defaultValue: DataType.NOW,
   })
   declare createdAt: Date;
+
+  /** Lifetime plan grant. Subscriptions live in BillingSubscriptions. */
+  @Column({ allowNull: true, type: DataType.STRING(20) })
+  plan!: Plan | null;
+
+  /** Cloud only. Null means the user predates trials and resolves as Plus until the grandfather script runs. */
+  @Column({ allowNull: true, type: DataType.DATE })
+  trialEndsAt!: Date | null;
 }
 
 export const getUserDefaultCategory = async ({ id }: { id: number }) => {
@@ -92,7 +93,6 @@ export const getUserDefaultCategory = async ({ id }: { id: number }) => {
 
 export const createUser = async ({
   username,
-  email,
   firstName,
   lastName,
   middleName,
@@ -100,9 +100,9 @@ export const createUser = async ({
   totalBalance = DETAULT_TOTAL_BALANCE,
   authUserId,
   role = USER_ROLES.common,
+  trialEndsAt = null,
 }: {
   username: string;
-  email?: string;
   firstName?: string;
   lastName?: string;
   middleName?: string;
@@ -110,10 +110,10 @@ export const createUser = async ({
   totalBalance?: number;
   authUserId?: string;
   role?: UserRole;
+  trialEndsAt?: Date | null;
 }): Promise<UserModel> => {
   const user = await Users.create({
     username,
-    email,
     firstName,
     lastName,
     middleName,
@@ -121,6 +121,7 @@ export const createUser = async ({
     totalBalance,
     authUserId,
     role,
+    trialEndsAt,
   });
 
   return user;
@@ -143,7 +144,6 @@ export const getUserByAuthUserId = async ({
 export const updateUserById = async ({
   id,
   username,
-  email,
   firstName,
   lastName,
   middleName,
@@ -153,7 +153,6 @@ export const updateUserById = async ({
 }: {
   id: number;
   username?: string;
-  email?: string;
   firstName?: string;
   lastName?: string;
   middleName?: string;
@@ -165,7 +164,6 @@ export const updateUserById = async ({
   const updateFields: Record<string, unknown> = {};
 
   if (username) updateFields.username = username;
-  if (email) updateFields.email = email;
   if (firstName) updateFields.firstName = firstName;
   if (lastName) updateFields.lastName = lastName;
   if (middleName) updateFields.middleName = middleName;

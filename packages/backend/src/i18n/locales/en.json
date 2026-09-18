@@ -19,7 +19,8 @@
   "balanceAdjustment": {
     "defaultNote": "Balance adjustment",
     "accountNotFound": "Account with id \"{{accountId}}\" not found.",
-    "vehicleUseOverride": "A vehicle's value can only be changed from its vehicle page."
+    "vehicleUseOverride": "A vehicle's value can only be changed from its vehicle page.",
+    "vehicleNegativeValue": "A vehicle's value cannot be negative."
   },
   "accountGroups": {
     "groupNotFound": "Group not found",
@@ -28,6 +29,15 @@
     "parentGroupDoesNotExist": "Parent group does not exists.",
     "accountNotFound": "Account with such id is not found.",
     "accountGroupNotFound": "Account group with such id is not found."
+  },
+  "categories": {
+    "notFound": "Category with provided id does not exist.",
+    "systemCannotBeMoved": "System categories cannot be moved.",
+    "parentNotFound": "Category with such parentId doesn't exist.",
+    "systemParentForbidden": "System categories cannot be used as a parent.",
+    "ownParent": "Category cannot be its own parent.",
+    "underOwnSubcategory": "Category cannot be moved under its own subcategory.",
+    "nestingTooDeep": "Categories cannot be nested deeper than {{max}} levels."
   },
   "transactions": {
     "notFound": "Transaction not found",
@@ -205,6 +215,7 @@
     "failedToFetchBanks": "Failed to fetch banks. Please check your credentials and country code.",
     "failedToFetchCountries": "Failed to fetch countries. Please check your credentials.",
     "accountNotLinkedToConnection": "Account not found or not linked to this connection",
+    "accountAlreadyConnectedToAnotherConnection": "Account \"{{account}}\" is already connected through \"{{connection}}\". Disconnect it there first.",
     "cannotLoadBeforeLinkDate": "Cannot load transactions before account link date ({{linkedAt}}). This account was linked using \"forward-only\" strategy to prevent data duplication.",
     "dateRangeExceedsLimit": "Date range cannot exceed 1 year.",
     "fromAfterTo": "\"from\" date must be before \"to\" date",
@@ -289,6 +300,12 @@
     "amountColumnNotFound": "Amount column \"{{columnName}}\" not found in CSV",
     "invalidDefaultCurrency": "Invalid default currency code: \"{{defaultCurrency}}\"",
     "payeeColumnNotFound": "Payee column \"{{column}}\" not found in CSV headers"
+  },
+  "importExport": {
+    "batchDeleteBankLinkedAccount": "This import can no longer be undone because its account is now connected to a bank. Deleting these transactions could throw off the synced balance.",
+    "batchDeleteLinkedLoanTransfer": "This import is linked to a loan payment and can't be undone on its own. Enable \"also delete linked transfer transactions\" to remove it.",
+    "batchDeleteInProgress": "An import batch is already being deleted. Wait for it to finish before starting another.",
+    "statementImportInProgress": "A statement import is already running. Wait for it to finish before starting another one."
   },
   "statementParser": {
     "invalidFile": "Invalid file",
@@ -522,8 +539,18 @@
   },
   "automations": {
     "automationNotFound": "Automation not found.",
+    "previewRequiresConditions": "Provide either conditions or a saved automation to preview.",
     "reorderStale": "The automation list has changed. Refresh and try again.",
     "ruleLimitReached": "You have reached the maximum number of automations.",
     "staleReference": "This automation references an item that no longer exists."
+  },
+  "attachments": {
+    "transactionNotFound": "Transaction not found.",
+    "attachmentNotFound": "Attachment not found.",
+    "fileNotFound": "Attachment file not found.",
+    "unsupportedFileType": "Unsupported file type. Upload a JPEG, PNG, WebP or PDF file.",
+    "tooManyAttachments": "A transaction can hold at most {{max}} attachments.",
+    "quotaExceeded": "Attachment storage quota exceeded.",
+    "noFileUploaded": "No file was uploaded."
   }
 }

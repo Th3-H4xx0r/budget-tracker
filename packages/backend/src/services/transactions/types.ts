@@ -1,4 +1,5 @@
 import { ACCOUNT_TYPES, PAYMENT_TYPES, TRANSACTION_TRANSFER_NATURE, TRANSACTION_TYPES } from '@bt/shared/types';
+import type { TransactionLocation } from '@bt/shared/types';
 import { Money } from '@common/types/money';
 import * as Transactions from '@models/transactions.model';
 
@@ -45,6 +46,11 @@ export type CreateTransactionParams = Omit<
    * Set by incremental bank sync and imports; never by manual creation or historical backfill.
    */
   matchPlanned?: boolean;
+  /**
+   * Run the user's automations on a system-account row. Off by default so a hand-typed
+   * entry is never overridden; API integrations posting bank data opt in per request.
+   */
+  applyAutomations?: boolean;
 };
 
 interface UpdateParams {
@@ -52,6 +58,9 @@ interface UpdateParams {
   userId: number;
   amount?: Money;
   note?: string | null;
+  externalUrl?: string | null;
+  externalReference?: string | null;
+  location?: TransactionLocation | null;
   time?: Date;
   transactionType?: TRANSACTION_TYPES;
   paymentType?: PAYMENT_TYPES;

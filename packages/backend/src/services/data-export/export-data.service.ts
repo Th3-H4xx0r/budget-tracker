@@ -1,7 +1,7 @@
-import { authPool } from '@config/auth';
-import { captureException } from '@js/utils/sentry';
+import { type RecordId } from '@bt/shared/types';
 import { getBaseCurrency } from '@models/users-currencies.model';
 import Users from '@models/users.model';
+import { getEmailForUser } from '@services/sharing/find-user-by-email.service';
 import JSZip from 'jszip';
 
 import { buildExportTables } from './build-export-tables.service';
@@ -45,33 +45,11 @@ async function fetchUserHeader({ userId }: { userId: number }): Promise<{
   // export failure – masking it with `null` would emit an inconsistent
   // export. The legitimate "user has no base currency yet" case still
   // returns null from the model and surfaces as an empty string below.
-  const [user, baseCurrencyRecord] = await Promise.all([
-    Users.findOne({ where: { id: userId } }),
+  const [user, baseCurrencyRecord, email] = await Promise.all([
+    Users.findOne({ where: { id: userId }, attributes: ['username'] }),
     getBaseCurrency({ userId }),
+    getEmailForUser({ userId }),
   ]);
-
-  let email: string | null = user?.email ?? null;
-  if (!email && user?.authUserId) {
-    try {
-      const result = await authPool.query('SELECT email FROM ba_user WHERE id = $1', [user.authUserId]);
-      if (result.rows.length > 0) email = result.rows[0].email;
-    } catch (err) {
-      // Email is informational only – a transient auth-pool failure should
-      // not block the export. The export carries an explicit `email: null`
-      // so the consumer can tell apart "absent" from "user with no email".
-      // Route through Sentry (not logger.warn) so a chronic auth-pool flake
-      // surfaces in the issue tracker; a warn channel alone makes a steady
-      // background failure invisible.
-      captureException({
-        error: err instanceof Error ? err : new Error(String(err)),
-        context: {
-          feature: 'data-export',
-          stage: 'fetchUserHeader-email-fallback',
-          userId,
-        },
-      });
-    }
-  }
 
   return {
     username: user?.username ?? '',
@@ -96,11 +74,13 @@ export async function exportUserData({
   format,
   groups,
   dateRange,
+  accountIds,
 }: {
   userId: number;
   format: ExportFormat;
   groups: ExportGroup[];
   dateRange?: ExportDateRange;
+  accountIds?: RecordId[];
 }): Promise<ExportDataResult> {
   const exportedAt = new Date();
   const enabledFiles = resolveEnabledFiles({ groups });
@@ -114,7 +94,7 @@ export async function exportUserData({
   // currency + optional auth-pool email round-trip).
   const wantsUserHeader = format === 'json';
   const [tables, userHeader] = await Promise.all([
-    buildExportTables({ userId, enabledFiles, dateRange: effectiveRange }),
+    buildExportTables({ userId, enabledFiles, dateRange: effectiveRange, accountIds }),
     wantsUserHeader ? fetchUserHeader({ userId }) : Promise.resolve(null),
   ]);
 
@@ -128,7 +108,14 @@ export async function exportUserData({
 
   const dataFiles = await WRITERS[format].write({ tables, exportedAt, user: userHeader ?? undefined });
 
-  const manifest = buildManifest({ files: dataFiles, format, groups, exportedAt, dateRange: effectiveRange });
+  const manifest = buildManifest({
+    files: dataFiles,
+    format,
+    groups,
+    exportedAt,
+    dateRange: effectiveRange,
+    accountIds,
+  });
   const manifestBuffer = serializeManifest({ manifest });
 
   // STORE compression: the inputs are textual CSV/JSON that compress at the

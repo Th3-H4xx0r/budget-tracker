@@ -9,6 +9,7 @@ import YahooFinance from 'yahoo-finance2';
 import {
   BaseSecurityDataProvider,
   BulkPriceData,
+  BulkPriceFetchOptions,
   HistoricalPriceOptions,
   PriceData,
   ProviderSymbol,
@@ -16,7 +17,7 @@ import {
   toProviderSymbol,
 } from './base-provider';
 import { resolveByIsinFallback } from './yahoo/isin-resolver';
-import { ISIN_PATTERN, mapYahooTypeToAssetClass, remapUcitsType } from './yahoo/utils';
+import { ISIN_PATTERN, mapYahooTypeToAssetClass, remapUcitsType, toIsoCurrency, toMajorUnit } from './yahoo/utils';
 
 const DEFAULT_HISTORY_YEARS = 5;
 const CURRENCY_RESOLVE_CONCURRENCY = 5;
@@ -153,7 +154,7 @@ export class YahooDataProvider extends BaseSecurityDataProvider {
         throw new Error(`No quote data found for symbol: ${providerSymbol}`);
       }
 
-      const priceClose = quote.regularMarketPreviousClose;
+      const priceClose = toMajorUnit({ price: quote.regularMarketPreviousClose, currency: quote.currency });
       if (!quote.regularMarketTime) {
         logger.info(`Missing regularMarketTime for ${providerSymbol}, using current time as fallback`);
       }
@@ -199,13 +200,14 @@ export class YahooDataProvider extends BaseSecurityDataProvider {
       }
 
       const results: PriceData[] = [];
+      const currency = chartResult.meta?.currency;
       for (const q of chartResult.quotes) {
         if (q.close == null) continue;
 
         results.push({
           providerSymbol,
           date: new Date(q.date),
-          priceClose: q.adjclose ?? q.close,
+          priceClose: toMajorUnit({ price: q.adjclose ?? q.close, currency }),
           priceAsOf: new Date(q.date),
           providerName: SECURITY_PROVIDER.yahoo,
         });
@@ -224,8 +226,9 @@ export class YahooDataProvider extends BaseSecurityDataProvider {
   public async fetchPricesForSecurities(
     securities: SecurityPriceFetchInput[],
     forDate: Date,
-  ): Promise<Map<string, BulkPriceData>> {
-    const result = new Map<string, BulkPriceData>();
+    options?: BulkPriceFetchOptions,
+  ): Promise<Map<string, BulkPriceData[]>> {
+    const result = new Map<string, BulkPriceData[]>();
     if (securities.length === 0) return result;
 
     logger.info(`Yahoo: Starting fetch for ${securities.length} securities`);
@@ -240,12 +243,16 @@ export class YahooDataProvider extends BaseSecurityDataProvider {
         }
 
         // Use chart() with next day as period2 since Yahoo rejects same period1/period2
+        const startDate = options?.startDate ?? forDate;
         const nextDay = new Date(forDate.getTime() + 24 * 60 * 60 * 1000);
-        const prices = await this.getHistoricalPrices(providerSymbol, { startDate: forDate, endDate: nextDay });
-        if (prices[0]) {
-          result.set(securityId, { ...prices[0], securityId });
+        const prices = await this.getHistoricalPrices(providerSymbol, { startDate, endDate: nextDay });
+        if (prices.length > 0) {
+          result.set(
+            securityId,
+            prices.map((price) => ({ ...price, securityId })),
+          );
           logger.info(
-            `Fetched price for ${providerSymbol} on ${forDate.toISOString().split('T')[0]}: ${prices[0].priceClose}`,
+            `Fetched ${prices.length} price(s) for ${providerSymbol} up to ${forDate.toISOString().split('T')[0]}`,
           );
         } else {
           logger.info(`No price data found for ${providerSymbol} on ${forDate.toISOString().split('T')[0]}`);
@@ -280,7 +287,7 @@ export class YahooDataProvider extends BaseSecurityDataProvider {
       });
 
       for (const entry of cached) {
-        currencyMap.set(entry.symbol, entry.currencyCode);
+        currencyMap.set(entry.symbol, toIsoCurrency(entry.currencyCode));
       }
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : 'Unknown error';
@@ -306,10 +313,11 @@ export class YahooDataProvider extends BaseSecurityDataProvider {
           const symbol = batch[j]!;
 
           if (result.status === 'fulfilled' && result.value?.currency) {
-            currencyMap.set(symbol, result.value.currency);
+            const currencyCode = toIsoCurrency(result.value.currency);
+            currencyMap.set(symbol, currencyCode);
             toCache.push({
               symbol,
-              currencyCode: result.value.currency,
+              currencyCode,
               providerName: SECURITY_PROVIDER.yahoo,
             });
           }

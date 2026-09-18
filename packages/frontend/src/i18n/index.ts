@@ -1,4 +1,5 @@
 import { captureException } from '@/lib/sentry';
+import { DEFAULT_LOCALE, SUPPORTED_LOCALES as LOCALES, type SupportedLocale } from '@bt/shared/i18n/locales';
 import { compile } from '@intlify/core-base';
 import { type I18n, type MessageCompiler, type MessageFunction, createI18n } from 'vue-i18n';
 import type { RouteLocationNormalized } from 'vue-router';
@@ -7,12 +8,7 @@ import type { RouteLocationNormalized } from 'vue-router';
 import enCommon from './locales/chunks/en/common.json';
 import type { ChunkRegistry, I18nChunkName, LoadedChunksMap } from './types';
 
-// Supported locales
-const SUPPORTED_LOCALES = ['en', 'uk', 'es', 'id'] as const;
-const DEFAULT_LOCALE: SupportedLocale = 'en';
-
-// Type for supported locales
-type SupportedLocale = (typeof SUPPORTED_LOCALES)[number];
+const SUPPORTED_LOCALES = Object.values(LOCALES);
 
 // Track which chunks have been loaded per locale
 const loadedChunks: LoadedChunksMap = new Map([['en', new Set<I18nChunkName>(['common'])]]);
@@ -99,12 +95,17 @@ async function loadChunk({ locale, chunk }: { locale: string; chunk: I18nChunkNa
 
   const loader = chunkRegistry[locale]?.[chunk];
   if (!loader) {
-    // Same user-visible failure as a failed fetch (raw key paths), so report it the same way.
     console.warn(`Chunk "${chunk}" not found for locale "${locale}".`);
-    captureException({
-      error: new Error(`i18n chunk "${chunk}" missing for locale "${locale}"`),
-      context: { chunk, locale },
-    });
+
+    // A translated locale has no file for a chunk until Crowdin exports one, and the
+    // paired English copy covers that on screen. Only a missing English source file
+    // is an actual defect.
+    if (locale === DEFAULT_LOCALE) {
+      captureException({
+        error: new Error(`i18n chunk "${chunk}" missing for locale "${locale}"`),
+        context: { chunk, locale },
+      });
+    }
     return;
   }
 
@@ -131,8 +132,9 @@ async function loadChunk({ locale, chunk }: { locale: string; chunk: I18nChunkNa
   } catch (error) {
     // Swallowed so one unreachable chunk can't break a route transition — the chunk stays
     // out of `localeChunks`, which is how callers (and `ensureChunkLoaded`) tell it failed.
-    // Reported because the visible symptom is a screen of raw dotted key paths, which
-    // otherwise only ever shows up in a console nobody is watching.
+    // Reported because the visible symptom is missing text on screen — raw dotted key
+    // paths when it is the English copy that failed — which otherwise only ever shows
+    // up in a console nobody is watching.
     console.error(`Failed to load chunk "${chunk}" for locale "${locale}":`, error);
     captureException({ error, context: { chunk, locale } });
   }
@@ -142,7 +144,14 @@ async function loadChunk({ locale, chunk }: { locale: string; chunk: I18nChunkNa
  * Load multiple chunks for a locale in parallel
  */
 export async function loadChunks({ locale, chunks }: { locale: string; chunks: I18nChunkName[] }): Promise<void> {
-  await Promise.all(chunks.map((chunk) => loadChunk({ locale, chunk })));
+  // Every non-en chunk is paired with its English copy. Crowdin exports lag new
+  // source keys, so a translated chunk is routinely missing some (and a brand-new
+  // chunk file may not exist for the locale at all). `fallbackLocale` can only
+  // resolve those keys if the English messages for that same chunk are in the
+  // store, and nothing else ever loads them — only `en/common` is preloaded.
+  const locales = locale === DEFAULT_LOCALE ? [locale] : [locale, DEFAULT_LOCALE];
+
+  await Promise.all(locales.flatMap((each) => chunks.map((chunk) => loadChunk({ locale: each, chunk }))));
 }
 
 // Per-chunk load promises keyed by chunk name. Used by components that can
@@ -203,7 +212,7 @@ async function reloadChunksForLocale({ locale }: { locale: string }): Promise<vo
 
   if (!currentChunks || currentChunks.size === 0) {
     // At minimum, load the common chunk
-    await loadChunk({ locale, chunk: 'common' });
+    await loadChunks({ locale, chunks: ['common'] });
     return;
   }
 

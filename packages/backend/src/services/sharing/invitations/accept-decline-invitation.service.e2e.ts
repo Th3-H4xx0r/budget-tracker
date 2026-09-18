@@ -1,6 +1,7 @@
 import {
   API_ERROR_CODES,
   RESOURCE_TYPES,
+  SEATS_BY_PLAN,
   SHARE_INVITATION_STATUSES,
   SHARE_PERMISSIONS,
   SHARING_LIMITS,
@@ -132,46 +133,44 @@ describe('Share invitations: accept', () => {
   });
 
   describe('error cases', () => {
-    it('returns 404 when the token does not exist', async () => {
-      const recipient = await helpers.provisionSecondUserWithBaseCurrency();
-      const res = await helpers.asUser({
-        cookies: recipient.cookies,
-        // Well-formed but unknown token — exercises the service-level not-found path
-        // rather than the controller-level length validation.
-        fn: () => helpers.acceptShareInvitation({ token: 'a'.repeat(SHARING_LIMITS.invitationTokenLength) }),
-      });
-      expect(res.statusCode).toBe(404);
-    });
-
-    it('returns 404 when the token belongs to another user (resolved-invitee path)', async () => {
-      const { invitation } = await setupPendingInvitation();
-      const otherUser = await helpers.provisionSecondUserWithBaseCurrency();
-      const res = await helpers.asUser({
-        cookies: otherUser.cookies,
-        fn: () => helpers.acceptShareInvitation({ token: invitation.token }),
-      });
-      expect(res.statusCode).toBe(404);
-    });
-
-    it('returns 404 when an unresolved invite is opened by a user whose email does not match', async () => {
-      const account = await helpers.createAccount({ raw: true });
-      const futureEmail = `pending-${Date.now()}@test.local`;
-      const invitation = await helpers.createShareInvitation({
+    it('masks unknown, foreign and email-mismatched tokens with 404 on accept and decline', async () => {
+      const { account, invitation } = await setupPendingInvitation();
+      const futureEmail = `pending-${Date.now()}-${Math.random().toString(36).slice(2, 6)}@test.local`;
+      const unresolvedInvitation = await helpers.createShareInvitation({
         inviteeEmail: futureEmail,
         resourceType: RESOURCE_TYPES.account,
         resourceId: account.id,
         permission: SHARE_PERMISSIONS.read,
         raw: true,
       });
+      const otherUser = await helpers.provisionSecondUserWithBaseCurrency();
 
-      // Sign up a different user (different email) and try to accept.
-      const wrongUser = await helpers.provisionSecondUserWithBaseCurrency();
-      const res = await helpers.asUser({
-        cookies: wrongUser.cookies,
+      // The token is well formed, so the request reaches the service not-found path; a
+      // malformed one would stop at the controller length validation.
+      const unknownTokenRes = await helpers.asUser({
+        cookies: otherUser.cookies,
+        fn: () => helpers.acceptShareInvitation({ token: 'a'.repeat(SHARING_LIMITS.invitationTokenLength) }),
+      });
+      expect(unknownTokenRes.statusCode).toBe(404);
+
+      const foreignTokenRes = await helpers.asUser({
+        cookies: otherUser.cookies,
         fn: () => helpers.acceptShareInvitation({ token: invitation.token }),
       });
-      expect(res.statusCode).toBe(404);
-    });
+      expect(foreignTokenRes.statusCode).toBe(404);
+
+      const emailMismatchRes = await helpers.asUser({
+        cookies: otherUser.cookies,
+        fn: () => helpers.acceptShareInvitation({ token: unresolvedInvitation.token }),
+      });
+      expect(emailMismatchRes.statusCode).toBe(404);
+
+      const declineForeignRes = await helpers.asUser({
+        cookies: otherUser.cookies,
+        fn: () => helpers.declineShareInvitation({ token: invitation.token }),
+      });
+      expect(declineForeignRes.statusCode).toBe(404);
+    }, 60_000);
 
     it('returns 409 when the invitation is already accepted', async () => {
       const { recipient, invitation } = await setupPendingInvitation();
@@ -206,23 +205,26 @@ describe('Share invitations: accept', () => {
     });
 
     it('serializes concurrent accepts so only one wins the last slot (advisory lock)', async () => {
-      // Cap is 2. Pre-fill with 1 share so exactly 1 slot remains. Then race two
-      // recipients into that slot via Promise.all. Without the advisory lock both
-      // count() queries would read 1 and both inserts would succeed — exceeding the cap.
+      // Pre-fill the owner's seat cap to all but one slot, then race two recipients into
+      // it via Promise.all. Without the advisory lock both count() queries would read the
+      // same number and both inserts would succeed — exceeding the cap.
       const account = await helpers.createAccount({ raw: true });
-      expect(SHARING_LIMITS.maxRecipientsPerResource).toBe(2);
 
-      const filler = await helpers.provisionSecondUserWithBaseCurrency();
-      const fillerApp = await helpers.findAppUserByEmail({ email: filler.email });
-      await ResourceShares.create({
-        ownerUserId: account.userId,
-        sharedWithUserId: fillerApp.id,
-        resourceType: RESOURCE_TYPES.account,
-        resourceId: String(account.id),
-        permission: SHARE_PERMISSIONS.read,
-        policy: null,
-        acceptedAt: new Date(),
-      });
+      for (let i = 0; i < SEATS_BY_PLAN.plus - 1; i++) {
+        const filler = await helpers.provisionSecondUserWithBaseCurrency();
+        const fillerApp = await helpers.findAppUserByEmail({
+          email: filler.email,
+        });
+        await ResourceShares.create({
+          ownerUserId: account.userId,
+          sharedWithUserId: fillerApp.id,
+          resourceType: RESOURCE_TYPES.account,
+          resourceId: String(account.id),
+          permission: SHARE_PERMISSIONS.read,
+          policy: null,
+          acceptedAt: new Date(),
+        });
+      }
 
       const [racerA, racerB] = await Promise.all([
         helpers.provisionSecondUserWithBaseCurrency(),
@@ -285,18 +287,17 @@ describe('Share invitations: accept', () => {
           acceptedAt: { [Op.not]: null },
         },
       });
-      expect(acceptedCount).toBe(SHARING_LIMITS.maxRecipientsPerResource);
+      expect(acceptedCount).toBe(SEATS_BY_PLAN.plus);
     });
 
     it('returns 409 when the recipient cap is full (race-safe: enforced at accept-time too)', async () => {
-      // Cap is 2. Pre-fill it with 2 accepted shares directly (so the slot is taken),
-      // then have a 3rd recipient try to accept a real pending invitation. The send-time
-      // cap check would also catch this, but we need the accept-time guard to handle the
-      // case where multiple pending invites were sent before any were accepted.
+      // Fill the owner's seat cap with accepted shares, then have one more recipient try
+      // to accept a real pending invitation. The send-time cap check would also catch
+      // this, but the accept-time guard must handle several invites sent before any
+      // were accepted.
       const account = await helpers.createAccount({ raw: true });
-      expect(SHARING_LIMITS.maxRecipientsPerResource).toBe(2);
 
-      for (let i = 0; i < SHARING_LIMITS.maxRecipientsPerResource; i++) {
+      for (let i = 0; i < SEATS_BY_PLAN.plus; i++) {
         const filler = await helpers.provisionSecondUserWithBaseCurrency();
         const fillerApp = await helpers.findAppUserByEmail({ email: filler.email });
         await ResourceShares.create({
@@ -423,15 +424,5 @@ describe('Share invitations: decline', () => {
       fn: () => helpers.declineShareInvitation({ token: invitation.token }),
     });
     expect(res.statusCode).toBe(409);
-  });
-
-  it('returns 404 when the token belongs to someone else', async () => {
-    const { invitation } = await setupPendingInvitation();
-    const other = await helpers.provisionSecondUserWithBaseCurrency();
-    const res = await helpers.asUser({
-      cookies: other.cookies,
-      fn: () => helpers.declineShareInvitation({ token: invitation.token }),
-    });
-    expect(res.statusCode).toBe(404);
   });
 });

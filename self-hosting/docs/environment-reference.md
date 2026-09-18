@@ -41,24 +41,26 @@ Ignored unless you use the [Traefik overlay](traefik-overlay.md)
 
 ## Optional features (backend runtime; off until set)
 
-| Variable                                                                       | Enables                                                                                                                                                                     |
-| ------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `RESEND_API_KEY`, `RESEND_FROM_EMAIL`                                          | All outbound email: address verification, share invitations, membership notices. Unset means invitations are created but never delivered – the link must be shared manually |
-| `APP_URL`                                                                      | Public URL of your frontend, used as the base for links inside invitation / notification emails (defaults to `https://moneymatter.app`)                                     |
-| `GOOGLE_CLIENT_ID` + `GOOGLE_CLIENT_SECRET`                                    | Google sign-in                                                                                                                                                              |
-| `GITHUB_CLIENT_ID` + `GITHUB_CLIENT_SECRET`                                    | GitHub sign-in                                                                                                                                                              |
-| `ENABLE_BANKING_REDIRECT_URL`                                                  | Open-banking integrations                                                                                                                                                   |
-| `POLYGON_API_KEY`, `ALPHA_VANTAGE_API_KEY`, `FMP_API_KEY`, `COINGECKO_API_KEY` | Investments / market data                                                                                                                                                   |
-| `CRYPTO_PRICES_SYNC_INTERVAL_MINUTES`                                          | Crypto price sync cadence (1–59, default 15)                                                                                                                                |
-| `API_LAYER_API_KEYS`                                                           | APILayer paid currency-rate fallback                                                                                                                                        |
-| `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `GEMINI_API_KEY` / `GROQ_API_KEY`     | AI transaction categorisation                                                                                                                                               |
-| `LOGO_DEV_SECRET_KEY`                                                          | Server-side payee brand-logo search. Search results only – rendering the logo images also needs `VITE_LOGO_DEV_TOKEN` (below)                                               |
-| `ADMIN_USERS`                                                                  | Comma-separated admin usernames                                                                                                                                             |
-| `AUTH_RP_ID`, `AUTH_RP_NAME`                                                   | WebAuthn / passkey support. `AUTH_RP_NAME` doubles as the brand and sender name on outbound emails                                                                          |
-| `ALLOWED_ORIGINS`                                                              | Extra CORS origins beyond `AUTH_ORIGIN`                                                                                                                                     |
-| `SENTRY_DSN`                                                                   | Backend error tracking                                                                                                                                                      |
-| `SYSTEM_MAX_SIGNUPS_ALLOWED`                                                   | Cap on user accounts: signups are rejected once the instance has this many users (`0` disables signups, `1` = "just me"). Deleting a user frees a slot. Unset = unlimited   |
-| `SYSTEM_DEMO_DISABLED`                                                         | Blocks demo-account creation (`POST /demo`). Defaults to `true` in the self-host compose stack; set to `false` to allow demo accounts                                       |
+| Variable                                                                       | Enables                                                                                                                                                                                           |
+| ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `RESEND_API_KEY`, `RESEND_FROM_EMAIL`                                          | All outbound email: address verification, share invitations, membership notices. Unset means invitations are created but never delivered – the link must be shared manually                       |
+| `APP_URL`                                                                      | Public URL of your frontend, used as the base for links inside invitation / notification emails (defaults to `https://moneymatter.app`)                                                           |
+| `GOOGLE_CLIENT_ID` + `GOOGLE_CLIENT_SECRET`                                    | Google sign-in                                                                                                                                                                                    |
+| `GITHUB_CLIENT_ID` + `GITHUB_CLIENT_SECRET`                                    | GitHub sign-in                                                                                                                                                                                    |
+| `ENABLE_BANKING_REDIRECT_URL`                                                  | Enable Banking bank linking. Must be `https://<your-domain>/bank-callback` and match the redirect URL registered in your Enable Banking application                                               |
+| `POLYGON_API_KEY`, `ALPHA_VANTAGE_API_KEY`, `FMP_API_KEY`, `COINGECKO_API_KEY` | Investments / market data                                                                                                                                                                         |
+| `CRYPTO_PRICES_SYNC_INTERVAL_MINUTES`                                          | Crypto price sync cadence (1–59, default 15)                                                                                                                                                      |
+| `API_LAYER_API_KEYS`                                                           | APILayer paid currency-rate fallback                                                                                                                                                              |
+| `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `GEMINI_API_KEY` / `GROQ_API_KEY`     | AI transaction categorisation                                                                                                                                                                     |
+| `LOGO_DEV_SECRET_KEY`                                                          | Server-side payee brand-logo search. Search results only – rendering the logo images also needs `VITE_LOGO_DEV_TOKEN` (below)                                                                     |
+| `ADMIN_USERS`                                                                  | Comma-separated admin usernames                                                                                                                                                                   |
+| `AUTH_RP_ID`, `AUTH_RP_NAME`                                                   | WebAuthn / passkey support. `AUTH_RP_NAME` doubles as the brand and sender name on outbound emails                                                                                                |
+| `ALLOWED_ORIGINS`                                                              | Extra CORS origins beyond `AUTH_ORIGIN`                                                                                                                                                           |
+| `SENTRY_DSN`                                                                   | Backend error tracking                                                                                                                                                                            |
+| `SYSTEM_MAX_SIGNUPS_ALLOWED`                                                   | Cap on user accounts: signups are rejected once the instance has this many users (`0` disables signups, `1` = "just me"). Deleting a user frees a slot. Unset = unlimited                         |
+| `SYSTEM_DEMO_DISABLED`                                                         | Blocks demo-account creation (`POST /demo`). Defaults to `true` in the self-host compose stack; set to `false` to allow demo accounts                                                             |
+| `ATTACHMENTS_DIR`                                                              | Directory transaction attachments are written to. The compose stack sets it to `/app/packages/backend/data/attachments`, backed by the `attachments_data` volume                                  |
+| `ATTACHMENTS_S3_BUCKET`                                                        | Store attachments in S3-compatible object storage (e.g. Cloudflare R2) instead of on disk. Needs `ATTACHMENTS_S3_ENDPOINT`, `ATTACHMENTS_S3_ACCESS_KEY_ID` and `ATTACHMENTS_S3_SECRET_ACCESS_KEY` |
 
 ## Frontend runtime (optional)
 
@@ -85,14 +87,17 @@ Desktop, ChatGPT). In same-origin mode set it to the origin you reach the app on
 (`https://money.example.com`): the frontend container proxies `/mcp` and the
 OAuth discovery endpoints to the backend, and the backend builds its discovery
 documents from this value, so clients are pointed at your instance rather than
-the hosted one. In split-domain mode set it to the backend's own origin. Leave
-it unset if you do not use MCP.
+the hosted one. In split-domain mode set it to the backend's own origin, the
+same value as `BETTER_AUTH_URL`: the OAuth issuer is built from
+`BETTER_AUTH_URL`, and the frontend's static discovery mirrors rewrite it to
+`MCP_BASE_URL`, so the two must agree. Leave it unset if you do not use MCP.
 
 Whatever fronts the frontend container must pass these paths through to it
 unchanged, alongside `/api/`: `/mcp`, `/.well-known/oauth-authorization-server`,
 `/.well-known/oauth-protected-resource` (both also in their `/mcp`-suffixed
-form), and `/authorize`, `/token`, `/register`. A proxy that forwards only `/`
-and `/api/` already covers them; one with an explicit path allow-list does not.
+form), `/.well-known/oauth-authorization-server/api/v1/auth`, and `/authorize`,
+`/token`, `/register`. A proxy that forwards only `/` and `/api/` already covers
+them; one with an explicit path allow-list does not.
 
 The `VITE_` prefix on the frontend keys above is historical: these are read from
 the container's env at start, not inlined at build time. `docker-compose.yml`
@@ -121,7 +126,10 @@ after an image already exists only changes the runtime value — rebuild
 `IS_SELF_HOST` is written straight into both root-level Compose files, on the
 backend and the frontend. There is nothing to put in `.env` — anything you set
 there is ignored. It marks the stack as yours rather than the hosted service,
-which turns on two things:
+which turns on four things:
+
+- **No plans, no trial, no billing.** Every feature is on for every user, no
+  trial clock starts at signup, and the billing routes answer 404.
 
 - **A custom AI endpoint can point at a server on your own network.** On the
   hosted service the app refuses private addresses (`localhost`, `192.168.x.x`,
@@ -131,6 +139,26 @@ which turns on two things:
 - **Restoring a backup fills in price history.** After a restore, your stocks
   and crypto get their past prices fetched again, so charts and past valuations
   look right instead of starting from the restore date.
+- **A backup from another account restores fine.** The hosted service refuses
+  archives exported by a different user; on your own stack you may be moving
+  data between instances, so that check is off.
+
+## Hosted service only
+
+Read by the billing code, which never runs on a self-hosted stack – the billing
+routes answer 404 and no entitlement depends on them. Listed so a variable you
+see in the codebase is not mistaken for something your instance needs.
+
+All three are read by the backend only – the frontend container has no Stripe
+variable of its own. `AUTH_ORIGIN` must also be set, because it is the origin
+Stripe-hosted checkout and the billing portal return the buyer to.
+
+| Variable                | Purpose                                                               |
+| ----------------------- | --------------------------------------------------------------------- |
+| `STRIPE_ENV`            | `test` or `live`; picks which set of Stripe price ids the app accepts |
+| `STRIPE_SECRET_KEY`     | Stripe API key used to mint checkout and billing-portal sessions      |
+| `STRIPE_WEBHOOK_SECRET` | Signing secret Stripe webhooks are verified against                   |
+| `AUTH_ORIGIN`           | Frontend origin Stripe returns to after checkout or the portal        |
 
 ---
 

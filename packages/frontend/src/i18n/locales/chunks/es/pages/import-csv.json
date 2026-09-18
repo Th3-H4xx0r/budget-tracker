@@ -9,7 +9,8 @@
           "steps": {
             "upload": "Subir",
             "map": "Mapear columnas",
-            "resolve": "Resolver valores",
+            "resolveAccounts": "Cuentas",
+            "resolveCategories": "Categorías",
             "review": "Revisar",
             "results": "Listo"
           }
@@ -115,6 +116,7 @@
           "imported": "Importadas",
           "skippedDuplicates": "Omitidas (duplicados)",
           "accountsCreated": "Cuentas creadas",
+          "accountsSkipped": "Cuentas omitidas",
           "categoriesCreated": "Categorías creadas",
           "tagsCreated": "Etiquetas creadas",
           "payeesCreated": "Beneficiarios creados",
@@ -232,7 +234,6 @@
           "createNewForUnmatched": "Crear nuevo para los no mapeados",
           "skipAll": "Omitir todos",
           "reset": "Restablecer",
-          "menuLabel": "Acciones rápidas",
           "tooltips": {
             "mapExactMatchesAccounts": "Vincula cada cuenta del CSV a una cuenta existente con el mismo nombre y moneda. Las cuentas sin coincidencia exacta no se modifican.",
             "mapExactMatchesCategories": "Vincula cada categoría del CSV a una categoría existente con el mismo nombre. Las categorías sin coincidencia exacta no se modifican.",
@@ -255,7 +256,8 @@
           "empty": "No se encontraron cuentas en el CSV",
           "currentBalanceLabel": "Saldo actual",
           "currentBalancePlaceholder": "0.00",
-          "currentBalanceHint": "El saldo que esta cuenta tiene en este momento — la importación establecerá la cuenta exactamente con este valor. Déjelo en blanco para usar la suma de las transacciones importadas."
+          "currentBalanceHint": "El saldo que esta cuenta tiene en este momento — la importación establecerá la cuenta exactamente con este valor. Déjelo en blanco para usar la suma de las transacciones importadas.",
+          "skippedNote": "Se omitirá(n) {count} cuenta(s). Sus transacciones no se importarán."
         },
         "categories": {
           "sectionTitle": "Mapeo de categorías",

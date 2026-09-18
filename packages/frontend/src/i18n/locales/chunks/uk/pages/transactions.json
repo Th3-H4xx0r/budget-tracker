@@ -37,6 +37,9 @@
       "plannedFilter": {
         "label": "Заплановані"
       },
+      "attachments": {
+        "label": "Вкладення"
+      },
       "filterOperation": {
         "all": "Всі",
         "exclude": "Виключити",
@@ -52,7 +55,8 @@
         "tagSingular": "тег",
         "tagPlural": "тегів",
         "selected": "обрано",
-        "searchPlaceholder": "Шукати теги..."
+        "searchPlaceholder": "Шукати теги...",
+        "blankOption": "Без тегів"
       },
       "payees": {
         "label": "Отримувачі",
@@ -63,6 +67,7 @@
       "menu": {
         "type": "Тип",
         "tags": "Теги",
+        "budgets": "Бюджети",
         "amount": "Діапазон суми",
         "note": "Нотатки"
       },
@@ -112,11 +117,7 @@
       "tagModeLabel": "Дія з тегами",
       "tagModeAdd": "Додати до існуючих тегів",
       "tagModeReplace": "Замінити всі теги",
-      "tagModeRemove": "Видалити ці теги",
-      "unselectableReasons": {
-        "split": "Неможливо вибрати: розділені транзакції не підтримують масове редагування. Відредагуйте її окремо.",
-        "sharedAccount": "Неможливо вибрати: ця транзакція належить до рахунку, яким поділились з вами, і лише його власник може її редагувати."
-      }
+      "tagModeRemove": "Видалити ці теги"
     },
     "transactionGroups": {
       "bulkActions": {
@@ -234,7 +235,11 @@
       "morePlansAtLeast": "+{count}+ запланованих",
       "deletePlanTitle": "Видалити заплановану транзакцію?",
       "deletePlanDescription": "Цю дію неможливо скасувати.",
-      "plansLoadFailed": "Не вдалося завантажити заплановані транзакції"
+      "plansLoadFailed": "Не вдалося завантажити заплановані транзакції",
+      "confirmAction": "Підтвердити",
+      "confirmTooltip": "Гроші вже перейшли — зафіксуйте це та оновіть баланс",
+      "confirmPlanSuccess": "План записано — баланс оновлено",
+      "confirmPlanError": "Не вдалося записати план"
     }
   }
 }

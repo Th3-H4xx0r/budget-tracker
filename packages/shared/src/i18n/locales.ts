@@ -7,11 +7,19 @@ export const SUPPORTED_LOCALES = {
   UKRAINIAN: 'uk',
   SPANISH: 'es',
   INDONESIAN: 'id',
+  RUSSIAN: 'ru',
 } as const;
 
 export type SupportedLocale = (typeof SUPPORTED_LOCALES)[keyof typeof SUPPORTED_LOCALES];
 
 export const DEFAULT_LOCALE: SupportedLocale = SUPPORTED_LOCALES.ENGLISH;
+
+// Translated by volunteers on Crowdin rather than maintained in-house.
+export const COMMUNITY_LOCALES: ReadonlySet<SupportedLocale> = new Set([
+  SUPPORTED_LOCALES.SPANISH,
+  SUPPORTED_LOCALES.INDONESIAN,
+  SUPPORTED_LOCALES.RUSSIAN,
+]);
 
 export const LOCALE_NAMES: Record<SupportedLocale, { native: string; english: string }> = {
   [SUPPORTED_LOCALES.ENGLISH]: {
@@ -29,6 +37,10 @@ export const LOCALE_NAMES: Record<SupportedLocale, { native: string; english: st
   [SUPPORTED_LOCALES.INDONESIAN]: {
     native: 'Bahasa',
     english: 'Indonesian',
+  },
+  [SUPPORTED_LOCALES.RUSSIAN]: {
+    native: 'Русский',
+    english: 'Russian',
   },
 };
 

@@ -8,9 +8,9 @@ jest.mock('@js/utils/logger', () => ({
   },
 }));
 
-import { BadRequestError, ForbiddenError } from '@js/errors';
+import { BadRequestError, ForbiddenError, TooManyRequests } from '@js/errors';
 
-import { classifyAspspError, isAspspDateRangeRejection, safeStringify } from './api-client';
+import { EnableBankingApiClient, classifyAspspError, isAspspDateRangeRejection, safeStringify } from './api-client';
 
 describe('safeStringify', () => {
   it('serializes plain objects normally', () => {
@@ -112,6 +112,24 @@ describe('classifyAspspError', () => {
       expect(result.matched).toBe(false);
     });
 
+    it.each([
+      'The consent status does not allow the requested access.',
+      'Consent status does not allow requested access',
+      "The consent status doesn't allow the requested access",
+    ])('matches consent-status refusals: "%s"', (aspspMessage) => {
+      const result = classifyAspspError({ detail: {}, aspspMessage });
+      expect(result).toEqual({ matched: true, reason: 'keyword-match' });
+    });
+
+    it.each([
+      'The dateFrom and dateTo must be within 2 years',
+      'Date range cannot exceed 90 days',
+      'Transaction history limited to 13 months',
+      'The date must be equal or less than 13 months',
+    ])('does NOT match date-range rejections: "%s"', (aspspMessage) => {
+      expect(classifyAspspError({ detail: {}, aspspMessage }).matched).toBe(false);
+    });
+
     it('matches when the auth keyword appears only in nested message', () => {
       const result = classifyAspspError({
         detail: { error_data: { message: 'Refresh token expired and must be renewed' } },
@@ -172,6 +190,9 @@ describe('isAspspDateRangeRejection', () => {
     'Transaction history limited to 13 months',
     'Requested period exceeds 2 years',
     'Transactions older than 90 days are not available',
+    'The date must be equal or less than 13 months',
+    'The date must be less than 24 months',
+    'Period must be no more than 90 days',
   ])('matches generic limit phrasings: "%s"', (aspspMessage) => {
     expect(isAspspDateRangeRejection(makeAspspBadRequest({ aspspMessage }))).toBe(true);
   });
@@ -230,7 +251,7 @@ describe('isAspspDateRangeRejection', () => {
     expect(isAspspDateRangeRejection(new BadRequestError({ message: 'dateFrom 2 years' }))).toBe(false);
   });
 
-  it('does NOT match Enable Banking own-validation 400s (different aspspError tag)', () => {
+  it('does NOT match Enable Banking own-validation 400s (unrelated message, regardless of aspspError tag)', () => {
     expect(
       isAspspDateRangeRejection(
         makeAspspBadRequest({ aspspError: 'INVALID_REQUEST', aspspMessage: 'dateTo is required' }),
@@ -238,12 +259,23 @@ describe('isAspspDateRangeRejection', () => {
     ).toBe(false);
   });
 
-  it('does NOT match when aspspError tag is missing entirely', () => {
+  it('matches regardless of the aspspError tag value, as long as method + message qualify (BNP puts its own code there, not "ASPSP_ERROR")', () => {
+    expect(
+      isAspspDateRangeRejection(
+        makeAspspBadRequest({
+          aspspError: 'WRONG_TRANSACTIONS_PERIOD',
+          aspspMessage: 'The date must be equal or less than 13 months',
+        }),
+      ),
+    ).toBe(true);
+  });
+
+  it('matches when the aspspError tag is missing entirely, as long as method + message qualify', () => {
     const err = new BadRequestError({
       message: 'something',
       details: { method: 'getAccountTransactions', aspspMessage: 'history limited to 13 months' },
     });
-    expect(isAspspDateRangeRejection(err)).toBe(false);
+    expect(isAspspDateRangeRejection(err)).toBe(true);
   });
 
   it('does NOT match "dateTo is required" – field name without a limit verb', () => {
@@ -264,5 +296,27 @@ describe('isAspspDateRangeRejection', () => {
       details: { method: 'getAccountTransactions', aspspError: 'ASPSP_ERROR' },
     });
     expect(isAspspDateRangeRejection(err)).toBe(true);
+  });
+});
+
+describe('handleApiError', () => {
+  const handleApiError = (error: unknown) => {
+    const client = new EnableBankingApiClient({ appId: 'app-id', privateKey: 'private-key' });
+    return (client as unknown as { handleApiError: (error: unknown, method: string) => never }).handleApiError(
+      error,
+      'getAccountTransactions',
+    );
+  };
+
+  it('throws TooManyRequests for a 429, even when its message matches an auth keyword', () => {
+    const message = 'Rate limit exceeded for this access token';
+    const error = Object.assign(new Error(message), {
+      isAxiosError: true,
+      config: { url: '/accounts/acc-1/transactions', method: 'get' },
+      response: { status: 429, data: { error: 'ASPSP_ERROR', detail: { message } } },
+    });
+
+    expect(() => handleApiError(error)).toThrow(TooManyRequests);
+    expect(() => handleApiError(error)).not.toThrow(ForbiddenError);
   });
 });

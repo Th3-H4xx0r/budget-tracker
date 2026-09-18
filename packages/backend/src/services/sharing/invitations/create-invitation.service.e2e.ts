@@ -1,6 +1,8 @@
 import {
   NOTIFICATION_TYPES,
+  PLANS,
   RESOURCE_TYPES,
+  SEATS_BY_PLAN,
   SHARE_INVITATION_STATUSES,
   SHARE_PERMISSIONS,
   SHARING_LIMITS,
@@ -53,37 +55,40 @@ describe('Share invitations: create + list', () => {
       expect(received[0]!.owner).not.toBeNull();
     });
 
-    it('normalizes write permission with default transactionsWriteScope = all', async () => {
+    it('normalizes policy by permission', async () => {
       const account = await helpers.createAccount({ raw: true });
-      const recipient = await helpers.provisionSecondUserWithBaseCurrency();
+      const inviteeEmail = (suffix: string) => `policy-${suffix}-${Date.now()}@test.local`;
 
-      const invitation = await helpers.createShareInvitation({
-        inviteeEmail: recipient.email,
+      const writeDefault = await helpers.createShareInvitation({
+        inviteeEmail: inviteeEmail('write-default'),
         resourceType: RESOURCE_TYPES.account,
         resourceId: account.id,
         permission: SHARE_PERMISSIONS.write,
         raw: true,
       });
+      expect(writeDefault.permission).toBe(SHARE_PERMISSIONS.write);
+      expect(writeDefault.policy).toEqual({ transactionsWriteScope: TRANSACTIONS_WRITE_SCOPES.all });
 
-      expect(invitation.permission).toBe(SHARE_PERMISSIONS.write);
-      expect(invitation.policy).toEqual({ transactionsWriteScope: TRANSACTIONS_WRITE_SCOPES.all });
-    });
-
-    it('preserves explicit transactionsWriteScope = own when provided', async () => {
-      const account = await helpers.createAccount({ raw: true });
-      const recipient = await helpers.provisionSecondUserWithBaseCurrency();
-
-      const invitation = await helpers.createShareInvitation({
-        inviteeEmail: recipient.email,
+      const writeOwn = await helpers.createShareInvitation({
+        inviteeEmail: inviteeEmail('write-own'),
         resourceType: RESOURCE_TYPES.account,
         resourceId: account.id,
         permission: SHARE_PERMISSIONS.write,
         policy: { transactionsWriteScope: TRANSACTIONS_WRITE_SCOPES.own },
         raw: true,
       });
+      expect(writeOwn.policy).toEqual({ transactionsWriteScope: TRANSACTIONS_WRITE_SCOPES.own });
 
-      expect(invitation.policy).toEqual({ transactionsWriteScope: TRANSACTIONS_WRITE_SCOPES.own });
-    });
+      const readWithScope = await helpers.createShareInvitation({
+        inviteeEmail: inviteeEmail('read'),
+        resourceType: RESOURCE_TYPES.account,
+        resourceId: account.id,
+        permission: SHARE_PERMISSIONS.read,
+        policy: { transactionsWriteScope: TRANSACTIONS_WRITE_SCOPES.own },
+        raw: true,
+      });
+      expect(readWithScope.policy).toBeNull();
+    }, 60_000);
 
     it('attempts the invitation email for unregistered invitees on create and resend', async () => {
       const account = await helpers.createAccount({ raw: true });
@@ -103,22 +108,6 @@ describe('Share invitations: create + list', () => {
       const resendRes = await helpers.resendShareInvitation({ invitationId: invitation.id });
       expect(resendRes.statusCode).toBe(200);
       expect(resendRes.body.response.emailOutcome).toBe('skipped');
-    });
-
-    it('drops policy when permission is read (scope is meaningless)', async () => {
-      const account = await helpers.createAccount({ raw: true });
-      const recipient = await helpers.provisionSecondUserWithBaseCurrency();
-
-      const invitation = await helpers.createShareInvitation({
-        inviteeEmail: recipient.email,
-        resourceType: RESOURCE_TYPES.account,
-        resourceId: account.id,
-        permission: SHARE_PERMISSIONS.read,
-        policy: { transactionsWriteScope: TRANSACTIONS_WRITE_SCOPES.own },
-        raw: true,
-      });
-
-      expect(invitation.policy).toBeNull();
     });
   });
 
@@ -149,7 +138,10 @@ describe('Share invitations: create + list', () => {
         where: { type: NOTIFICATION_TYPES.shareInvitationReceived, userId: recipientApp.id },
       });
       expect(notifs).toHaveLength(1);
-      const payload = notifs[0]!.payload as { token?: string; invitationId?: string };
+      const payload = notifs[0]!.payload as {
+        token?: string;
+        invitationId?: string;
+      };
       expect(payload.token).toBe(sendRes.body.response.token);
       expect(payload.invitationId).toBe(sendRes.body.response.id);
     });
@@ -210,49 +202,39 @@ describe('Share invitations: create + list', () => {
   });
 
   describe('owner-side validation errors (kept loud — no leak)', () => {
-    it('rejects self-invitation', async () => {
+    it('rejects self-invitation, missing resources and resources owned by someone else', async () => {
       const account = await helpers.createAccount({ raw: true });
+      const otherUser = await helpers.provisionSecondUserWithBaseCurrency();
 
-      const res = await helpers.createShareInvitation({
+      const selfRes = await helpers.createShareInvitation({
         inviteeEmail: 'test1@test.local',
         resourceType: RESOURCE_TYPES.account,
         resourceId: account.id,
         permission: SHARE_PERMISSIONS.read,
       });
+      expect(selfRes.statusCode).toBe(422);
+      expect((selfRes.body.response as unknown as ErrorResponse).message).toMatch(/yourself/i);
 
-      expect(res.statusCode).toBe(422);
-      expect((res.body.response as unknown as ErrorResponse).message).toMatch(/yourself/i);
-    });
+      const missingRes = await helpers.createShareInvitation({
+        inviteeEmail: `stranger-${Date.now()}@test.local`,
+        resourceType: RESOURCE_TYPES.account,
+        resourceId: NONEXISTENT_ID,
+        permission: SHARE_PERMISSIONS.read,
+      });
+      expect(missingRes.statusCode).toBe(404);
 
-    it('returns 404 when the resource is not owned by the caller', async () => {
-      const account = await helpers.createAccount({ raw: true });
-      const otherUser = await helpers.provisionSecondUserWithBaseCurrency();
-      const yetAnotherUser = await helpers.signUpSecondUser();
-
-      const res = await helpers.asUser({
+      const notOwnedRes = await helpers.asUser({
         cookies: otherUser.cookies,
         fn: () =>
           helpers.createShareInvitation({
-            inviteeEmail: yetAnotherUser.email,
+            inviteeEmail: `outsider-${Date.now()}@test.local`,
             resourceType: RESOURCE_TYPES.account,
             resourceId: account.id,
             permission: SHARE_PERMISSIONS.read,
           }),
       });
-
-      expect(res.statusCode).toBe(404);
-    });
-
-    it('returns 404 for a non-existent account id', async () => {
-      const recipient = await helpers.provisionSecondUserWithBaseCurrency();
-      const res = await helpers.createShareInvitation({
-        inviteeEmail: recipient.email,
-        resourceType: RESOURCE_TYPES.account,
-        resourceId: NONEXISTENT_ID,
-        permission: SHARE_PERMISSIONS.read,
-      });
-      expect(res.statusCode).toBe(404);
-    });
+      expect(notOwnedRes.statusCode).toBe(404);
+    }, 60_000);
   });
 
   describe('conflict / limit errors', () => {
@@ -291,9 +273,9 @@ describe('Share invitations: create + list', () => {
       const account = await helpers.createAccount({ raw: true });
       const newRecipient = await helpers.provisionSecondUserWithBaseCurrency();
 
-      // Cap is 2 — pre-create that many accepted shares directly to fill the cap.
-      expect(SHARING_LIMITS.maxRecipientsPerResource).toBe(2);
-      for (let i = 0; i < SHARING_LIMITS.maxRecipientsPerResource; i++) {
+      // The default test user is on the plus seat cap; pre-create that many accepted
+      // shares directly to fill it.
+      for (let i = 0; i < SEATS_BY_PLAN.plus; i++) {
         const filler = await helpers.provisionSecondUserWithBaseCurrency();
         const fillerApp = await helpers.findAppUserByEmail({ email: filler.email });
         await ResourceShares.create({
@@ -315,7 +297,93 @@ describe('Share invitations: create + list', () => {
       });
 
       expect(res.statusCode).toBe(409);
-      expect((res.body.response as unknown as ErrorResponse).message).toMatch(/maximum/i);
+      expect((res.body.response as unknown as ErrorResponse).message).toMatch(/Your plan allows/i);
+    });
+
+    it('caps the owner at the seats their plan grants', async () => {
+      const originalAdminUsers = process.env.ADMIN_USERS;
+      process.env.ADMIN_USERS = 'test1';
+
+      try {
+        const { id: ownerId } = await helpers.getUserInfo({ raw: true });
+        const granted = await helpers.adminUpdateUserPlan({
+          userId: ownerId,
+          payload: { plan: PLANS.essential },
+          raw: true,
+        });
+        expect(granted.entitlements.seats).toBe(SEATS_BY_PLAN.essential);
+
+        const account = await helpers.createAccount({ raw: true });
+        for (let i = 0; i < SEATS_BY_PLAN.essential; i++) {
+          const filler = await helpers.provisionSecondUserWithBaseCurrency();
+          const fillerApp = await helpers.findAppUserByEmail({ email: filler.email });
+          await ResourceShares.create({
+            ownerUserId: account.userId,
+            sharedWithUserId: fillerApp.id,
+            resourceType: RESOURCE_TYPES.account,
+            resourceId: String(account.id),
+            permission: SHARE_PERMISSIONS.read,
+            policy: null,
+            acceptedAt: new Date(),
+          });
+        }
+
+        const overflow = await helpers.provisionSecondUserWithBaseCurrency();
+        const res = await helpers.createShareInvitation({
+          inviteeEmail: overflow.email,
+          resourceType: RESOURCE_TYPES.account,
+          resourceId: account.id,
+          permission: SHARE_PERMISSIONS.read,
+        });
+
+        expect(res.statusCode).toBe(409);
+        expect((res.body.response as unknown as ErrorResponse).message).toBe(
+          `Your plan allows ${SEATS_BY_PLAN.essential} recipient(s); upgrade to add more.`,
+        );
+      } finally {
+        if (originalAdminUsers === undefined) delete process.env.ADMIN_USERS;
+        else process.env.ADMIN_USERS = originalAdminUsers;
+      }
+    });
+
+    it('caps household members at the seats the owner plan grants', async () => {
+      const originalAdminUsers = process.env.ADMIN_USERS;
+      process.env.ADMIN_USERS = 'test1';
+
+      try {
+        const { id: ownerId } = await helpers.getUserInfo({ raw: true });
+        await helpers.adminUpdateUserPlan({ userId: ownerId, payload: { plan: PLANS.essential }, raw: true });
+
+        for (let i = 0; i < SEATS_BY_PLAN.essential; i++) {
+          const filler = await helpers.provisionSecondUserWithBaseCurrency();
+          const fillerApp = await helpers.findAppUserByEmail({ email: filler.email });
+          await ResourceShares.create({
+            ownerUserId: ownerId,
+            sharedWithUserId: fillerApp.id,
+            resourceType: RESOURCE_TYPES.household,
+            resourceId: String(ownerId),
+            permission: SHARE_PERMISSIONS.write,
+            policy: null,
+            acceptedAt: new Date(),
+          });
+        }
+
+        const overflow = await helpers.provisionSecondUserWithBaseCurrency();
+        const res = await helpers.createShareInvitation({
+          inviteeEmail: overflow.email,
+          resourceType: RESOURCE_TYPES.household,
+          resourceId: ownerId,
+          permission: SHARE_PERMISSIONS.write,
+        });
+
+        expect(res.statusCode).toBe(409);
+        expect((res.body.response as unknown as ErrorResponse).message).toBe(
+          `Your plan allows ${SEATS_BY_PLAN.essential} household member(s); upgrade to add more.`,
+        );
+      } finally {
+        if (originalAdminUsers === undefined) delete process.env.ADMIN_USERS;
+        else process.env.ADMIN_USERS = originalAdminUsers;
+      }
     });
 
     it('rejects a new invitation when the per-resource pending cap is reached (test env: 3)', async () => {

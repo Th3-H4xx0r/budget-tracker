@@ -71,6 +71,7 @@ import {
   getEntryReference,
   getRawTransaction,
   getRawTransactionStatus,
+  getReferenceNumber,
   hasSettledStatus,
   isBookedCanonical,
   isNonLedgerStatus,
@@ -87,6 +88,8 @@ import {
 
 type ReconcileSkipReason = EditMergeSkipReason | 'dependent_rows' | 'categorization_conflict';
 
+const getRedirectUrl = () => process.env.ENABLE_BANKING_REDIRECT_URL || 'http://localhost:8100/bank-callback';
+
 /**
  * Enable Banking provider implementation
  * Handles integration with Enable Banking API for multi-bank account access across Europe
@@ -94,6 +97,9 @@ type ReconcileSkipReason = EditMergeSkipReason | 'dependent_rows' | 'categorizat
  */
 export class EnableBankingProvider extends BaseBankDataProvider {
   readonly metadata: ProviderMetadata = {
+    get redirectUrl() {
+      return getRedirectUrl();
+    },
     type: BANK_PROVIDER_TYPE.ENABLE_BANKING,
     name: 'Enable Banking',
     description: 'Access 6000+ European banks via PSD2 open banking',
@@ -153,7 +159,7 @@ export class EnableBankingProvider extends BaseBankDataProvider {
       apiClient,
       bankName,
       bankCountry,
-      redirectUrl || process.env.ENABLE_BANKING_REDIRECT_URL || 'http://localhost:8100/bank-callback',
+      redirectUrl || getRedirectUrl(),
       state,
       consentValidUntil,
     );
@@ -437,7 +443,7 @@ export class EnableBankingProvider extends BaseBankDataProvider {
       apiClient,
       metadata.bankName,
       metadata.bankCountry,
-      process.env.ENABLE_BANKING_REDIRECT_URL || 'http://localhost:8100/bank-callback',
+      getRedirectUrl(),
       state,
       consentValidUntil,
     );
@@ -576,6 +582,28 @@ export class EnableBankingProvider extends BaseBankDataProvider {
           // Convert balance from string to system amount (cents as integer)
           const balanceFloat = primaryBalance?.balance_amount ? parseFloat(primaryBalance.balance_amount.amount) : 0;
           const balanceSystemAmount = Money.fromDecimal(balanceFloat).toCents();
+          const creditLimitCurrencyMatches = Boolean(
+            details.currency &&
+            details.credit_limit?.currency &&
+            details.credit_limit.currency.toUpperCase() === details.currency.toUpperCase(),
+          );
+          const creditLimitFloat = parseFloat(details.credit_limit?.amount ?? '');
+          const creditLimitCents =
+            creditLimitCurrencyMatches && Number.isFinite(creditLimitFloat) && creditLimitFloat > 0
+              ? Money.fromDecimal(creditLimitFloat).toCents()
+              : 0;
+          if (details.credit_limit && (!creditLimitCurrencyMatches || !Number.isFinite(creditLimitFloat))) {
+            logger.info(
+              creditLimitCurrencyMatches
+                ? 'Enable Banking credit limit ignored: unparsable amount'
+                : 'Enable Banking credit limit ignored: currency mismatch',
+              {
+                connectionId,
+                identificationHash: details.identification_hash,
+                creditLimit: details.credit_limit,
+              },
+            );
+          }
 
           return {
             externalId: details.identification_hash,
@@ -590,6 +618,7 @@ export class EnableBankingProvider extends BaseBankDataProvider {
             // requires an explicit user choice instead of failing downstream.
             currency: details.currency?.toUpperCase() || NO_CURRENCY_CODE,
             metadata: {
+              creditLimit: creditLimitCents,
               iban: details.account_id?.iban,
               product: details.product,
               ownerName: details.owner_name,
@@ -663,7 +692,7 @@ export class EnableBankingProvider extends BaseBankDataProvider {
       const isExpense = tx.credit_debit_indicator === CreditDebitIndicator.DBIT;
       const amountFloat = parseFloat(tx.transaction_amount.amount);
       const amountSystemAmount = Money.fromDecimal(amountFloat).toCents();
-      const merchantName = tx.debtor?.name || tx.creditor?.name || 'Unknown';
+      const merchantName = (isExpense ? tx.creditor?.name : tx.debtor?.name) || 'Unknown';
 
       // Generate unique hash from transaction data
       // Use stable externalId (identification_hash) for hashing, not session-specific uid
@@ -693,6 +722,8 @@ export class EnableBankingProvider extends BaseBankDataProvider {
           oritinalAmount: parseFloat(tx.transaction_amount.amount),
           isExpense, // Store transaction type indicator
           entryReference: tx.entry_reference,
+          referenceNumber:
+            typeof tx.reference_number === 'string' ? tx.reference_number : tx.reference_number?.identification,
           originalTransactionId: tx.transaction_id, // Store if available
 
           // Store complete raw payload for future reference and debugging
@@ -887,10 +918,15 @@ export class EnableBankingProvider extends BaseBankDataProvider {
                 originalId: string;
                 time: Date;
                 note: string;
+                externalReference: string;
                 externalData: typeof tx.metadata;
               }> = {};
               if (existingTx.originalId !== tx.externalId) {
                 updates.originalId = tx.externalId;
+              }
+              if (!existingTx.externalReference) {
+                const referenceNumber = getReferenceNumber({ externalData: tx.metadata });
+                if (referenceNumber) updates.externalReference = referenceNumber;
               }
               // Backfill bookingDate / refresh metadata when the bank populates
               // fields after the initial sync.
@@ -964,6 +1000,7 @@ export class EnableBankingProvider extends BaseBankDataProvider {
             const createResult = await createTransaction({
               originalId: tx.externalId,
               note: tx.description,
+              externalReference: getReferenceNumber({ externalData: tx.metadata }),
               amount: Money.fromCents(Math.abs(tx.amount)), // Ensure positive value
               time: tx.date,
               externalData: {

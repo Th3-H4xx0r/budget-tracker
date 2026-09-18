@@ -6,7 +6,7 @@
  * Deserializers convert API decimal inputs to Money.
  */
 import { PAYMENT_TYPES, TRANSACTION_TRANSFER_NATURE, TRANSACTION_TYPES } from '@bt/shared/types';
-import type { CategorizationMeta, RecordId } from '@bt/shared/types';
+import type { CategorizationMeta, RecordId, TransactionLocation } from '@bt/shared/types';
 import { Money, centsToApiDecimal, centsToApiDecimalOrNull } from '@common/types/money';
 import type Tags from '@models/tags.model';
 import type TransactionGroups from '@models/transaction-groups.model';
@@ -41,6 +41,9 @@ export interface TransactionApiResponse {
   originalAmount: number | null;
   originalCurrencyCode: string | null;
   note: string | null;
+  externalUrl: string | null;
+  externalReference: string | null;
+  location: TransactionLocation | null;
   time: Date;
   userId: number;
   transactionType: string;
@@ -54,6 +57,8 @@ export interface TransactionApiResponse {
   transferId: string | null;
   originalId: string | null;
   refundLinked: boolean;
+  /** Present on list reads only. */
+  hasAttachments?: boolean;
   isPlanned: boolean;
   /** Set when a bank transaction merged into this row while it was planned. */
   plannedMerge: { mergedAt: string } | null;
@@ -100,6 +105,9 @@ interface CreateTransactionRequest {
   commissionRate?: number;
   destinationAmount?: number;
   note?: string | null;
+  externalUrl?: string | null;
+  externalReference?: string | null;
+  location?: TransactionLocation | null;
   time?: string;
   transactionType: TRANSACTION_TYPES;
   paymentType: PAYMENT_TYPES;
@@ -119,6 +127,7 @@ interface CreateTransactionRequest {
   payeeId?: RecordId | null;
   payeeLocked?: boolean;
   isPlanned?: boolean;
+  applyAutomations?: boolean;
   originalAmount?: number; // decimal from API
   originalCurrencyCode?: string;
 }
@@ -132,6 +141,9 @@ interface CreateTransactionInternal {
   commissionRate?: Money;
   destinationAmount?: Money;
   note?: string;
+  externalUrl?: string;
+  externalReference?: string;
+  location?: TransactionLocation;
   time?: Date;
   transactionType: TRANSACTION_TYPES;
   paymentType: PAYMENT_TYPES;
@@ -152,6 +164,7 @@ interface CreateTransactionInternal {
   payeeId?: RecordId | null;
   payeeLocked?: boolean;
   isPlanned?: boolean;
+  applyAutomations?: boolean;
   originalAmount?: Money;
   originalCurrencyCode?: string;
 }
@@ -200,6 +213,10 @@ export function serializeTransaction(
     canEdit?: boolean;
   },
 ): TransactionApiResponse {
+  // Aliased literal: a plain property on raw rows, dataValues-only on model instances.
+  const hasAttachments = (tx.getDataValue?.('hasAttachments' as keyof Transactions) ??
+    (tx as { hasAttachments?: boolean }).hasAttachments) as boolean | undefined;
+
   return {
     id: tx.id,
     amount: centsToApiDecimal(tx.amount),
@@ -210,6 +227,9 @@ export function serializeTransaction(
     originalAmount: centsToApiDecimalOrNull(tx.originalAmount),
     originalCurrencyCode: tx.originalCurrencyCode ?? null,
     note: tx.note,
+    externalUrl: tx.externalUrl ?? null,
+    externalReference: tx.externalReference ?? null,
+    location: tx.location ?? null,
     time: tx.time,
     userId: tx.userId,
     transactionType: tx.transactionType,
@@ -266,6 +286,7 @@ export function serializeTransaction(
     // `canEdit` is omitted on paths that don't compute it (write returns, internal
     // fetches). Property-existence check so an explicit `false` survives serialization.
     ...('canEdit' in tx ? { canEdit: tx.canEdit ?? false } : {}),
+    ...(hasAttachments !== undefined && { hasAttachments }),
   };
 }
 
@@ -310,6 +331,9 @@ export function deserializeCreateTransaction(req: CreateTransactionRequest, user
     commissionRate: req.commissionRate !== undefined ? Money.fromDecimal(req.commissionRate) : undefined,
     destinationAmount: req.destinationAmount !== undefined ? Money.fromDecimal(req.destinationAmount) : undefined,
     note: req.note || undefined,
+    externalUrl: req.externalUrl || undefined,
+    externalReference: req.externalReference || undefined,
+    location: req.location ?? undefined,
     time: req.time ? new Date(req.time) : undefined,
     transactionType: req.transactionType,
     paymentType: req.paymentType,
@@ -330,6 +354,7 @@ export function deserializeCreateTransaction(req: CreateTransactionRequest, user
     payeeId: req.payeeId,
     payeeLocked: req.payeeLocked,
     isPlanned: req.isPlanned,
+    applyAutomations: req.applyAutomations,
     originalAmount: req.originalAmount !== undefined ? Money.fromDecimal(req.originalAmount) : undefined,
     originalCurrencyCode: req.originalCurrencyCode,
   };

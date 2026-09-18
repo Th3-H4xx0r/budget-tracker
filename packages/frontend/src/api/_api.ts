@@ -2,10 +2,12 @@ import { API_HTTP, API_VER } from '@/api/api-base-url';
 import { ApiBaseError } from '@/common/types';
 import { NotificationType, useNotificationCenter } from '@/components/notification-center';
 import { useBaseCurrencyChangeStatus } from '@/composable/use-base-currency-change-status';
+import { useImportBatchDeleteJobStatus } from '@/composable/use-import-batch-delete-job-status';
 import { useRestoreJobStatus } from '@/composable/use-restore-job-status';
 import { getCurrentLocale, i18n } from '@/i18n';
 import * as errors from '@/js/errors';
 import { router } from '@/routes';
+import { ROUTES_NAMES } from '@/routes/constants';
 import { useAuthStore } from '@/stores';
 import type { BaseCurrencyChangeStatus } from '@bt/shared/types';
 import { API_ERROR_CODES, API_RESPONSE_STATUS } from '@bt/shared/types/api';
@@ -64,6 +66,33 @@ const CLOUD_HOSTNAME = 'moneymatter.app';
 const isCloudDeployment = (): boolean => {
   const hostname = window.location.hostname;
   return hostname === CLOUD_HOSTNAME || hostname.endsWith(`.${CLOUD_HOSTNAME}`);
+};
+
+/** Translated text with a literal fallback, for the window before the i18n chunk is loaded. */
+const t = (key: string, fallback: string): string => {
+  const translated = i18n.global.t(key);
+  return translated === key ? fallback : translated;
+};
+
+const PLAN_REQUIRED_NOTIFICATION_ID = 'plan-required-error';
+
+/** Persistent toast for a 402: the user cannot retry the action without picking a plan. */
+export const notifyPlanRequired = ({ message }: { message: string }) => {
+  const { addNotification, removeNotification } = useNotificationCenter();
+
+  addNotification({
+    id: PLAN_REQUIRED_NOTIFICATION_ID,
+    text: message,
+    type: NotificationType.error,
+    persistent: true,
+    action: {
+      label: t('billing.seePlans', 'See plans'),
+      onClick: () => {
+        removeNotification(PLAN_REQUIRED_NOTIFICATION_ID);
+        router.push({ name: ROUTES_NAMES.settingsPlanBilling });
+      },
+    },
+  });
 };
 
 /**
@@ -222,13 +251,6 @@ class ApiCaller {
 
     const isSilent = opts.options?.silent ?? false;
 
-    // Helper to get translated text with fallback (in case i18n isn't loaded yet)
-    const t = (key: string, fallback: string) => {
-      const translated = i18n.global.t(key);
-      // If translation returns the key itself, use fallback
-      return translated === key ? fallback : translated;
-    };
-
     try {
       result = await fetch(url, config);
     } catch (e) {
@@ -237,7 +259,7 @@ class ApiCaller {
       if (e instanceof DOMException && e.name === 'AbortError') {
         throw e;
       }
-      if (e instanceof TypeError && e.toString().includes('Failed to fetch')) {
+      if (e instanceof TypeError && errors.FETCH_NETWORK_FAILURE_MESSAGES.some((msg) => e.message.includes(msg))) {
         // Self-hosters and local devs are the system operators – give them the
         // actionable hint (backend not running, CORS misconfigured). Cloud users
         // can't act on either and should see a generic message.
@@ -317,12 +339,13 @@ class ApiCaller {
 
     if (status === API_RESPONSE_STATUS.error) {
       if (response.code === API_ERROR_CODES.unauthorized) {
-        // Tear down both blocking-job watchdogs first: without a session their 2s status
+        // Tear down every blocking-job watchdog first: without a session their 2s status
         // polls would 401 on every tick. Each poll swallows the AuthError (assuming the
         // API handler already stopped it), so a still-running restore watchdog would
         // otherwise loop logout()/router.push forever and keep #app inert.
         useBaseCurrencyChangeStatus().stop();
         useRestoreJobStatus().stop();
+        useImportBatchDeleteJobStatus().stop();
 
         useAuthStore().logout();
 
@@ -337,12 +360,16 @@ class ApiCaller {
         throw new errors.AuthError(response, url);
       }
 
+      if (response.code === API_ERROR_CODES.planRequired && !isSilent) {
+        notifyPlanRequired({ message: response.message });
+      }
+
       if (response.code === API_ERROR_CODES.baseCurrencyChangeInProgress) {
         // The base-currency write-lock is held server-side and rejected this mutation —
-        // by a real base-currency change OR by a data restore, which grabs the same lock.
-        // Engage BOTH watchdogs; each polls its own status endpoint and self-dismisses if
-        // idle, so whichever job is actually running sticks. Then still reject so callers
-        // unwind.
+        // by a real base-currency change, a data restore, or a large import-batch delete,
+        // which all grab the same lock. Engage every watchdog; each polls its own status
+        // endpoint and self-dismisses if idle, so whichever job is actually running sticks.
+        // Then still reject so callers unwind.
         const currencyWatch = useBaseCurrencyChangeStatus();
         if (!currencyWatch.isBlocking.value) {
           // The LockedError carries the live status in `details.status`; seeding it
@@ -361,9 +388,13 @@ class ApiCaller {
           // (idle → no-op, no fabricated "queued" flash).
           void restoreWatch.checkOnBoot();
         }
+        const batchDeleteWatch = useImportBatchDeleteJobStatus();
+        if (!batchDeleteWatch.isBlocking.value) {
+          void batchDeleteWatch.checkOnBoot();
+        }
       }
 
-      if (response.code === API_ERROR_CODES.unexpected) {
+      if (response.code === API_ERROR_CODES.unexpected && !isSilent) {
         addNotification({
           id: 'unexpected-error',
           text: t('errors.api.unexpectedError', 'An unexpected error occurred'),

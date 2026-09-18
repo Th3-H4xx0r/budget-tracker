@@ -7,15 +7,19 @@
       "trendsComparison": "Порівняння трендів",
       "investmentCalculator": "Інвестиційний калькулятор",
       "pivotReport": "Зведення",
-      "collapse": "Згорнути",
       "netWorthDrivers": "Драйвери чистого майна",
       "investmentContributions": "Внески",
       "netWorthHistory": "Історія чистого майна",
+      "collapse": "Згорнути",
       "sections": {
         "investments": "Інвестиції"
       }
     },
+    "controls": {
+      "options": "Параметри"
+    },
     "cashFlow": {
+      "subtitle": "Дохід проти витрат у часі та куди пішли гроші.",
       "income": "Дохід",
       "expenses": "Витрати",
       "netSavings": "Чисті заощадження",
@@ -45,9 +49,39 @@
         "thisYear": "Цього року",
         "previousYear": "Минулого року",
         "allTime": "Весь час"
+      },
+      "composition": {
+        "detail": "Деталізація",
+        "levelsSummary": "Джерела Р{sources} · Витрати Р{expenses}",
+        "levelsHint": "Рівень вкладеності категорій для кожної сторони: вищі рівні розбивають потоки на підкатегорії.",
+        "sources": "Джерела",
+        "level": "Рівень {level}",
+        "topN": "Топ {count}",
+        "totalIncome": "Загальний дохід",
+        "incomePlusDeficit": "Дохід + дефіцит",
+        "savings": "Заощадження",
+        "deficit": "Дефіцит",
+        "other": "Інше",
+        "noData": "Немає транзакцій за цей період",
+        "noDataHint": "Виберіть інший період або натисніть на стовпчик у графіку вище",
+        "loadError": "Не вдалося завантажити структуру потоків",
+        "amount": "Сума",
+        "shareOfIncome": "Частка доходу",
+        "shareOfExpenses": "Частка витрат",
+        "saved": "Заощаджено",
+        "pctOfIncome": "{pct} від доходу",
+        "pctSavingsRate": "{pct} рівень заощаджень",
+        "keptAsCash": "Залишилось готівкою",
+        "shareOfSavings": "Частка заощаджень",
+        "deficitOverspend": "Витрати перевищили дохід на {amount}. Різницю покрито з наявних залишків на рахунках.",
+        "deficitInvested": "Внески до портфелів ({invested}) перевищили чисті заощадження за цей період ({saved}). Різницю покрито з наявних залишків на рахунках.",
+        "deficitBoth": "Витрати перевищили дохід на {overspend}, і при цьому {invested} було переміщено до портфелів. Обидві суми покрито з наявних залишків на рахунках.",
+        "andMore": "+ще {count}",
+        "settings": "Налаштування графіка"
       }
     },
     "trends": {
+      "subtitle": "Порівняйте витрати, дохід і заощадження з попереднім періодом.",
       "metrics": {
         "expenses": "Витрати",
         "income": "Дохід",
@@ -75,18 +109,35 @@
       "cumulativeProgress": {
         "title": "Накопичувальний прогрес"
       },
+      "filters": {
+        "button": "Фільтри",
+        "title": "Фільтри",
+        "categories": "Категорії",
+        "include": "Включити",
+        "exclude": "Виключити",
+        "accounts": "Рахунки",
+        "payees": "Отримувачі",
+        "tags": "Теги",
+        "reset": "Скинути"
+      },
+      "legend": {
+        "hide": "Сховати з графіка",
+        "show": "Показати на графіку"
+      },
       "vsPreviousPeriod": "проти попереднього періоду",
       "loadError": "Не вдалося завантажити дані",
       "noData": "Даних немає",
       "noDataHint": "За цей період транзакцій не зафіксовано"
     },
     "investmentCalculator": {
+      "subtitle": "Спрогнозуйте, як зросте ваш портфель за регулярних внесків.",
       "initialBalance": "Початковий баланс",
       "useCurrentBalance": "Використати поточний баланс →",
       "monthlyContribution": "Щомісячний внесок",
       "useAvgNetIncome": "Використати сер. чистий дохід →",
       "timeHorizon": "Горизонт (роки)",
       "annualReturn": "Річна дохідність (%)",
+      "annualReturnPlaceholder": "Оберіть предустановку",
       "annualInflation": "Річна інфляція (%)",
       "totalInvested": "Всього інвестовано",
       "nominalFinalValue": "Номінальна кінцева вартість",
@@ -107,8 +158,7 @@
       "configure": "Налаштувати",
       "hideInputs": "Сховати",
       "portfolioReturnOption": "{name} (ваш ~{rate}%/рік)",
-      "portfolioNoHistoryOption": "{name} — недостатньо історії",
-      "annualReturnPlaceholder": "Оберіть предустановку"
+      "portfolioNoHistoryOption": "{name} — недостатньо історії"
     },
     "portfolioFilter": {
       "all": "Усі портфелі",
@@ -119,7 +169,6 @@
     }
   },
   "pivotReport": {
-    "title": "Звіт зведення",
     "subtitle": "Розбийте витрати за будь-яким вимірюванням, виложіть по часу та порівняйте.",
     "controls": {
       "rows": "Рядки",
@@ -153,6 +202,9 @@
     "filters": {
       "period": "Період",
       "allCategories": "Усі",
+      "button": "Фільтри",
+      "categories": "Категорії",
+      "payees": "Отримувачі",
       "accounts": "Рахунки",
       "reset": "Скинути",
       "resetTooltip": "Скинути на замовчення"
@@ -194,7 +246,6 @@
     }
   },
   "netWorthDrivers": {
-    "title": "Драйвери чистого майна",
     "subtitle": "Скільки з вашого зростання ви заощадили, а скільки дав ринок. Перекази між власними рахунками не враховуються в жодній із категорій.",
     "portfolioFilter": {
       "scopeHint": "Фільтрує лише інвестиційні активи та їхнє зростання. На заощаджені суми та готівку на рахунках це не впливає."
@@ -273,7 +324,6 @@
     }
   },
   "investmentContributions": {
-    "title": "Інвестиційні внески",
     "subtitle": "Скільки готівки ви перемістили у свої портфелі за цей час і куди вона пішла.",
     "average": "Середнє",
     "portfolioFilter": {
@@ -302,7 +352,6 @@
     }
   },
   "netWorthHistory": {
-    "title": "Історія чистого майна",
     "subtitle": "Як змінювалися ваші активи, зобов'язання та чисте майно з часом",
     "granularity": {
       "weekly": "Щотижня",

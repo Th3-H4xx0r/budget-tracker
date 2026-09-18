@@ -1,6 +1,7 @@
 import {
   ACCOUNT_CATEGORIES,
   ACCOUNT_TYPES,
+  BLANK_FILTER_VALUE,
   CategorizationMeta,
   CATEGORIZATION_SOURCE,
   FILTER_OPERATION,
@@ -11,6 +12,7 @@ import {
   TRANSACTION_TRANSFER_NATURE,
   TRANSACTION_TYPES,
   TransactionCreatorSnapshot,
+  TransactionLocation,
   TransactionModel,
 } from '@bt/shared/types';
 import { IdColumn } from '@common/types/id-column';
@@ -53,7 +55,16 @@ import {
 } from '@models/transactions-query/where-builders';
 import Users from '@models/users.model';
 import { updateAccountBalanceForChangedTx } from '@services/accounts/update-balance-for-changed-tx';
-import { Op, Includeable, Order, WhereOptions, literal, where as sequelizeWhere } from 'sequelize';
+import {
+  Op,
+  FindAttributeOptions,
+  Includeable,
+  Order,
+  ProjectionAlias,
+  WhereOptions,
+  literal,
+  where as sequelizeWhere,
+} from 'sequelize';
 import {
   Table,
   BeforeCreate,
@@ -92,6 +103,9 @@ export interface TransactionsAttributes {
   /** Amount in user's base currency */
   refAmount: Money;
   note: string;
+  externalUrl: string | null;
+  externalReference: string | null;
+  location: TransactionLocation | null;
   time: Date;
   userId: number;
   transactionType: TRANSACTION_TYPES;
@@ -116,6 +130,8 @@ export interface TransactionsAttributes {
     receiptId?: string;
     /** Set on transactions created by the balance-adjustment flow. */
     balanceAdjustment?: boolean;
+    /** Set when the row was created with `applyAutomations`; keeps it automation-eligible. */
+    applyAutomations?: boolean;
   } & Record<string, unknown>;
   commissionRate: Money;
   refCommissionRate: Money;
@@ -150,6 +166,15 @@ export default class Transactions extends Model {
   @Length({ max: 2000 })
   @Column({ allowNull: true, type: DataType.STRING })
   note!: string;
+
+  @Column({ allowNull: true, type: DataType.STRING(2048) })
+  externalUrl!: string | null;
+
+  @Column({ allowNull: true, type: DataType.STRING(255) })
+  externalReference!: string | null;
+
+  @Column({ allowNull: true, type: DataType.JSONB })
+  location!: TransactionLocation | null;
 
   @Column({
     defaultValue: Date.now(),
@@ -783,6 +808,8 @@ function buildExcludeRefundTxsCondition({ keepRefundsForTxId }: { keepRefundsFor
   );
 }
 
+const HAS_ATTACHMENTS_SQL = `EXISTS (SELECT 1 FROM "TransactionAttachments" ta WHERE ta."transactionId" = "Transactions"."id")`;
+
 export const findWithFilters = async ({
   planned,
   access,
@@ -794,7 +821,7 @@ export const findWithFilters = async ({
   excludeAccountIds,
   budgetIds,
   excludedBudgetIds,
-  tagIds,
+  tagIds: requestedTagIds,
   excludedTagIds,
   order = SORT_DIRECTIONS.desc,
   sortBy,
@@ -808,6 +835,8 @@ export const findWithFilters = async ({
   excludeRefunds,
   excludeRefundTxs,
   keepRefundsForTxId,
+  hasAttachment,
+  includeHasAttachments,
   transferFilter,
   refundFilter,
   startDate,
@@ -864,6 +893,11 @@ export const findWithFilters = async ({
   /** With `excludeRefundTxs`: keep refunds linked to this original, so an edit dialog
    *  can still list and deselect its own links. */
   keepRefundsForTxId?: string;
+  /** Absent = both, `true` = only rows carrying attachments, `false` = only rows without. */
+  hasAttachment?: boolean;
+  /** Adds a `hasAttachments` boolean to every row. Costs an EXISTS subquery per row, so
+   *  only the user-facing list asks for it. */
+  includeHasAttachments?: boolean;
   transferFilter?: FILTER_OPERATION;
   refundFilter?: FILTER_OPERATION;
   startDate?: string;
@@ -916,6 +950,12 @@ export const findWithFilters = async ({
     }),
   };
 
+  const pushAndCondition = (condition: WhereOptions<Transactions>) => {
+    const andConditions = (whereClause[Op.and as unknown as string] as unknown[] | undefined) ?? [];
+    andConditions.push(condition);
+    whereClause[Op.and as unknown as string] = andConditions;
+  };
+
   // When both filters are "only", use OR logic so the user can see
   // "refunds OR transfers" instead of the impossible "refunds AND transfers"
   if (
@@ -925,16 +965,18 @@ export const findWithFilters = async ({
     resolvedRefundFilter === FILTER_OPERATION.only
   ) {
     // Wrap in Op.and to avoid conflicting with category filter's Op.or
-    whereClause[Op.and as unknown as string] = [{ [Op.or]: [transferCondition, refundCondition] }];
+    pushAndCondition({ [Op.or]: [transferCondition, refundCondition] });
   } else {
     if (transferCondition) Object.assign(whereClause, transferCondition);
     if (refundCondition) Object.assign(whereClause, refundCondition);
   }
 
   if (excludeRefundTxs) {
-    const andConditions = (whereClause[Op.and as unknown as string] as unknown[] | undefined) ?? [];
-    andConditions.push(buildExcludeRefundTxsCondition({ keepRefundsForTxId }));
-    whereClause[Op.and as unknown as string] = andConditions;
+    pushAndCondition(buildExcludeRefundTxsCondition({ keepRefundsForTxId }));
+  }
+
+  if (hasAttachment !== undefined) {
+    pushAndCondition(literal(`${hasAttachment ? '' : 'NOT '}${HAS_ATTACHMENTS_SQL}`));
   }
 
   if (categoryIds && categoryIds.length > 0) {
@@ -965,9 +1007,14 @@ export const findWithFilters = async ({
   }
 
   if (payeeIds && payeeIds.length > 0) {
-    whereClause.payeeId = {
-      [Op.in]: payeeIds,
-    };
+    const realPayeeIds = payeeIds.filter((id) => id !== BLANK_FILTER_VALUE);
+    if (realPayeeIds.length === payeeIds.length) {
+      whereClause.payeeId = { [Op.in]: realPayeeIds };
+    } else {
+      pushAndCondition({
+        [Op.or]: [{ payeeId: null }, ...(realPayeeIds.length ? [{ payeeId: { [Op.in]: realPayeeIds } }] : [])],
+      });
+    }
   }
 
   if (accountIds && accountIds.length > 0) {
@@ -1056,8 +1103,21 @@ export const findWithFilters = async ({
     }
   }
 
+  const hasBlankTag = !!requestedTagIds?.includes(BLANK_FILTER_VALUE);
+  const tagIds = hasBlankTag ? requestedTagIds!.filter((id) => id !== BLANK_FILTER_VALUE) : requestedTagIds;
+  // A required include can't express "no tags", so the blank case is a correlated subquery.
+  if (hasBlankTag) {
+    if (tagIds!.some((id) => !UUID_PATTERN.test(id))) {
+      throw new ValidationError({ message: '"tagIds" must contain valid record ids' });
+    }
+    const junction = `SELECT 1 FROM "TransactionTags" tt WHERE tt."transactionId" = "Transactions"."id"`;
+    const untagged = `NOT EXISTS (${junction})`;
+    const taggedWithAny = `EXISTS (${junction} AND tt."tagId" IN (${tagIds!.map((id) => `'${id}'`).join(', ')}))`;
+    pushAndCondition(literal(tagIds!.length ? `(${untagged} OR ${taggedWithAny})` : untagged));
+  }
+
   // Filter by tagIds - include only transactions with these tags
-  if (tagIds?.length) {
+  if (tagIds?.length && !hasBlankTag) {
     queryInclude.push({
       model: Tags,
       through: { attributes: [], where: { tagId: { [Op.in]: tagIds } } },
@@ -1112,7 +1172,7 @@ export const findWithFilters = async ({
         ...(tagIds?.length ? { where: { tagId: { [Op.in]: tagIds } } } : {}),
       },
       attributes: ['id', 'name', 'color', 'icon'],
-      required: !!tagIds?.length,
+      required: !!tagIds?.length && !hasBlankTag,
     });
   }
 
@@ -1179,6 +1239,13 @@ export const findWithFilters = async ({
   }
   const { limit, offset } = completenessToPagination({ completeness });
 
+  const hasAttachmentsAttribute: ProjectionAlias = [literal(HAS_ATTACHMENTS_SQL), 'hasAttachments'];
+  const resolvedAttributes: FindAttributeOptions | undefined = !includeHasAttachments
+    ? attributes
+    : attributes
+      ? [...attributes, hasAttachmentsAttribute]
+      : { include: [hasAttachmentsAttribute] };
+
   const transactions = await Transactions.findAll({
     include: queryInclude,
     where: whereClause,
@@ -1188,7 +1255,7 @@ export const findWithFilters = async ({
     raw: isRaw,
     // When raw is true and includeSplits/includeTags is requested, use nest to preserve nested structure
     nest: isRaw && (includeSplits || includeTags) ? true : undefined,
-    attributes,
+    attributes: resolvedAttributes,
   });
 
   // `info`, not `warn`: warn ships every occurrence to Sentry as its own event.
@@ -1268,6 +1335,9 @@ type CreateTxOptionalParams = Partial<
   Pick<
     TransactionsAttributes,
     | 'note'
+    | 'externalUrl'
+    | 'externalReference'
+    | 'location'
     | 'time'
     | 'categoryId'
     | 'refCurrencyCode'
@@ -1303,6 +1373,9 @@ export interface UpdateTransactionByIdParams {
   amount?: Money;
   refAmount?: Money;
   note?: string | null;
+  externalUrl?: string | null;
+  externalReference?: string | null;
+  location?: TransactionLocation | null;
   time?: Date;
   transactionType?: TRANSACTION_TYPES;
   paymentType?: PAYMENT_TYPES;

@@ -14,8 +14,8 @@ import { MaybeRef, Ref, computed, ref } from 'vue';
 
 const filterOrUndefined = (value: FILTER_OPERATION) => (value === FILTER_OPERATION.all ? undefined : value);
 
-/** `isPlanned` is a tri-state boolean param: true = only plans, false = exclude them, absent = both. */
-export const buildIsPlannedParam = ({ value }: { value: FILTER_OPERATION }): boolean | undefined => {
+/** For tri-state boolean params (`isPlanned`, `hasAttachment`): true = only, false = exclude, absent = both. */
+export const buildTriStateParam = ({ value }: { value: FILTER_OPERATION }): boolean | undefined => {
   if (value === FILTER_OPERATION.only) return true;
   if (value === FILTER_OPERATION.exclude) return false;
   return undefined;
@@ -25,6 +25,26 @@ interface TransactionsSorting {
   sortBy: TRANSACTION_SORT_FIELD;
   order: SORT_DIRECTIONS;
 }
+
+const DATE_FILTER_KEYS = new Set<string>(['start', 'end']);
+
+export interface StoredFiltersState {
+  filters: Partial<FiltersStruct>;
+  sorting?: TransactionsSorting;
+}
+
+/** JSON round-trip loses Date instances; `start`/`end` come back as ISO strings and need reviving. */
+export const parseStoredFilters = ({ raw }: { raw: string | null }): StoredFiltersState | null => {
+  if (!raw) return null;
+  try {
+    const stored = JSON.parse(raw, (key, value) =>
+      DATE_FILTER_KEYS.has(key) && typeof value === 'string' ? new Date(value) : value,
+    );
+    return stored?.filters && typeof stored.filters === 'object' ? stored : null;
+  } catch {
+    return null;
+  }
+};
 
 /**
  * Computes the `transferNatures` query param. Returns undefined when the user's
@@ -95,9 +115,10 @@ export const useTransactionsWithFilters = ({
           amountGte: filter.amountGte,
           amountLte: filter.amountLte,
           noteSearch: filter.noteIncludes,
+          hasAttachment: buildTriStateParam({ value: filter.attachmentFilter }),
           transferFilter: filterOrUndefined(filter.transferFilter),
           refundFilter: filterOrUndefined(filter.refundFilter),
-          isPlanned: buildIsPlannedParam({ value: filter.plannedFilter }),
+          isPlanned: buildTriStateParam({ value: filter.plannedFilter }),
           transferNatures: buildTransferNaturesParam(filter),
           sortBy: sorting?.value.sortBy,
           order: sorting?.value.order,
@@ -107,8 +128,8 @@ export const useTransactionsWithFilters = ({
           payeeIds: filter.payeeIds.length ? filter.payeeIds : undefined,
           categorizationSource: filter.categorizationSource ?? undefined,
           batchId: filter.batchId ?? undefined,
-          budgetIds: staticFilters.budgetIds ?? undefined,
-          excludedBudgetIds: staticFilters.excludedBudgetIds ?? undefined,
+          budgetIds: filter.budgetIds.length ? filter.budgetIds : undefined,
+          excludedBudgetIds: filter.excludedBudgetIds.length ? filter.excludedBudgetIds : undefined,
           includeSplits: true,
           includeTags: true,
           includeGroups: true,

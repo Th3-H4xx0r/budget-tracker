@@ -1,7 +1,8 @@
 import { TRANSACTION_TYPES } from '@bt/shared/types';
-import { removeUndefinedKeys } from '@js/helpers';
 import * as Transactions from '@models/transactions.model';
+import { type StatsScopeFilters, buildStatsScopeWhere } from '@services/stats/stats-scope-filters';
 import { statsTransactions } from '@services/stats/stats-transactions';
+import { Op } from 'sequelize';
 
 type GetExpensesHistoryResponseSchema = Pick<
   Transactions.default,
@@ -15,6 +16,15 @@ type GetExpensesHistoryResponseSchema = Pick<
   | 'refundLinked'
   | 'transactionType'
 >;
+
+interface GetExpensesHistoryParams extends StatsScopeFilters {
+  userId: number;
+  from?: string;
+  to?: string;
+  transactionType?: TRANSACTION_TYPES;
+  /** Drops pending planned rows, leaving only money that actually moved. */
+  excludePlanned?: boolean;
+}
 
 /**
  * Fetches the expense history for a specified user within an optional date range and account.
@@ -39,17 +49,14 @@ export const getExpensesHistory = async ({
   from,
   to,
   accountId,
+  accountIds,
+  payeeIds,
+  excludedPayeeIds,
+  tagIds,
+  excludedTagIds,
   transactionType = TRANSACTION_TYPES.expense,
   excludePlanned,
-}: {
-  userId: number;
-  accountId?: string;
-  from?: string;
-  to?: string;
-  transactionType?: TRANSACTION_TYPES;
-  /** Drops pending planned rows, leaving only money that actually moved. */
-  excludePlanned?: boolean;
-}): Promise<GetExpensesHistoryResponseSchema[]> => {
+}: GetExpensesHistoryParams): Promise<GetExpensesHistoryResponseSchema[]> => {
   const dataAttributes: (keyof Transactions.default)[] = [
     'id',
     'accountId',
@@ -65,11 +72,18 @@ export const getExpensesHistory = async ({
   // Refunds are left gross here: the caller runs them through the category-allocation engine,
   // which resolves the pairs itself.
   const { rows } = await statsTransactions({
-    access: { creator: userId },
-    planned: excludePlanned ? 'exclude' : 'include',
+    access: { accessibleTo: userId },
+    // See the note in `get-cash-flow.ts`: a widened row scope makes `'include'` leak
+    // other members' plans into this caller's numbers.
+    planned: excludePlanned ? 'exclude' : { visibleTo: userId },
     refunds: 'ignore',
     window: { from, to },
-    where: removeUndefinedKeys({ accountId, transactionType }),
+    where: {
+      [Op.and]: [
+        { transactionType },
+        ...buildStatsScopeWhere({ accountId, accountIds, payeeIds, excludedPayeeIds, tagIds, excludedTagIds }),
+      ],
+    },
     order: [['time', 'ASC']],
     attributes: dataAttributes,
   });

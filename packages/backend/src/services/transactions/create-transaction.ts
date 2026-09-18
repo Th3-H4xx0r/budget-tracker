@@ -309,6 +309,9 @@ export const createOppositeTransaction = async (params: CreateOppositeTransactio
     amount: destinationAmount,
     refAmount: oppositeRefAmount,
     note: baseTransaction.note,
+    externalUrl: baseTransaction.externalUrl,
+    externalReference: baseTransaction.externalReference,
+    location: baseTransaction.location,
     time: new Date(baseTransaction.time),
     transactionType:
       transactionType === TRANSACTION_TYPES.income ? TRANSACTION_TYPES.expense : TRANSACTION_TYPES.income,
@@ -355,8 +358,11 @@ export const createTransaction = withTransaction(
     payeeLocked: callerPayeeLocked,
     categoryIdIsExplicit = false,
     matchPlanned = false,
+    applyAutomations = false,
     ...payload
   }: CreateTransactionParams): Promise<CreateTxResult> => {
+    if (applyAutomations) payload.externalData = { ...payload.externalData, applyAutomations: true };
+
     try {
       // Captured before the coercion below, which would hide a non-positive amount from
       // the planned-row invariants.
@@ -458,6 +464,9 @@ export const createTransaction = withTransaction(
             cashbackAmount: payload.cashbackAmount,
             accountType,
             rawMerchantName,
+            externalUrl: payload.externalUrl,
+            externalReference: payload.externalReference,
+            location: payload.location,
           },
         });
 

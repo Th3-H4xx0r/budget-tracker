@@ -44,14 +44,14 @@
             {{ $t('pages.statementParser.importResults.importedLabel') }}
           </dt>
           <dd class="text-app-income-color mt-0.5 text-xl font-semibold tabular-nums">
-            {{ store.importResult.summary.imported }}
+            {{ store.importResult.imported }}
           </dd>
         </div>
         <div class="bg-muted/40 border-border/60 rounded-lg border p-3">
           <dt class="text-muted-foreground text-xs">
             {{ $t('pages.statementParser.importResults.skippedLabel') }}
           </dt>
-          <dd class="mt-0.5 text-xl font-semibold tabular-nums">{{ store.importResult.summary.skipped }}</dd>
+          <dd class="mt-0.5 text-xl font-semibold tabular-nums">{{ store.importResult.skipped }}</dd>
         </div>
       </dl>
 
@@ -73,7 +73,7 @@
             </thead>
             <tbody>
               <tr
-                v-for="error in store.importResult.summary.errors"
+                v-for="error in store.importResult.errors"
                 :key="error.transactionIndex"
                 class="border-border/60 border-b last:border-b-0"
               >
@@ -101,8 +101,28 @@
       </div>
     </template>
 
-    <!-- Ready, and the same screen after a failed attempt: the summary stays and only the
-         actions change. -->
+    <!-- The job started and then failed: rows may already have landed, so this screen
+         offers no retry. -->
+    <template v-else-if="store.importJobError">
+      <Callout variant="destructive" :title="$t('pages.statementParser.importResults.failedTitle')">
+        <p>{{ $t('pages.statementParser.importResults.jobFailedDescription') }}</p>
+        <ScrollArea class="border-destructive/50 mt-2 max-h-32 rounded-md border" viewport-class="max-h-32">
+          <p class="px-3 py-2 font-mono text-xs break-words whitespace-pre-wrap">{{ store.importJobError }}</p>
+        </ScrollArea>
+      </Callout>
+
+      <div class="flex flex-col gap-2 @sm/import-step:flex-row">
+        <Button variant="outline" class="flex-1" @click="store.reset()">
+          {{ $t('pages.statementParser.importResults.startNewImportButton') }}
+        </Button>
+        <Button class="flex-1" @click="handleViewTransactions">
+          {{ $t('pages.statementParser.importResults.viewTransactionsButton') }}
+        </Button>
+      </div>
+    </template>
+
+    <!-- Ready, and the same screen after the job failed to start: the summary stays and
+         only the actions change. -->
     <template v-else>
       <div>
         <h3 class="text-lg font-semibold">{{ $t('pages.statementParser.importResults.readyTitle') }}</h3>
@@ -121,6 +141,12 @@
             <span class="text-muted-foreground">({{ store.selectedAccount?.currencyCode }})</span>
           </span>
         </div>
+        <div v-if="store.importSummary.files > 1" class="flex items-baseline justify-between gap-3 px-4 py-2.5">
+          <span class="text-muted-foreground text-sm">
+            {{ $t('pages.statementParser.importResults.statementsLabel') }}
+          </span>
+          <span class="text-right text-sm font-medium tabular-nums">{{ store.importSummary.files }}</span>
+        </div>
         <div class="flex items-baseline justify-between gap-3 px-4 py-2.5">
           <span class="text-muted-foreground text-sm">
             {{ $t('pages.statementParser.importResults.toImportLabel') }}
@@ -138,8 +164,8 @@
       </div>
 
       <!-- Without this the count above silently under-reports the uploaded file. -->
-      <Callout v-if="droppedRowCount > 0" variant="warning">
-        {{ $t('pages.statementParser.droppedRowsWarning', { count: droppedRowCount }) }}
+      <Callout v-if="store.droppedRowCount > 0" variant="warning">
+        {{ $t('pages.statementParser.droppedRowsWarning', { count: store.droppedRowCount }) }}
       </Callout>
 
       <Callout
@@ -184,11 +210,9 @@ import { useRouter } from 'vue-router';
 const store = useStatementParserStore();
 const router = useRouter();
 
-const hasErrors = computed(() => (store.importResult?.summary.errors.length ?? 0) > 0);
+const hasErrors = computed(() => (store.importResult?.errors.length ?? 0) > 0);
 
 const skippedCount = computed(() => store.importSummary.total - store.importSummary.toImport);
-
-const droppedRowCount = computed(() => store.extractionResult?.droppedRowCount ?? 0);
 
 function handleBack() {
   // Walks to the previous visible step: `review` for existing accounts (where it

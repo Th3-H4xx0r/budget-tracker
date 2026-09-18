@@ -1,3 +1,5 @@
+import type { RecordId } from '@bt/shared/types';
+import { generateRandomRecordId } from '@common/lib/record-id-helpers';
 import { describe, expect, it } from '@jest/globals';
 import * as helpers from '@tests/helpers';
 
@@ -15,17 +17,28 @@ import * as helpers from '@tests/helpers';
  * the 2nd tx finds 1 prior with matching normalized name → spins up a new
  * Payee and backfills both.
  */
+const enableNoteExtraction = () =>
+  helpers.updateUserSettings({
+    settings: { locale: 'en', payeeExtractionUsesDescription: true },
+  });
+
 describe('Payee extraction — description/note fallback flag', () => {
   describe('default (flag OFF)', () => {
     it('does NOT create a Payee from `note` when the flag is unset', async () => {
       const account = await helpers.createAccount({ raw: true });
 
       await helpers.createTransaction({
-        payload: helpers.buildTransactionPayload({ accountId: account.id, note: 'Glovo' }),
+        payload: helpers.buildTransactionPayload({
+          accountId: account.id,
+          note: 'Glovo',
+        }),
         raw: true,
       });
       await helpers.createTransaction({
-        payload: helpers.buildTransactionPayload({ accountId: account.id, note: 'Glovo' }),
+        payload: helpers.buildTransactionPayload({
+          accountId: account.id,
+          note: 'Glovo',
+        }),
         raw: true,
       });
 
@@ -36,15 +49,16 @@ describe('Payee extraction — description/note fallback flag', () => {
 
   describe('when payeeExtractionUsesDescription is ON', () => {
     it('promotes a new Payee after the 2nd transaction with the same note', async () => {
-      await helpers.updateUserSettings({
-        settings: { locale: 'en', payeeExtractionUsesDescription: true },
-      });
+      await enableNoteExtraction();
 
       const account = await helpers.createAccount({ raw: true });
 
       // First tx: Step 3 finds zero priors → no Payee yet.
       await helpers.createTransaction({
-        payload: helpers.buildTransactionPayload({ accountId: account.id, note: 'Spotify' }),
+        payload: helpers.buildTransactionPayload({
+          accountId: account.id,
+          note: 'Spotify',
+        }),
         raw: true,
       });
       let payees = await helpers.listPayees({ raw: true });
@@ -52,7 +66,10 @@ describe('Payee extraction — description/note fallback flag', () => {
 
       // Second tx: 1 prior + current → Payee created + both backfilled.
       await helpers.createTransaction({
-        payload: helpers.buildTransactionPayload({ accountId: account.id, note: 'Spotify' }),
+        payload: helpers.buildTransactionPayload({
+          accountId: account.id,
+          note: 'Spotify',
+        }),
         raw: true,
       });
       payees = await helpers.listPayees({ raw: true });
@@ -61,25 +78,8 @@ describe('Payee extraction — description/note fallback flag', () => {
       expect(spotify?.normalizedName).toBe('spotify');
     });
 
-    it('does not create a Payee for a single-occurrence note', async () => {
-      await helpers.updateUserSettings({
-        settings: { locale: 'en', payeeExtractionUsesDescription: true },
-      });
-
-      const account = await helpers.createAccount({ raw: true });
-      await helpers.createTransaction({
-        payload: helpers.buildTransactionPayload({ accountId: account.id, note: 'OneOffMerchant' }),
-        raw: true,
-      });
-
-      const payees = await helpers.listPayees({ raw: true });
-      expect(payees.find((p) => p.name === 'OneOffMerchant')).toBeUndefined();
-    });
-
     it('still respects caller-supplied payeeId (manual UI assignment wins)', async () => {
-      await helpers.updateUserSettings({
-        settings: { locale: 'en', payeeExtractionUsesDescription: true },
-      });
+      await enableNoteExtraction();
 
       const manualPayee = await helpers.createPayee({
         payload: helpers.buildPayeePayload({ name: 'Manual Pick' }),
@@ -112,9 +112,7 @@ describe('Payee extraction — description/note fallback flag', () => {
     // bank sync calls the service layer with both fields and exercises the
     // exact same code path.
     it('applies payee_rule via Step 1 exact match before any async pass runs', async () => {
-      await helpers.updateUserSettings({
-        settings: { locale: 'en', payeeExtractionUsesDescription: true },
-      });
+      await enableNoteExtraction();
 
       const payee = await helpers.createPayee({
         payload: helpers.buildPayeePayload({
@@ -154,9 +152,7 @@ describe('Payee extraction — description/note fallback flag', () => {
       // A plan records an intention, so it is neither evidence of a recurring
       // merchant nor a row the promotion may stamp. Real rows carrying the
       // same note still promote and still get backfilled.
-      await helpers.updateUserSettings({
-        settings: { locale: 'en', payeeExtractionUsesDescription: true },
-      });
+      await enableNoteExtraction();
 
       const account = await helpers.createAccount({ raw: true });
 
@@ -169,17 +165,24 @@ describe('Payee extraction — description/note fallback flag', () => {
         raw: true,
       });
       const [firstReal] = await helpers.createTransaction({
-        payload: helpers.buildTransactionPayload({ accountId: account.id, note: 'Quantum Diner' }),
+        payload: helpers.buildTransactionPayload({
+          accountId: account.id,
+          note: 'Quantum Diner',
+        }),
         raw: true,
       });
       const [secondReal] = await helpers.createTransaction({
-        payload: helpers.buildTransactionPayload({ accountId: account.id, note: 'Quantum Diner' }),
+        payload: helpers.buildTransactionPayload({
+          accountId: account.id,
+          note: 'Quantum Diner',
+        }),
         raw: true,
       });
 
       const payees = await helpers.listPayees({ raw: true });
       const promoted = payees.find((p) => p.name === 'Quantum Diner');
       expect(promoted).toBeDefined();
+      expect(payees.filter((p) => p.name === 'Quantum Diner')).toHaveLength(1);
 
       const [plannedAfter, firstRealAfter, secondRealAfter] = await Promise.all([
         helpers.getTransactionById({ id: planned!.id, raw: true }),
@@ -191,6 +194,149 @@ describe('Payee extraction — description/note fallback flag', () => {
       expect(plannedAfter!.payeeId).toBeNull();
       expect(firstRealAfter!.payeeId).toBe(promoted!.id);
       expect(secondRealAfter!.payeeId).toBe(promoted!.id);
+    });
+  });
+
+  /**
+   * The transaction create endpoint accepts no `rawMerchantName`, so these tests
+   * drive promotion through the `payeeExtractionUsesDescription` note fallback.
+   * Concurrent promotions race the `payees_user_id_normalized_name_uniq` index.
+   */
+  describe('concurrency safety', () => {
+    it('creates only one Payee when two transactions promote the same merchant concurrently', async () => {
+      await enableNoteExtraction();
+      const merchant = `RaceMerchant-${generateRandomRecordId()}`;
+      const account = await helpers.createAccount({ raw: true });
+
+      // Promotion needs a prior unmatched occurrence, so both concurrent creates
+      // below qualify only after this seed.
+      await helpers.createTransaction({
+        payload: helpers.buildTransactionPayload({
+          accountId: account.id,
+          note: merchant,
+        }),
+        raw: true,
+      });
+
+      const [firstResponse, secondResponse] = await Promise.all([
+        helpers.createTransaction({
+          payload: helpers.buildTransactionPayload({
+            accountId: account.id,
+            note: merchant,
+          }),
+          raw: false,
+        }),
+        helpers.createTransaction({
+          payload: helpers.buildTransactionPayload({
+            accountId: account.id,
+            note: merchant,
+          }),
+          raw: false,
+        }),
+      ]);
+
+      // The losing racer adopts the winner's Payee, so neither create returns 5xx.
+      expect(firstResponse.statusCode).toBeLessThan(500);
+      expect(secondResponse.statusCode).toBeLessThan(500);
+
+      const payees = await helpers.listPayees({ raw: true });
+      expect(payees.filter((p) => p.name === merchant)).toHaveLength(1);
+    });
+
+    it('creates only one Payee when two accounts of one user promote the same merchant concurrently', async () => {
+      await enableNoteExtraction();
+      const merchant = `MultiAccountMerchant-${generateRandomRecordId()}`;
+      const accountA = await helpers.createAccount({ raw: true });
+      const accountB = await helpers.createAccount({ raw: true });
+
+      // Occurrence counting is user-scoped, so one seed qualifies promotion on
+      // both accounts.
+      await helpers.createTransaction({
+        payload: helpers.buildTransactionPayload({
+          accountId: accountA.id,
+          note: merchant,
+        }),
+        raw: true,
+      });
+
+      const [firstResponse, secondResponse] = await Promise.all([
+        helpers.createTransaction({
+          payload: helpers.buildTransactionPayload({
+            accountId: accountA.id,
+            note: merchant,
+          }),
+          raw: false,
+        }),
+        helpers.createTransaction({
+          payload: helpers.buildTransactionPayload({
+            accountId: accountB.id,
+            note: merchant,
+          }),
+          raw: false,
+        }),
+      ]);
+
+      expect(firstResponse.statusCode).toBeLessThan(500);
+      expect(secondResponse.statusCode).toBeLessThan(500);
+
+      const payees = await helpers.listPayees({ raw: true });
+      expect(payees.filter((p) => p.name === merchant)).toHaveLength(1);
+    });
+  });
+
+  describe('payeePromotionThreshold', () => {
+    const setThreshold = (payeePromotionThreshold: 1 | 2 | 3) =>
+      helpers.updateUserSettings({
+        settings: {
+          locale: 'en',
+          payeeExtractionUsesDescription: true,
+          payeePromotionThreshold,
+        },
+      });
+
+    const createWithNote = ({ accountId, note }: { accountId: RecordId; note: string }) =>
+      helpers.createTransaction({
+        payload: helpers.buildTransactionPayload({ accountId, note }),
+        raw: true,
+      });
+
+    const findPayee = async (name: string) => (await helpers.listPayees({ raw: true })).find((p) => p.name === name);
+
+    it('threshold 1: creates a Payee from the first occurrence', async () => {
+      await setThreshold(1);
+      const account = await helpers.createAccount({ raw: true });
+
+      const [tx] = await createWithNote({
+        accountId: account.id,
+        note: 'Bolt',
+      });
+
+      const bolt = await findPayee('Bolt');
+      expect(bolt).toBeDefined();
+      const row = await helpers.getTransactionById({ id: tx!.id, raw: true });
+      expect(row!.payeeId).toBe(bolt!.id);
+    });
+
+    it('threshold 3: needs three occurrences and backfills the priors', async () => {
+      await setThreshold(3);
+      const account = await helpers.createAccount({ raw: true });
+
+      await createWithNote({ accountId: account.id, note: 'Uber' });
+      await createWithNote({ accountId: account.id, note: 'Uber' });
+      expect(await findPayee('Uber')).toBeUndefined();
+
+      await createWithNote({ accountId: account.id, note: 'Uber' });
+      const uber = await findPayee('Uber');
+      expect(uber).toBeDefined();
+      const rows = await helpers.getTransactions({ raw: true });
+      expect(rows.filter((r) => r.payeeId === uber!.id)).toHaveLength(3);
+    });
+
+    it('rejects a threshold outside 1..3', async () => {
+      const res = await helpers.updateUserSettings({
+        settings: { locale: 'en', payeePromotionThreshold: 0 as never },
+      });
+      expect(res.statusCode).toBe(422);
     });
   });
 });

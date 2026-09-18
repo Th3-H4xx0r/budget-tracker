@@ -5,7 +5,13 @@ import { deserializeCreateTransaction, serializeTransactionTuple } from '@root/s
 import * as transactionsService from '@services/transactions';
 import { z } from 'zod';
 
-import { nonNegativeAmountSchema, positiveAmountSchema, splitSchema, transactionTimeSchema } from './schemas';
+import {
+  nonNegativeAmountSchema,
+  positiveAmountSchema,
+  splitSchema,
+  transactionDetailFieldsSchema,
+  transactionTimeSchema,
+} from './schemas';
 
 const schema = z.object({
   body: z
@@ -13,6 +19,7 @@ const schema = z.object({
       amount: nonNegativeAmountSchema(),
       commissionRate: positiveAmountSchema().optional(),
       note: z.string().max(1000, 'The string must not exceed 1000 characters.').nullish(),
+      ...transactionDetailFieldsSchema,
       time: transactionTimeSchema().optional(),
       transactionType: z.nativeEnum(TRANSACTION_TYPES),
       paymentType: z.nativeEnum(PAYMENT_TYPES),
@@ -29,6 +36,7 @@ const schema = z.object({
       payeeId: recordId().nullable().optional(),
       payeeLocked: z.boolean().optional(),
       isPlanned: z.boolean().optional().default(false),
+      applyAutomations: z.boolean().optional().default(false),
       originalAmount: nonNegativeAmountSchema().optional(),
       originalCurrencyCode: currencyCode().optional(),
     })

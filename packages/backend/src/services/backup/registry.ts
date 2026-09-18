@@ -4,6 +4,8 @@ import AccountGroup from '@models/accounts-groups/account-groups.model';
 import Accounts from '@models/accounts.model';
 import Balances from '@models/balances.model';
 import BankDataProviderConnections from '@models/bank-data-provider-connections.model';
+import BillingSubscriptions from '@models/billing-subscriptions.model';
+import BillingWebhookEvents from '@models/billing-webhook-events.model';
 import BrandLogos from '@models/brand-logos.model';
 import BudgetCategories from '@models/budget-categories.model';
 import BudgetTransactions from '@models/budget-transactions.model';
@@ -29,6 +31,7 @@ import Payees from '@models/payees.model';
 import RefundTransactions from '@models/refund-transactions.model';
 import ResourceShares from '@models/resource-shares.model';
 import ShareInvitations from '@models/share-invitations.model';
+import SignupLedger from '@models/signup-ledger.model';
 import SubscriptionCandidates from '@models/subscription-candidates.model';
 import SubscriptionPeriodNotifications from '@models/subscription-period-notifications.model';
 import SubscriptionPeriods from '@models/subscription-periods.model';
@@ -37,6 +40,7 @@ import SubscriptionTransactions from '@models/subscription-transactions.model';
 import Subscriptions from '@models/subscriptions.model';
 import TagReminders from '@models/tag-reminders.model';
 import Tags from '@models/tags.model';
+import TransactionAttachments from '@models/transaction-attachments.model';
 import TransactionAutomations from '@models/transaction-automations.model';
 import TransactionGroupItems from '@models/transaction-group-items.model';
 import TransactionGroups from '@models/transaction-groups.model';
@@ -537,6 +541,18 @@ export const BACKUP_EXCLUDED: readonly BackupExcludedDef[] = [
     model: SecurityPricing,
     reason:
       'Global derived price history, refetched from the market-data provider. Never trusted from an uploaded backup — writing it from an archive would let a crafted backup poison prices for securities other users hold.',
+  },
+  {
+    model: BillingSubscriptions,
+    reason:
+      'Mirror of Stripe, keyed to a Stripe customer — Stripe re-sends it by webhook, restoring it would bind another account.',
+  },
+  { model: BillingWebhookEvents, reason: 'Webhook dedupe markers for a Stripe account, meaningless outside it.' },
+  { model: SignupLedger, reason: 'Global signup/trial ledger keyed by email hash, not per-user data.' },
+  {
+    model: TransactionAttachments,
+    reason:
+      'Rows point at files in attachment storage, which the backup archive does not carry — restoring rows alone would list attachments that cannot be opened. Attachments are not part of backup/restore.',
   },
 ];
 

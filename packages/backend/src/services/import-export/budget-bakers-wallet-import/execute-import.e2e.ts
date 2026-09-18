@@ -1,4 +1,4 @@
-import { TRANSACTION_TRANSFER_NATURE } from '@bt/shared/types';
+import { type BudgetBakersWalletAccountMapping, TRANSACTION_TRANSFER_NATURE } from '@bt/shared/types';
 import { generateRandomRecordId } from '@common/lib/record-id-helpers';
 import { describe, expect, it } from '@jest/globals';
 import { ERROR_CODES } from '@js/errors';
@@ -24,6 +24,21 @@ async function buildCreateNewMappingFromFixture({ fileContent }: { fileContent: 
     ]),
   );
   return { parsed: result, accountMapping };
+}
+
+async function buildMappingWithSkippedAccounts({
+  fileContent,
+  skippedAccountNames,
+}: {
+  fileContent: string;
+  skippedAccountNames: string[];
+}) {
+  const { parsed, accountMapping } = await buildCreateNewMappingFromFixture({ fileContent });
+  const skipped = new Set(skippedAccountNames);
+  const mapping: BudgetBakersWalletAccountMapping = Object.fromEntries(
+    Object.entries(accountMapping).map(([name, value]) => [name, skipped.has(name) ? { action: 'skip' } : value]),
+  );
+  return { parsed, accountMapping: mapping };
 }
 
 // ---------------------------------------------------------------------------
@@ -111,6 +126,22 @@ describe('Execute Budget Bakers Wallet import endpoint', () => {
       raw: true,
     });
     expect(linkedPair).toHaveLength(2);
+
+    // --- Cross-currency pair keeps a distinct amount per leg ---
+    const pkoUsd = accountsAfter.find((a) => a.name === 'PKO USD')!;
+    const pkoPln = accountsAfter.find((a) => a.name === 'PKO PLN')!;
+    const pkoUsdLeg = transactionsAfter.find(
+      (t) => t.accountId === pkoUsd.id && t.transferNature === TRANSACTION_TRANSFER_NATURE.common_transfer,
+    );
+    const pkoPlnLeg = transactionsAfter.find(
+      (t) => t.accountId === pkoPln.id && t.transferNature === TRANSACTION_TRANSFER_NATURE.common_transfer,
+    );
+    expect(pkoUsdLeg).toBeDefined();
+    expect(pkoPlnLeg).toBeDefined();
+    expect(Number(pkoUsdLeg!.amount)).toBe(410.9);
+    expect(Number(pkoPlnLeg!.amount)).toBe(1484.2);
+    expect(pkoUsdLeg!.transferId).toBeTruthy();
+    expect(pkoUsdLeg!.transferId).toBe(pkoPlnLeg!.transferId);
 
     // --- Lone transfer leg imported as out-of-wallet ---
     const outOfWalletLegs = transactionsAfter.filter(
@@ -695,46 +726,6 @@ describe('Execute Budget Bakers Wallet import endpoint', () => {
     expect(txs.filter((t) => t.accountId === aedAccount.id)).toHaveLength(0);
   });
 
-  /**
-   * Paired cross-currency transfer: the PKO USD → PKO PLN pair in
-   * multi-currency.csv has different `sourceAmount` (410.9 USD) and
-   * `destinationAmount` (1484.2 PLN). Both legs must share a `transferId`
-   * and each leg's amount must match the CSV values.
-   */
-  it('imports a cross-currency transfer pair with correct per-leg amounts and shared transferId', async () => {
-    const fileContent = helpers.loadBudgetBakersWalletFixture('multi-currency.csv');
-    const { accountMapping } = await buildCreateNewMappingFromFixture({ fileContent });
-
-    const { jobId } = await helpers.executeBudgetBakersWallet({
-      payload: { fileContent, accountMapping, skipDuplicateIndices: [] },
-      raw: true,
-    });
-    expect(jobId).toBeTruthy();
-    const progress = await waitForBudgetBakersWalletCompletion({ jobId });
-    expectCompleted(progress);
-    expect(progress.summary.transfersImported).toBe(2);
-
-    const accountsAfter = await helpers.getAccounts();
-    const pkoUsd = accountsAfter.find((a) => a.name === 'PKO USD')!;
-    const pkoPln = accountsAfter.find((a) => a.name === 'PKO PLN')!;
-
-    const txs = await helpers.getTransactions({ raw: true });
-    // The cross-currency pair is at 2025-07-02T09:45:00.000Z.
-    const pkoUsdLeg = txs.find(
-      (t) => t.accountId === pkoUsd.id && t.transferNature === TRANSACTION_TRANSFER_NATURE.common_transfer,
-    );
-    const pkoPLNLeg = txs.find(
-      (t) => t.accountId === pkoPln.id && t.transferNature === TRANSACTION_TRANSFER_NATURE.common_transfer,
-    );
-    expect(pkoUsdLeg).toBeDefined();
-    expect(pkoPLNLeg).toBeDefined();
-    expect(Number(pkoUsdLeg!.amount)).toBe(410.9);
-    expect(Number(pkoPLNLeg!.amount)).toBe(1484.2);
-    // Both legs of the same transfer must carry the same transferId.
-    expect(pkoUsdLeg!.transferId).toBeTruthy();
-    expect(pkoUsdLeg!.transferId).toBe(pkoPLNLeg!.transferId);
-  });
-
   // ---------------------------------------------------------------------------
   // Tag tests (T7, T8)
   // ---------------------------------------------------------------------------
@@ -879,55 +870,221 @@ describe('Execute Budget Bakers Wallet import endpoint', () => {
     expect(importedTags!.some((tag) => tag.id === tagB!.id)).toBe(true);
   });
 
-  // ---------------------------------------------------------------------------
-  // Per-row error shape (T9)
-  // ---------------------------------------------------------------------------
+  describe('skipped accounts', () => {
+    it('leaves out a skipped account: its account, its rows and its out-of-wallet leg', async () => {
+      const accountsBefore = await helpers.getAccounts();
+      const fileContent = helpers.loadBudgetBakersWalletFixture('multi-currency.csv');
+      const { accountMapping } = await buildMappingWithSkippedAccounts({
+        fileContent,
+        skippedAccountNames: ['Monobank UAH'],
+      });
 
-  /**
-   * T9 — Verify that `summary.errors[]` is always an Array on a completed job
-   * and that any entries present conform to `{ rowIndex: number|null, error: string }`.
-   *
-   * Triggering a genuine per-row Phase-5 failure requires a `createTransaction`
-   * DB error, which cannot be produced via HTTP alone without modifying
-   * production code. The job-level `status:'failed'` tests already confirm that
-   * Phase-2 validation errors surface correctly. The YNAB comprehensive fixture
-   * test confirms the `errors` count when some rows fail.
-   *
-   * What we verify here: the `errors` field is always present and structurally
-   * correct on any completed job — no undefined, no wrong shape — covering the
-   * type contract of `WalletImportSummary.errors`.
-   *
-   * Note: the job-level `status:'failed'` tests cover a *complete* mapping
-   * omission (pre-validation in Phase 1). This test focuses on the
-   * `summary.errors` array shape that the per-row catch and Phase-6 transfer
-   * catch both emit.
-   */
-  it('summary.errors[] is always an Array on a completed job and any entries carry { rowIndex, error }', async () => {
-    const fileContent = [
-      'account;category;currency;amount;ref_currency_amount;type;payment_type;note;date;transfer;payee;labels',
-      'ErrShapeAcc UAH;Food;UAH;100;100;Expense;Cash;err-shape-row;2025-06-01T12:00:00.000Z;false;;',
-    ].join('\n');
+      const { jobId } = await helpers.executeBudgetBakersWallet({
+        payload: { fileContent, accountMapping, skipDuplicateIndices: [] },
+        raw: true,
+      });
+      const progress = await waitForBudgetBakersWalletCompletion({ jobId });
+      expectCompleted(progress);
+      const { summary } = progress;
 
-    const accountMapping = {
-      'ErrShapeAcc UAH': { action: 'create-new' as const, currencyCode: 'UAH', currentBalance: null },
-    };
+      expect(summary.accountsSkipped).toBe(1);
+      expect(summary.accountsCreated).toBe(4);
+      // Monobank UAH owned 2 ordinary rows and the lone (out-of-wallet) leg.
+      expect(summary.transactionsImported).toBe(2);
+      expect(summary.outOfWalletImported).toBe(0);
+      // Neither transfer pair touches Monobank UAH, so both still land.
+      expect(summary.transfersImported).toBe(2);
+      // "Refund" only ever labelled a Monobank row; "Travel" also labels a PKO row.
+      expect(summary.tagsCreated).toBe(1);
+      expect(summary.errors).toHaveLength(0);
+      // 2 transactions + 2 transfers.
+      expect(progress.totalCount).toBe(4);
 
-    const { jobId } = await helpers.executeBudgetBakersWallet({
-      payload: { fileContent, accountMapping, skipDuplicateIndices: [] },
-      raw: true,
+      const accountsAfter = await helpers.getAccounts();
+      expect(accountsAfter.length).toBe(accountsBefore.length + 4);
+      expect(accountsAfter.find((a) => a.name === 'Monobank UAH')).toBeUndefined();
+
+      const transactionsAfter = await helpers.getTransactions({ raw: true });
+      const notes = transactionsAfter.map((t) => t.note);
+      expect(notes).toContain('Project payment');
+      expect(notes).toContain('Morning coffee');
+      expect(notes).not.toContain('Weekly shop');
+      expect(notes).not.toContain('December salary');
+      expect(
+        transactionsAfter.filter((t) => t.transferNature === TRANSACTION_TRANSFER_NATURE.transfer_out_wallet),
+      ).toHaveLength(0);
     });
-    expect(jobId).toBeTruthy();
-    const progress = await waitForBudgetBakersWalletCompletion({ jobId });
-    expectCompleted(progress);
 
-    // `errors` must always be an array — never undefined — on a completed job.
-    expect(Array.isArray(progress.summary.errors)).toBe(true);
+    it('drops a transfer whole when one of its legs belongs to a skipped account', async () => {
+      const fileContent = helpers.loadBudgetBakersWalletFixture('multi-currency.csv');
+      const { accountMapping } = await buildMappingWithSkippedAccounts({
+        fileContent,
+        skippedAccountNames: ['Wise USD'],
+      });
 
-    // Structural shape check: every entry that exists must have the documented fields.
-    for (const entry of progress.summary.errors) {
-      expect(typeof entry.error).toBe('string');
-      // rowIndex is number | null per WalletImportSummary — both are valid.
-      expect(entry.rowIndex === null || typeof entry.rowIndex === 'number').toBe(true);
-    }
+      const { jobId } = await helpers.executeBudgetBakersWallet({
+        payload: { fileContent, accountMapping, skipDuplicateIndices: [] },
+        raw: true,
+      });
+      const progress = await waitForBudgetBakersWalletCompletion({ jobId });
+      expectCompleted(progress);
+      const { summary } = progress;
+
+      expect(summary.accountsSkipped).toBe(1);
+      expect(summary.accountsCreated).toBe(4);
+      // Wise USD owns no ordinary rows, so every non-transfer row still lands.
+      expect(summary.transactionsImported).toBe(4);
+      expect(summary.outOfWalletImported).toBe(1);
+      // Only PKO USD -> PKO PLN survives; Crypto USD -> Wise USD is dropped whole.
+      expect(summary.transfersImported).toBe(1);
+      expect(summary.errors).toHaveLength(0);
+      // 4 ordinary rows + 1 out-of-wallet leg + 1 transfer.
+      expect(progress.totalCount).toBe(6);
+
+      const accountsAfter = await helpers.getAccounts();
+      expect(accountsAfter.find((a) => a.name === 'Wise USD')).toBeUndefined();
+
+      // The surviving leg of the dropped transfer must not be written on its
+      // own: Crypto USD is created but stays empty.
+      const cryptoAccount = accountsAfter.find((a) => a.name === 'Crypto USD')!;
+      const transactionsAfter = await helpers.getTransactions({ raw: true });
+      expect(transactionsAfter.filter((t) => t.accountId === cryptoAccount.id)).toHaveLength(0);
+      expect(
+        transactionsAfter.filter((t) => t.transferNature === TRANSACTION_TRANSFER_NATURE.common_transfer),
+      ).toHaveLength(2);
+    });
+
+    it('completes with zeroed counts when every account is mapped to skip', async () => {
+      const accountsBefore = await helpers.getAccounts();
+      const fileContent = helpers.loadBudgetBakersWalletFixture('multi-currency.csv');
+      const { parsed } = await buildCreateNewMappingFromFixture({ fileContent });
+      const accountMapping: BudgetBakersWalletAccountMapping = Object.fromEntries(
+        parsed.accounts.map((account) => [account.originalName, { action: 'skip' }]),
+      );
+
+      const { jobId } = await helpers.executeBudgetBakersWallet({
+        payload: { fileContent, accountMapping, skipDuplicateIndices: [] },
+        raw: true,
+      });
+      const progress = await waitForBudgetBakersWalletCompletion({ jobId });
+      expectCompleted(progress);
+
+      expect(progress.processedCount).toBe(0);
+      expect(progress.totalCount).toBe(0);
+      expect(progress.summary).toMatchObject({
+        accountsSkipped: parsed.accounts.length,
+        accountsCreated: 0,
+        accountsLinked: 0,
+        categoriesCreated: 0,
+        tagsCreated: 0,
+        payeesCreated: 0,
+        transactionsImported: 0,
+        transfersImported: 0,
+        outOfWalletImported: 0,
+        duplicatesSkipped: 0,
+        errors: [],
+      });
+
+      expect((await helpers.getAccounts()).length).toBe(accountsBefore.length);
+      expect(await helpers.getTransactions({ raw: true })).toHaveLength(0);
+    });
+  });
+
+  describe('POST /import/budget-bakers-wallet/detect-duplicates', () => {
+    /**
+     * Empty state: when every account in the mapping uses `create-new`, the
+     * service short-circuits before touching the DB (no linked account can
+     * have prior transactions) and returns an empty duplicates array.
+     */
+    it('returns empty duplicates when all accounts are create-new (no linked accounts)', async () => {
+      const fileContent = [
+        'account;category;currency;amount;ref_currency_amount;type;payment_type;note;date;transfer;payee;labels',
+        `NewAcc UAH;Food;UAH;500;500;Expense;Credit card;Test row;2025-06-01T12:00:00.000Z;false;;`,
+      ].join('\n');
+
+      const accountMapping = {
+        'NewAcc UAH': { action: 'create-new' as const, currencyCode: 'UAH', currentBalance: null },
+      };
+
+      const { duplicates } = await helpers.detectBudgetBakersWalletDuplicates({
+        payload: { fileContent, accountMapping },
+        raw: true,
+      });
+
+      expect(duplicates).toEqual([]);
+    });
+
+    /**
+     * Error case: empty fileContent violates the Zod min(1) constraint on the
+     * controller. The request must be rejected with a 422 validation error
+     * before any service logic runs.
+     */
+    it('returns 422 for an empty fileContent string', async () => {
+      const response = await helpers.detectBudgetBakersWalletDuplicates({
+        payload: {
+          fileContent: '',
+          accountMapping: {},
+        },
+      });
+
+      expect(response.statusCode).toBe(ERROR_CODES.ValidationError);
+    });
+
+    /**
+     * Mixed mapping: when the CSV has some accounts mapped to `link-existing`
+     * and some to `create-new`, only the linked accounts' transactions are
+     * candidates for duplicate detection. Transactions belonging to the
+     * create-new account must NOT appear in the duplicates array.
+     *
+     * Seeding is done via executeBudgetBakersWallet (the only route that writes
+     * transactions) to stay strictly HTTP-only — no direct service calls.
+     */
+    it('only considers link-existing accounts when detecting duplicates (create-new accounts are excluded)', async () => {
+      const existingAccount = await helpers.createAccount({
+        payload: helpers.buildAccountPayload({ currencyCode: 'UAH', initialBalance: 0 }),
+        raw: true,
+      });
+
+      // Unique notes avoid collisions with transactions seeded by other tests.
+      const noteLinked1 = `mixed-linked-a-${generateRandomRecordId()}`;
+      const noteLinked2 = `mixed-linked-b-${generateRandomRecordId()}`;
+
+      // Two rows for the linked account; one row for a create-new account.
+      const fileContent = [
+        'account;category;currency;amount;ref_currency_amount;type;payment_type;note;date;transfer;payee;labels',
+        `Linked UAH;Food;UAH;500;500;Expense;Credit card;${noteLinked1};2025-06-01T12:00:00.000Z;false;;`,
+        `Linked UAH;Salary;UAH;30000;30000;Income;Cash;${noteLinked2};2025-06-02T10:00:00.000Z;false;;`,
+        `New UAH;Groceries;UAH;200;200;Expense;Cash;new-acct-row;2025-06-03T08:00:00.000Z;false;;`,
+      ].join('\n');
+
+      const seedMapping = {
+        'Linked UAH': { action: 'link-existing' as const, accountId: existingAccount.id },
+        'New UAH': { action: 'create-new' as const, currencyCode: 'UAH', currentBalance: null },
+      };
+
+      const { jobId } = await helpers.executeBudgetBakersWallet({
+        payload: { fileContent, accountMapping: seedMapping, skipDuplicateIndices: [] },
+        raw: true,
+      });
+      expect(jobId).toBeTruthy();
+      const progress = await waitForBudgetBakersWalletCompletion({ jobId });
+      expectCompleted(progress);
+      // 2 linked + 1 create-new = 3 ordinary transactions seeded.
+      expect(progress.summary.transactionsImported).toBe(3);
+      expect(progress.summary.errors).toHaveLength(0);
+
+      const { duplicates } = await helpers.detectBudgetBakersWalletDuplicates({
+        payload: { fileContent, accountMapping: seedMapping },
+        raw: true,
+      });
+
+      // rowIndex counts file lines: the header is line 1, so the first data row
+      // is 2.
+      expect(duplicates.length).toBe(2);
+      const rowIndices = duplicates.map((d) => d.rowIndex);
+      expect(rowIndices).toContain(2);
+      expect(rowIndices).toContain(3);
+      expect(rowIndices).not.toContain(4);
+    });
   });
 });

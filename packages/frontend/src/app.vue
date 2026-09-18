@@ -4,6 +4,7 @@
 
     <base-currency-change-overlay />
     <restore-in-progress-overlay />
+    <import-batch-delete-overlay />
     <notification-toaster />
     <update-available-banner />
   </main>
@@ -11,12 +12,15 @@
 
 <script setup lang="ts">
 import BaseCurrencyChangeOverlay from '@/components/common/base-currency-change-overlay.vue';
+import ImportBatchDeleteOverlay from '@/components/common/import-batch-delete-overlay.vue';
 import RestoreInProgressOverlay from '@/components/common/restore-in-progress-overlay.vue';
 import UpdateAvailableBanner from '@/components/common/update-available-banner.vue';
 import NotificationToaster from '@/components/notification-center/notification-toaster.vue';
 import { useExchangeRates } from '@/composable/data-queries/currencies';
+import { useUserSettings } from '@/composable/data-queries/user-settings';
 import { useAiCategorizationEvents } from '@/composable/use-ai-categorization-events';
 import { useSSE } from '@/composable/use-sse';
+import { currencyDisplayPreference } from '@/js/helpers';
 import { ROUTES_NAMES } from '@/routes';
 import { useAuthStore, useCurrenciesStore, useRootStore } from '@/stores';
 import { storeToRefs } from 'pinia';
@@ -34,6 +38,15 @@ const { isBaseCurrencyExists } = storeToRefs(userCurrenciesStore);
 
 // Prefetch exchange rates for components that need them
 useExchangeRates({ enabled: isLoggedIn });
+
+const { data: userSettings } = useUserSettings({ enabled: isLoggedIn });
+watch(
+  () => userSettings.value?.currencyDisplay,
+  (value) => {
+    currencyDisplayPreference.value = value ?? 'symbol';
+  },
+  { immediate: true },
+);
 
 // SSE for real-time updates
 const { disconnect: disconnectSSE } = useSSE();

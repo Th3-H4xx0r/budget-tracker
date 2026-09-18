@@ -1,5 +1,6 @@
 import {
   CategoryModel,
+  type RecordId,
   RESOURCE_TYPES,
   SHARE_PERMISSIONS,
   TRANSACTIONS_WRITE_SCOPES,
@@ -63,9 +64,19 @@ describe('[Stats] Spendings by categories – categoryIds filter', () => {
     });
     // Root category should NOT appear (transaction tagged directly on root doesn't belong to childCategory)
     expect(childGrouped[rootCategory.id.toString()]).toBeUndefined();
-  });
 
-  it('Pre-initializes selected categories with zero when no transactions match', async () => {
+    // Each transaction rolls up to its nearest selected ancestor: child and sub-child
+    // land on child (500), root keeps only its own 100.
+    const bothSelected = await helpers.getSpendingsByCategories({
+      raw: true,
+      categoryIds: [rootCategory.id, childCategory.id],
+    });
+
+    expect(bothSelected[rootCategory.id.toString()].amount).toBe(100);
+    expect(bothSelected[childCategory.id.toString()].amount).toBe(500);
+  }, 60_000);
+
+  it('Pre-initializes selected categories with zero in both response shapes', async () => {
     await helpers.createAccount({ raw: true });
     const categoriesList = await helpers.getCategoriesList();
     const rootCategory = categoriesList.find((c) => !c.parentId)!;
@@ -81,36 +92,19 @@ describe('[Stats] Spendings by categories – categoryIds filter', () => {
       color: rootCategory.color,
       amount: 0,
     });
-  });
 
-  it('Handles overlapping parent + child selection (most specific match wins)', async () => {
-    const account = await helpers.createAccount({ raw: true });
-    const categoriesList = await helpers.getCategoriesList();
-
-    const rootCategory = categoriesList.find((c) => !c.parentId)!;
-    const childCategory = categoriesList.find((c) => c.parentId === rootCategory.id)!;
-
-    // 100 directly on root, 200 on child
-    await Promise.all([
-      helpers.createTransaction({
-        payload: helpers.buildTransactionPayload({ accountId: account.id, amount: 100, categoryId: rootCategory.id }),
-        raw: true,
-      }),
-      helpers.createTransaction({
-        payload: helpers.buildTransactionPayload({ accountId: account.id, amount: 200, categoryId: childCategory.id }),
-        raw: true,
-      }),
-    ]);
-
-    // Select both root and child. Child's transaction maps to child (nearest ancestor in set).
-    // Root's transaction maps to root.
-    const result = await helpers.getSpendingsByCategories({
+    const groupedByType = await helpers.getSpendingsByCategories({
       raw: true,
-      categoryIds: [rootCategory.id, childCategory.id],
+      groupByType: true,
+      categoryIds: [rootCategory.id],
     });
 
-    expect(result[rootCategory.id.toString()].amount).toBe(100);
-    expect(result[childCategory.id.toString()].amount).toBe(200);
+    expect(groupedByType[rootCategory.id.toString()]).toEqual({
+      name: rootCategory.name,
+      color: rootCategory.color,
+      income: 0,
+      expense: 0,
+    });
   });
 });
 
@@ -168,44 +162,68 @@ describe('[Stats] Spendings by categories – groupByType', () => {
     });
   });
 
-  it('pre-initializes selected categories with zeroed income and expense when empty', async () => {
-    await helpers.createAccount({ raw: true });
-    const categoriesList = await helpers.getCategoriesList();
-    const category = categoriesList.find((c) => !c.parentId)!;
+  it('nets a refund on both sides instead of reporting it as income', async () => {
+    const account = await helpers.createAccount({ raw: true });
+    const refundedCategory = await helpers.addCustomCategory({
+      name: uniqueName('RefundedByType'),
+      color: '#123123',
+      raw: true,
+    });
+    const refundCategory = await helpers.addCustomCategory({
+      name: uniqueName('RefundLandingByType'),
+      color: '#321321',
+      raw: true,
+    });
+
+    const [expenseTx] = await helpers.createTransaction({
+      payload: helpers.buildTransactionPayload({
+        accountId: account.id,
+        amount: 200,
+        transactionType: TRANSACTION_TYPES.expense,
+        categoryId: refundedCategory.id,
+      }),
+      raw: true,
+    });
+    const [refundTx] = await helpers.createTransaction({
+      payload: helpers.buildTransactionPayload({
+        accountId: account.id,
+        amount: 50,
+        transactionType: TRANSACTION_TYPES.income,
+        categoryId: refundCategory.id,
+      }),
+      raw: true,
+    });
+    await helpers.createSingleRefund({ originalTxId: expenseTx.id, refundTxId: refundTx.id });
 
     const result = await helpers.getSpendingsByCategories({
       raw: true,
       groupByType: true,
-      categoryIds: [category.id],
+      categoryIds: [refundedCategory.id, refundCategory.id],
     });
 
-    expect(result[category.id.toString()]).toEqual({
-      name: category.name,
-      color: category.color,
-      income: 0,
-      expense: 0,
-    });
+    // The refund reduces the refunded expense; the income row that carried the money back is not
+    // an income source, so its own category reports 0 income.
+    expect(result[refundedCategory.id.toString()]).toMatchObject({ income: 0, expense: 150 });
+    expect(result[refundCategory.id.toString()]).toMatchObject({ income: 0, expense: 0 });
   });
 
-  it('rejects an inverted date range', async () => {
-    const response = await helpers.getSpendingsByCategories({
+  it('rejects an inverted date range and a malformed / non-real date', async () => {
+    const inverted = await helpers.getSpendingsByCategories({
       from: '2026-07-31',
       to: '2026-07-01',
       groupByType: true,
     });
 
-    expect(response.statusCode).toEqual(ERROR_CODES.ValidationError);
-  });
+    expect(inverted.statusCode).toEqual(ERROR_CODES.ValidationError);
 
-  it('rejects a malformed / non-real date', async () => {
-    const response = await helpers.getSpendingsByCategories({
+    const malformed = await helpers.getSpendingsByCategories({
       // Month 13 / day 45 is not a real calendar date.
       from: '2026-13-45',
       to: '2026-07-31',
       groupByType: true,
     });
 
-    expect(response.statusCode).toEqual(ERROR_CODES.ValidationError);
+    expect(malformed.statusCode).toEqual(ERROR_CODES.ValidationError);
   });
 });
 
@@ -978,5 +996,132 @@ describe('[Stats] Spendings by categories – excludedCategoryIds', () => {
     });
 
     expect(result[splitCategory.id.toString()].amount).toBe(40);
+  });
+});
+
+const expense = async ({
+  accountId,
+  amount,
+  categoryId,
+  payeeId,
+}: {
+  accountId: RecordId;
+  amount: number;
+  categoryId: RecordId;
+  payeeId?: RecordId;
+}) => {
+  const [tx] = await helpers.createTransaction({
+    payload: helpers.buildTransactionPayload({
+      accountId,
+      amount,
+      categoryId,
+      transactionType: TRANSACTION_TYPES.expense,
+      ...(payeeId ? { payeeId } : {}),
+    }),
+    raw: true,
+  });
+  return tx;
+};
+
+describe('[Stats] Spendings by categories – page-level scope filters', () => {
+  it('accountIds narrows to the selected accounts', async () => {
+    const accountA = await helpers.createAccount({ raw: true });
+    const accountB = await helpers.createAccount({ raw: true });
+    const category = await helpers.addCustomCategory({ name: uniqueName('Scoped'), color: '#112233', raw: true });
+
+    await expense({ accountId: accountA.id, amount: 70, categoryId: category.id });
+    await expense({ accountId: accountB.id, amount: 30, categoryId: category.id });
+
+    const result = await helpers.getSpendingsByCategories({
+      accountIds: [accountA.id],
+      raw: true,
+    });
+    expect(result[category.id].amount).toBe(70);
+  });
+
+  it('payeeIds keeps only transactions linked to the selected payees', async () => {
+    const account = await helpers.createAccount({ raw: true });
+    const category = await helpers.addCustomCategory({ name: uniqueName('Scoped'), color: '#112233', raw: true });
+    const payeeA = await helpers.createPayee({ payload: { name: uniqueName('Acme') }, raw: true });
+    const payeeB = await helpers.createPayee({ payload: { name: uniqueName('Globex') }, raw: true });
+
+    await expense({ accountId: account.id, amount: 40, categoryId: category.id, payeeId: payeeA.id });
+    await expense({ accountId: account.id, amount: 25, categoryId: category.id, payeeId: payeeB.id });
+
+    const result = await helpers.getSpendingsByCategories({
+      payeeIds: [payeeA.id],
+      raw: true,
+    });
+    expect(result[category.id].amount).toBe(40);
+  });
+
+  it('tagIds counts a transaction carrying two selected tags exactly once', async () => {
+    const account = await helpers.createAccount({ raw: true });
+    const category = await helpers.addCustomCategory({ name: uniqueName('Scoped'), color: '#112233', raw: true });
+    const tagA = await helpers.createTag({ payload: { name: uniqueName('TagA'), color: '#ff0000' }, raw: true });
+    const tagB = await helpers.createTag({ payload: { name: uniqueName('TagB'), color: '#00ff00' }, raw: true });
+
+    const doubleTagged = await expense({ accountId: account.id, amount: 50, categoryId: category.id });
+    await helpers.addTransactionsToTag({
+      tagId: tagA.id,
+      transactionIds: [doubleTagged.id],
+    });
+    await helpers.addTransactionsToTag({
+      tagId: tagB.id,
+      transactionIds: [doubleTagged.id],
+    });
+
+    await expense({ accountId: account.id, amount: 20, categoryId: category.id });
+
+    const result = await helpers.getSpendingsByCategories({
+      tagIds: [tagA.id, tagB.id],
+      raw: true,
+    });
+    expect(result[category.id].amount).toBe(50);
+  });
+
+  it('excludedPayeeIds drops the excluded payee while a payee-less transaction stays', async () => {
+    const account = await helpers.createAccount({ raw: true });
+    const category = await helpers.addCustomCategory({ name: uniqueName('Scoped'), color: '#112233', raw: true });
+    const payee = await helpers.createPayee({ payload: { name: uniqueName('Acme') }, raw: true });
+
+    await expense({ accountId: account.id, amount: 40, categoryId: category.id, payeeId: payee.id });
+    await expense({ accountId: account.id, amount: 15, categoryId: category.id });
+
+    const result = await helpers.getSpendingsByCategories({ excludedPayeeIds: [payee.id], raw: true });
+    expect(result[category.id].amount).toBe(15);
+  });
+
+  it('excludedTagIds drops a transaction carrying an excluded tag and keeps an untagged one', async () => {
+    const account = await helpers.createAccount({ raw: true });
+    const category = await helpers.addCustomCategory({ name: uniqueName('Scoped'), color: '#112233', raw: true });
+    const excludedTag = await helpers.createTag({
+      payload: { name: uniqueName('Hidden'), color: '#ff0000' },
+      raw: true,
+    });
+    const otherTag = await helpers.createTag({ payload: { name: uniqueName('Other'), color: '#00ff00' }, raw: true });
+
+    const tagged = await expense({ accountId: account.id, amount: 70, categoryId: category.id });
+    await helpers.addTransactionsToTag({ tagId: excludedTag.id, transactionIds: [tagged.id] });
+    await helpers.addTransactionsToTag({ tagId: otherTag.id, transactionIds: [tagged.id] });
+
+    await expense({ accountId: account.id, amount: 25, categoryId: category.id });
+
+    const result = await helpers.getSpendingsByCategories({ excludedTagIds: [excludedTag.id], raw: true });
+    expect(result[category.id].amount).toBe(25);
+  });
+
+  it('empty state: a tag with no transactions yields no categories', async () => {
+    const account = await helpers.createAccount({ raw: true });
+    const category = await helpers.addCustomCategory({ name: uniqueName('Scoped'), color: '#112233', raw: true });
+    const unusedTag = await helpers.createTag({ payload: { name: uniqueName('Unused'), color: '#123456' }, raw: true });
+
+    await expense({ accountId: account.id, amount: 60, categoryId: category.id });
+
+    const result = await helpers.getSpendingsByCategories({
+      tagIds: [unusedTag.id],
+      raw: true,
+    });
+    expect(result).toEqual({});
   });
 });

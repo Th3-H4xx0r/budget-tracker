@@ -1,5 +1,5 @@
 import type { RecordId } from '@bt/shared/types';
-import { ACCOUNT_TYPES, API_ERROR_CODES } from '@bt/shared/types';
+import { ACCOUNT_CATEGORIES, ACCOUNT_TYPES, API_ERROR_CODES } from '@bt/shared/types';
 import { generateRandomRecordId } from '@common/lib/record-id-helpers';
 import { describe, expect, it } from '@jest/globals';
 import { ERROR_CODES } from '@js/errors';
@@ -243,7 +243,7 @@ describe('Accounts controller', () => {
       expect(res.statusCode).toBe(ERROR_CODES.ValidationError);
     });
 
-    it('does not change balances when creditLimit changes', async () => {
+    it('does not change balances when creditLimit changes (raised, zeroed, with existing transactions)', async () => {
       const account = await helpers.createAccount({
         payload: helpers.buildAccountPayload({
           initialBalance: 1000,
@@ -252,7 +252,7 @@ describe('Accounts controller', () => {
         raw: true,
       });
 
-      const updated = await helpers.updateAccount({
+      const raised = await helpers.updateAccount({
         id: account.id,
         payload: { creditLimit: 800 },
         raw: true,
@@ -260,44 +260,24 @@ describe('Accounts controller', () => {
 
       // Credit limit is separate from balance — only creditLimit and
       // refCreditLimit change, all balance fields stay untouched
-      expect(updated.creditLimit).toBe(800);
-      expect(updated.currentBalance).toBe(account.currentBalance);
-      expect(updated.refCurrentBalance).toBe(account.refCurrentBalance);
-      expect(updated.initialBalance).toBe(account.initialBalance);
-      expect(updated.refInitialBalance).toBe(account.refInitialBalance);
-    });
+      expect(raised.creditLimit).toBe(800);
+      expect(raised.currentBalance).toBe(account.currentBalance);
+      expect(raised.refCurrentBalance).toBe(account.refCurrentBalance);
+      expect(raised.initialBalance).toBe(account.initialBalance);
+      expect(raised.refInitialBalance).toBe(account.refInitialBalance);
 
-    it('does not change balances when creditLimit is set to zero', async () => {
-      const account = await helpers.createAccount({
-        payload: helpers.buildAccountPayload({
-          initialBalance: 1000,
-          creditLimit: 500,
-        }),
-        raw: true,
-      });
-
-      const updated = await helpers.updateAccount({
+      const zeroed = await helpers.updateAccount({
         id: account.id,
         payload: { creditLimit: 0 },
         raw: true,
       });
 
-      expect(updated.creditLimit).toBe(0);
-      expect(updated.refCreditLimit).toBe(0);
-      expect(updated.currentBalance).toBe(account.currentBalance);
-      expect(updated.refCurrentBalance).toBe(account.refCurrentBalance);
-      expect(updated.initialBalance).toBe(account.initialBalance);
-      expect(updated.refInitialBalance).toBe(account.refInitialBalance);
-    });
-
-    it('does not change balances when creditLimit changes with existing transactions', async () => {
-      const account = await helpers.createAccount({
-        payload: helpers.buildAccountPayload({
-          initialBalance: 1000,
-          creditLimit: 500,
-        }),
-        raw: true,
-      });
+      expect(zeroed.creditLimit).toBe(0);
+      expect(zeroed.refCreditLimit).toBe(0);
+      expect(zeroed.currentBalance).toBe(account.currentBalance);
+      expect(zeroed.refCurrentBalance).toBe(account.refCurrentBalance);
+      expect(zeroed.initialBalance).toBe(account.initialBalance);
+      expect(zeroed.refInitialBalance).toBe(account.refInitialBalance);
 
       await createExpenseTransactions({ accountId: account.id, count: 3 });
 
@@ -310,13 +290,12 @@ describe('Accounts controller', () => {
         raw: true,
       });
 
-      // Balances unchanged — only creditLimit updated
       expect(updated.creditLimit).toBe(1000);
       expect(updated.currentBalance).toBe(afterTxs.currentBalance);
       expect(updated.refCurrentBalance).toBe(afterTxs.refCurrentBalance);
       expect(updated.initialBalance).toBe(afterTxs.initialBalance);
       expect(updated.refInitialBalance).toBe(afterTxs.refInitialBalance);
-    });
+    }, 30_000);
 
     it('recalculates refCreditLimit for non-base currency', async () => {
       const newCurrency = 'UAH';
@@ -373,7 +352,7 @@ describe('Accounts controller', () => {
       expect(updated.refCreditLimit).toBe(account.refCreditLimit);
     });
 
-    it('rejects creditLimit change on non-system account', async () => {
+    it('updates name and creditLimit but rejects currentBalance changes on non-system account', async () => {
       const account = await helpers.createAccount({
         payload: {
           ...helpers.buildAccountPayload(),
@@ -382,29 +361,34 @@ describe('Accounts controller', () => {
         raw: true,
       });
 
-      const res = await helpers.updateAccount({
+      const updatedAccount = await helpers.updateAccount({
+        id: account.id,
+        payload: { name: 'test test' },
+        raw: true,
+      });
+
+      expect(updatedAccount.name).toBe('test test');
+
+      const withLimit = await helpers.updateAccount({
         id: account.id,
         payload: { creditLimit: 1000 },
-      });
-
-      expect(res.statusCode).toBe(ERROR_CODES.ValidationError);
-    });
-
-    it('rejects creditLimit set to zero on non-system account', async () => {
-      const account = await helpers.createAccount({
-        payload: {
-          ...helpers.buildAccountPayload(),
-          type: ACCOUNT_TYPES.monobank,
-        },
         raw: true,
       });
+      expect(withLimit.creditLimit).toBe(1000);
+      expect(withLimit.currentBalance).toBe(account.currentBalance);
+      expect(withLimit.initialBalance).toBe(account.initialBalance);
 
-      const res = await helpers.updateAccount({
-        id: account.id,
-        payload: { creditLimit: 0 },
-      });
+      const rejectedPayloads = [{ currentBalance: 0 }, { currentBalance: 1000 }];
 
-      expect(res.statusCode).toBe(ERROR_CODES.ValidationError);
+      for (const payload of rejectedPayloads) {
+        const res = await helpers.updateAccount({ id: account.id, payload });
+
+        expect(res.statusCode).toBe(ERROR_CODES.ValidationError);
+      }
+
+      const reread = await helpers.getAccount({ id: account.id, raw: true });
+      expect(reread.creditLimit).toBe(1000);
+      expect(reread.currentBalance).toBe(account.currentBalance);
     });
 
     it('returns 404 when updating another user account', async () => {
@@ -450,51 +434,66 @@ describe('Accounts controller', () => {
       expect(updated.initialBalance).toBe(2000);
     });
 
-    it('rejects currentBalance set to zero on non-system account', async () => {
-      const account = await helpers.createAccount({
-        payload: {
-          ...helpers.buildAccountPayload(),
-          type: ACCOUNT_TYPES.monobank,
-        },
-        raw: true,
+    describe('dedicated-flow categories', () => {
+      const createGeneralAccount = () =>
+        helpers.createAccount({
+          payload: helpers.buildAccountPayload({ name: 'Checking' }),
+          raw: true,
+        });
+
+      it('rejects moving a general account into the loan category', async () => {
+        const account = await createGeneralAccount();
+
+        const response = await helpers.updateAccount<helpers.ErrorResponse>({
+          id: account.id,
+          payload: { accountCategory: ACCOUNT_CATEGORIES.loan },
+        });
+
+        expect(response.statusCode).toBe(ERROR_CODES.ValidationError);
+        expect(helpers.extractResponse(response).code).toBe(API_ERROR_CODES.validationError);
+
+        const reloaded = await helpers.getAccount({ id: account.id, raw: true });
+        expect(reloaded.accountCategory).toBe(ACCOUNT_CATEGORIES.general);
+
+        const loans = await helpers.getLoans({ raw: true });
+        expect(loans.length).toBe(0);
       });
 
-      const res = await helpers.updateAccount({
-        id: account.id,
-        payload: { currentBalance: 0 },
+      it('rejects moving a general account into the vehicle category', async () => {
+        const account = await createGeneralAccount();
+
+        const response = await helpers.updateAccount<helpers.ErrorResponse>({
+          id: account.id,
+          payload: { accountCategory: ACCOUNT_CATEGORIES.vehicle },
+        });
+
+        expect(response.statusCode).toBe(ERROR_CODES.ValidationError);
+        expect(helpers.extractResponse(response).code).toBe(API_ERROR_CODES.validationError);
+
+        const reloaded = await helpers.getAccount({ id: account.id, raw: true });
+        expect(reloaded.accountCategory).toBe(ACCOUNT_CATEGORIES.general);
       });
 
-      expect(res.statusCode).toBe(ERROR_CODES.ValidationError);
-    });
+      it('keeps the account editable after the rejected flip', async () => {
+        const account = await createGeneralAccount();
 
-    it('updates and declines monobank accounts update correctly', async () => {
-      const account = await helpers.createAccount({
-        payload: {
-          ...helpers.buildAccountPayload(),
-          type: ACCOUNT_TYPES.monobank,
-        },
-        raw: true,
+        await helpers.updateAccount({
+          id: account.id,
+          payload: { accountCategory: ACCOUNT_CATEGORIES.loan },
+        });
+
+        const toSaving = await helpers.updateAccount({
+          id: account.id,
+          payload: { accountCategory: ACCOUNT_CATEGORIES.saving },
+        });
+        expect(toSaving.statusCode).toBe(200);
+
+        const reloaded = await helpers.getAccount({ id: account.id, raw: true });
+        expect(reloaded.accountCategory).toBe(ACCOUNT_CATEGORIES.saving);
       });
-      const updatedAccount = await helpers.updateAccount({
-        id: account.id,
-        payload: {
-          name: 'test test',
-        },
-        raw: true,
-      });
-
-      expect(updatedAccount.name).toBe('test test');
-
-      const brokenUpdate = await helpers.updateAccount({
-        id: account.id,
-        payload: {
-          currentBalance: 1000,
-        },
-      });
-
-      expect(brokenUpdate.statusCode).toBe(ERROR_CODES.ValidationError);
     });
   });
+
   describe('delete account', () => {
     it('returns 404 when deleting a non-existent account', async () => {
       const res = await helpers.deleteAccount({ id: generateRandomRecordId(), raw: false });

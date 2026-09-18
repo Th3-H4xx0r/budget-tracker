@@ -4,12 +4,14 @@ import {
   AI_CUSTOM_INSTRUCTIONS_MAX_LENGTH,
   AI_FEATURE,
   AI_KEY_PROVIDERS,
+  MAX_CATEGORY_MAPPING_PRESETS,
   NOTIFICATION_TYPES,
   RecordId,
+  TRANSACTION_OPTIONAL_FIELDS,
   endpointsTypes,
   isCustomModelId,
 } from '@bt/shared/types';
-import type { Equals, Expect } from '@bt/shared/types';
+import type { CategoryMappingPreset, Equals, Expect } from '@bt/shared/types';
 import { dateRange, withDateOrder } from '@common/lib/zod/custom-types';
 import { IdColumn } from '@common/types/id-column';
 import {
@@ -180,11 +182,20 @@ const ZodTransactionsListSettingsSchema = z.object({
   hideUpcoming: z.boolean().optional(),
 });
 
+// Transaction-form-only preferences.
+const ZodTransactionFormSettingsSchema = z.object({
+  /** Optional form fields the user turned on. A field holding a value is shown regardless. */
+  optionalFields: z.array(z.enum(TRANSACTION_OPTIONAL_FIELDS)).optional(),
+  /** Whether the transaction form may load map tiles and address search from OpenStreetMap. */
+  mapPicker: z.boolean().optional(),
+});
+
 // UI-state preferences (table layouts, view modes). Functional settings keep
 // their own top-level keys; this namespace is only for presentation state.
 const ZodUiSettingsSchema = z.object({
   transactionsTable: ZodTransactionsTableSettingsSchema.optional(),
   transactionsList: ZodTransactionsListSettingsSchema.optional(),
+  transactionForm: ZodTransactionFormSettingsSchema.optional(),
   investmentTransactionsTable: ZodInvestmentTransactionsTableSettingsSchema.optional(),
 });
 
@@ -194,11 +205,27 @@ const ZodSubscriptionsSettingsSchema = z.object({
   defaultAutoRecord: z.boolean().optional(),
 });
 
+// A category mapping remembered from a finished import, keyed by a fingerprint of the source
+// layout. Untrusted client input, so the per-value union is validated in full.
+const ZodCategoryMappingPresetSchema = z.object({
+  fingerprint: z.string().min(1).max(128),
+  name: z.string().trim().min(1).max(64).optional(),
+  categoryMapping: z.record(
+    z.string(),
+    z.union([
+      z.object({ action: z.literal('create-new') }),
+      z.object({ action: z.literal('link-existing'), categoryId: z.string().min(1) }),
+    ]),
+  ),
+  updatedAt: z.string(),
+});
+
 // Data-import defaults. `recalculateAccountBalance` only seeds the "update account balances
 // from imported transactions" checkbox; the execute request's `recalculateBalance` is what
 // actually applies.
 const ZodImportSettingsSchema = z.object({
   recalculateAccountBalance: z.boolean().optional(),
+  categoryMappingPresets: z.array(ZodCategoryMappingPresetSchema).max(MAX_CATEGORY_MAPPING_PRESETS).optional(),
 });
 
 // Account-picker defaults. `defaultAccountId` pre-selects account pickers, null means cleared.
@@ -236,9 +263,7 @@ const ZodSavedPivotViewSchema = z.object({
 });
 
 export const ZodSettingsSchema = z.object({
-  locale: z
-    .enum([SUPPORTED_LOCALES.ENGLISH, SUPPORTED_LOCALES.UKRAINIAN, SUPPORTED_LOCALES.SPANISH])
-    .default(SUPPORTED_LOCALES.ENGLISH),
+  locale: z.enum(SUPPORTED_LOCALES).default(SUPPORTED_LOCALES.ENGLISH),
   ai: ZodAiSettingsSchema.optional(),
   notifications: ZodNotificationPreferencesSchema.optional(),
   onboarding: ZodOnboardingStateSchema.optional(),
@@ -254,6 +279,10 @@ export const ZodSettingsSchema = z.object({
   // provider's merchant field is empty. Off by default because Monobank's `counterName` is
   // empty for most card purchases, so it has to be an opt-in.
   payeeExtractionUsesDescription: z.boolean().optional(),
+  // How many transactions must share a raw merchant name before a Payee is auto-created from it.
+  // Banks that embed reference numbers in the counterparty string would otherwise spawn one Payee
+  // per row at 1, so 2 is the default.
+  payeePromotionThreshold: z.number().int().min(1).max(3).optional(),
   // Header "Support" (donation) button. Visible when unset; users opt out in Appearance settings.
   showSupportButton: z.boolean().optional(),
   // When true, the sidebar Accounts panel hides accounts whose display balance is
@@ -267,6 +296,7 @@ export const ZodSettingsSchema = z.object({
   // savings rather than spend. Descendants are expanded server-side. Plain z.uuid(), not
   // recordId(): the branded RecordId output breaks the SettingsPatchSchemaIsInSync assertion below.
   savingsCategoryIds: z.array(z.uuid()).optional(),
+  currencyDisplay: z.enum(endpointsTypes.CURRENCY_DISPLAY_PREFERENCES).optional(),
 });
 
 export type SettingsSchema = z.infer<typeof ZodSettingsSchema>;
@@ -279,7 +309,7 @@ export type StoredAiSettings = NonNullable<SettingsSchema['ai']>;
  * with empty ones. Arrays stay non-partial because the merge replaces them wholesale.
  */
 export const ZodSettingsPatchSchema = z.object({
-  locale: z.enum([SUPPORTED_LOCALES.ENGLISH, SUPPORTED_LOCALES.UKRAINIAN, SUPPORTED_LOCALES.SPANISH]).optional(),
+  locale: z.enum(SUPPORTED_LOCALES).optional(),
   ai: z
     .object({
       apiKeys: z.array(ZodAiApiKeySchema).optional(),
@@ -330,6 +360,12 @@ export const ZodSettingsPatchSchema = z.object({
           hideUpcoming: z.boolean().optional(),
         })
         .optional(),
+      transactionForm: z
+        .object({
+          optionalFields: z.array(z.enum(TRANSACTION_OPTIONAL_FIELDS)).optional(),
+          mapPicker: z.boolean().optional(),
+        })
+        .optional(),
       investmentTransactionsTable: z
         .object({
           visibleColumns: z.array(z.string()).optional(),
@@ -346,16 +382,20 @@ export const ZodSettingsPatchSchema = z.object({
   import: z
     .object({
       recalculateAccountBalance: z.boolean().optional(),
+      // Same element schema as `ZodSettingsSchema`, so the two can't drift.
+      categoryMappingPresets: z.array(ZodCategoryMappingPresetSchema).max(MAX_CATEGORY_MAPPING_PRESETS).optional(),
     })
     .optional(),
   accounts: ZodAccountsSettingsSchema.optional(),
   // Same element schema as `ZodSettingsSchema`, defaults and all, so the two can't drift.
   savedPivotViews: z.array(ZodSavedPivotViewSchema).optional(),
   payeeExtractionUsesDescription: z.boolean().optional(),
+  payeePromotionThreshold: z.number().int().min(1).max(3).optional(),
   showSupportButton: z.boolean().optional(),
   hideZeroBalances: z.boolean().optional(),
   matchTransfersWithManualAccounts: z.boolean().optional(),
   savingsCategoryIds: z.array(z.uuid()).optional(),
+  currencyDisplay: z.enum(endpointsTypes.CURRENCY_DISPLAY_PREFERENCES).optional(),
 });
 
 export type SettingsPatchSchema = z.infer<typeof ZodSettingsPatchSchema>;
@@ -389,6 +429,16 @@ export type SettingsPatchSchemaIsInSync = Expect<Equals<SettingsPatchSchema, Dee
  */
 export type SavedPivotViewSchemaIsInSync = Expect<
   Equals<z.infer<typeof ZodSavedPivotViewSchema>, endpointsTypes.SavedPivotView>
+>;
+
+/**
+ * Compile-time drift guard: the persisted category preset must infer exactly the shared
+ * `CategoryMappingPreset` contract the frontend also builds against.
+ *
+ * @public exported only so the assertion isn't flagged as unused.
+ */
+export type CategoryMappingPresetSchemaIsInSync = Expect<
+  Equals<z.infer<typeof ZodCategoryMappingPresetSchema>, CategoryMappingPreset>
 >;
 
 /**

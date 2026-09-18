@@ -1,6 +1,7 @@
 import {
   API_ERROR_CODES,
   BANK_PROVIDER_TYPE,
+  PAYMENT_TYPES,
   TRANSACTION_TRANSFER_NATURE,
   TRANSACTION_TYPES,
   VEHICLE_CLASS,
@@ -92,15 +93,6 @@ describe('Data export (POST /user/data-export)', () => {
       expect(exported?.tags).toEqual(['denorm-tag']);
     });
 
-    it('includes the user header block with username + base currency', async () => {
-      const response = await helpers.exportData({ format: 'json' });
-      const archive = helpers.parseExportArchive({ buffer: response.body });
-      const json = archive.json as { user: { username: string; base_currency: string; email: string | null } };
-      expect(json.user).toBeDefined();
-      expect(json.user.username).toEqual(expect.any(String));
-      expect(json.user.username.length).toBeGreaterThan(0);
-    });
-
     it('does NOT leak bank-provider credentials when a real provider connection exists', async () => {
       // Seed a bank-provider connection through the public API so the real
       // encryption/storage path runs. The export must not round-trip the
@@ -123,17 +115,6 @@ describe('Data export (POST /user/data-export)', () => {
       expect(stringified).not.toMatch(/"credentials"/);
       expect(stringified).not.toMatch(/"keyEncrypted"/);
       expect(stringified).not.toMatch(/"secretKey"/);
-    });
-
-    it('returns a valid archive for a user with zero data across all groups', async () => {
-      // Empty-state contract: even when every transformer returns [], the
-      // archive should still be a well-formed zip with a manifest. Regressions
-      // in archive-writer or manifest-builder edge cases would surface here.
-      const response = await helpers.exportData({ format: 'json' });
-      expect(response.statusCode).toBe(200);
-      const archive = helpers.parseExportArchive({ buffer: response.body });
-      expect(archive.manifest.files.length).toBeGreaterThan(0);
-      expect(archive.manifest.schemaVersion).toBe(EXPORT_SCHEMA_VERSION);
     });
   });
 
@@ -183,17 +164,6 @@ describe('Data export (POST /user/data-export)', () => {
       expect(seeded?.Category).toBe('CSV cat');
       // Money displayed as the decimal number (12.34), not the cents integer.
       expect(seeded?.Amount).toBe('12.34');
-    });
-
-    it('writes a UTF-8 BOM at the start of every CSV file', async () => {
-      const response = await helpers.exportData({ format: 'csv' });
-      const archive = helpers.parseExportArchive({ buffer: response.body });
-      for (const [name, buf] of archive.files.entries()) {
-        if (!name.endsWith('.csv')) continue;
-        expect(buf[0]).toBe(0xef);
-        expect(buf[1]).toBe(0xbb);
-        expect(buf[2]).toBe(0xbf);
-      }
     });
   });
 
@@ -301,19 +271,42 @@ describe('Data export (POST /user/data-export)', () => {
       expect(archive.files.has('transactions.csv')).toBe(false);
       expect(archive.files.has('accounts.csv')).toBe(false);
     });
+  });
 
-    it('rejects an unknown group with a 4xx (Zod validation)', async () => {
+  describe('Request validation', () => {
+    it('rejects an unknown group with 4xx, an inverted range with 422, and a malformed date with 422', async () => {
       // The schema's `.default([...ALL_EXPORT_GROUPS])` makes an empty array
       // unreachable past Zod, so the negative test we CAN exercise is "garbage
       // group name → 4xx rejection". Confirms the controller enforces the
       // closed set of group names.
-      const result = await helpers.exportData({
+      const unknownGroup = await helpers.exportData({
         format: 'json',
         // @ts-expect-error – invalid group exercised on purpose
         groups: ['nonsense-group'],
       });
-      expect(result.statusCode).toBeGreaterThanOrEqual(400);
-      expect(result.statusCode).toBeLessThan(500);
+      expect(unknownGroup.statusCode).toBeGreaterThanOrEqual(400);
+      expect(unknownGroup.statusCode).toBeLessThan(500);
+
+      const invertedRange = await helpers.exportData({
+        format: 'json',
+        dateRange: { from: '2024-12-31', to: '2024-01-01' },
+      });
+      expect(invertedRange.statusCode).toBe(422);
+
+      const malformedDate = await helpers.exportData({
+        format: 'json',
+        // Datetime instead of date – we accept calendar-day boundaries only.
+        dateRange: { from: '2024-01-01T00:00:00Z' },
+      });
+      expect(malformedDate.statusCode).toBe(422);
+    });
+
+    it('rejects an empty accountIds array and a non-id accountIds entry with 422', async () => {
+      const emptyAccountIds = await helpers.exportData({ format: 'json', accountIds: [] });
+      expect(emptyAccountIds.statusCode).toBe(422);
+
+      const malformedAccountId = await helpers.exportData({ format: 'json', accountIds: ['not-an-id'] });
+      expect(malformedAccountId.statusCode).toBe(422);
     });
   });
 
@@ -431,10 +424,42 @@ describe('Data export (POST /user/data-export)', () => {
     });
   });
 
-  describe('Integrity manifest', () => {
-    it('every file listed in manifest.files has a SHA-256 matching the on-disk file', async () => {
+  describe('Archive envelope and integrity manifest', () => {
+    it('returns a well-formed JSON archive for a user with zero data: user header, manifest metadata, ISO filename, row-count header', async () => {
+      // Empty-state contract: even when every transformer returns [], the
+      // archive should still be a well-formed zip with a manifest. Regressions
+      // in archive-writer or manifest-builder edge cases would surface here.
+      const response = await helpers.exportData({ format: 'json' });
+      expect(response.statusCode).toBe(200);
+      expect(response.filename).toMatch(/^moneymatter-export-\d{4}-\d{2}-\d{2}\.zip$/);
+      expect(response.totalRows).toBeGreaterThanOrEqual(0);
+      expect(Number.isFinite(response.totalRows)).toBe(true);
+
+      const archive = helpers.parseExportArchive({ buffer: response.body });
+      expect(archive.manifest.files.length).toBeGreaterThan(0);
+      expect(archive.manifest.schemaVersion).toBe(EXPORT_SCHEMA_VERSION);
+      // manifest.json can't hash itself, so it's never listed among its own files.
+      expect(archive.manifest.files.map((f) => f.filename)).not.toContain('manifest.json');
+      expect(archive.manifest.dateRange).toBeUndefined();
+
+      const json = archive.json as { user: { username: string; baseCurrency: string; email: string | null } };
+      expect(json.user).toBeDefined();
+      expect(json.user.username).toEqual(expect.any(String));
+      expect(json.user.username.length).toBeGreaterThan(0);
+      expect(json.user.baseCurrency).toBe(global.BASE_CURRENCY_CODE);
+      expect(json.user.email).toBe('test1@test.local');
+    });
+
+    it('writes a UTF-8 BOM at the start of every CSV file and manifest SHA-256/sizeBytes matching each archived file', async () => {
       const response = await helpers.exportData({ format: 'csv' });
       const archive = helpers.parseExportArchive({ buffer: response.body });
+
+      for (const [name, buf] of archive.files.entries()) {
+        if (!name.endsWith('.csv')) continue;
+        expect(buf[0]).toBe(0xef);
+        expect(buf[1]).toBe(0xbb);
+        expect(buf[2]).toBe(0xbf);
+      }
 
       for (const entry of archive.manifest.files) {
         const onDisk = archive.files.get(entry.filename);
@@ -443,19 +468,6 @@ describe('Data export (POST /user/data-export)', () => {
         expect(computed).toBe(entry.sha256);
         expect(entry.sizeBytes).toBe(onDisk!.length);
       }
-    });
-
-    it('manifest.json itself is NOT listed in manifest.files (chicken-and-egg)', async () => {
-      const response = await helpers.exportData({ format: 'json' });
-      const archive = helpers.parseExportArchive({ buffer: response.body });
-      const names = archive.manifest.files.map((f) => f.filename);
-      expect(names).not.toContain('manifest.json');
-    });
-
-    it('schemaVersion is the current EXPORT_SCHEMA_VERSION constant', async () => {
-      const response = await helpers.exportData({ format: 'json' });
-      const archive = helpers.parseExportArchive({ buffer: response.body });
-      expect(archive.manifest.schemaVersion).toBe(EXPORT_SCHEMA_VERSION);
     });
   });
 
@@ -668,19 +680,6 @@ describe('Data export (POST /user/data-export)', () => {
     });
   });
 
-  describe('Filename and response envelope', () => {
-    it('uses an ISO date in the zip filename', async () => {
-      const response = await helpers.exportData({ format: 'json' });
-      expect(response.filename).toMatch(/^moneymatter-export-\d{4}-\d{2}-\d{2}\.zip$/);
-    });
-
-    it('exposes X-Total-Rows header so the frontend can show a preflight summary', async () => {
-      const response = await helpers.exportData({ format: 'json' });
-      expect(response.totalRows).toBeGreaterThanOrEqual(0);
-      expect(Number.isFinite(response.totalRows)).toBe(true);
-    });
-  });
-
   describe('CSV cell escaping', () => {
     it('round-trips commas, quotes, and newlines inside notes through csv-stringify', async () => {
       const account = await helpers.createAccount({ raw: true });
@@ -761,18 +760,6 @@ describe('Data export (POST /user/data-export)', () => {
     });
   });
 
-  describe('User header email', () => {
-    it('exposes the user email field in the JSON header (string or explicit null, not undefined)', async () => {
-      const response = await helpers.exportData({ format: 'json' });
-      const archive = helpers.parseExportArchive({ buffer: response.body });
-      const json = archive.json as { user: { email: string | null } };
-      expect('email' in json.user).toBe(true);
-      // Either a populated email or explicit null – never an absent key, so a
-      // future consumer can rely on the field always being present.
-      expect(json.user.email === null || typeof json.user.email === 'string').toBe(true);
-    });
-  });
-
   describe('Cross-user isolation', () => {
     it("does NOT leak another user's account, category, tag, or transaction note into the primary user's export", async () => {
       // Sign up a separate user and seed identifiable data (account, category,
@@ -786,6 +773,8 @@ describe('Data export (POST /user/data-export)', () => {
         category: `Foreign category ${Date.now()}`,
         tag: `foreign-tag-${Date.now()}`,
         note: `Foreign note ${Date.now()}`,
+        payee: `Foreign payee ${Date.now()}`,
+        payeeAlias: `FOREIGN PAYEE ALIAS ${Date.now()}`,
       };
 
       const secondUser = await helpers.signUpSecondUser();
@@ -803,6 +792,15 @@ describe('Data export (POST /user/data-export)', () => {
             raw: true,
           });
           await helpers.createTag({ payload: { name: foreignNeedle.tag, color: '#FF00FF' }, raw: true });
+          const foreignPayee = await helpers.createPayee({
+            payload: helpers.buildPayeePayload({ name: foreignNeedle.payee }),
+            raw: true,
+          });
+          await helpers.createPayeeAlias({
+            payeeId: foreignPayee.id,
+            rawName: foreignNeedle.payeeAlias,
+            raw: true,
+          });
           await helpers.createTransaction({
             payload: helpers.buildTransactionPayload({
               accountId: foreignAccount.id,
@@ -840,16 +838,19 @@ describe('Data export (POST /user/data-export)', () => {
       expect(stringified).not.toContain(foreignNeedle.category);
       expect(stringified).not.toContain(foreignNeedle.tag);
       expect(stringified).not.toContain(foreignNeedle.note);
+      expect(stringified).not.toContain(foreignNeedle.payee);
+      expect(stringified).not.toContain(foreignNeedle.payeeAlias);
     });
   });
 
   describe('Rate limit', () => {
-    it('allows 5 exports in a 15-minute window per user and rejects the 6th with 429', async () => {
+    it('allows 5 exports in a 15-minute window per user, rejects the 6th with 429, and re-opens after a window reset', async () => {
       // Don't rely on the suite-wide beforeEach reset — make this case self-contained
       // so it stays meaningful if the surrounding setup ever changes.
       const userRes = await helpers.makeRequest({ method: 'get', url: '/user', raw: true });
       const userId = (userRes as { id: number }).id;
-      await RateLimitService.resetRateLimit(`data-export:user:${userId}`);
+      const key = `data-export:user:${userId}`;
+      await RateLimitService.resetRateLimit(key);
 
       for (let attempt = 1; attempt <= 5; attempt++) {
         const response = await helpers.exportData({ format: 'json' });
@@ -860,29 +861,16 @@ describe('Data export (POST /user/data-export)', () => {
       expect(blocked.statusCode).toBe(429);
       const body = blocked.errorBody as { response?: { code?: string } } | null;
       expect(body?.response?.code).toBe(API_ERROR_CODES.tooManyRequests);
-    });
-
-    it('after the limiter trips, a fresh window allows exports again (reset between users / windows)', async () => {
-      const userRes = await helpers.makeRequest({ method: 'get', url: '/user', raw: true });
-      const userId = (userRes as { id: number }).id;
-      const key = `data-export:user:${userId}`;
-
-      await RateLimitService.resetRateLimit(key);
-      for (let attempt = 1; attempt <= 5; attempt++) {
-        await helpers.exportData({ format: 'json' });
-      }
-      const blocked = await helpers.exportData({ format: 'json' });
-      expect(blocked.statusCode).toBe(429);
 
       await RateLimitService.resetRateLimit(key);
 
       const afterReset = await helpers.exportData({ format: 'json' });
       expect(afterReset.statusCode).toBe(200);
-    });
+    }, 30000);
   });
 
   describe('Date range', () => {
-    it('filters transactions to the requested range and leaves reference tables untouched', async () => {
+    it('filters transactions to the requested range, records the range on the manifest, and leaves reference tables untouched', async () => {
       const account = await helpers.createAccount({ raw: true });
       const category = await helpers.addCustomCategory({ name: 'Range cat', color: '#AABBCC', raw: true });
 
@@ -929,6 +917,8 @@ describe('Data export (POST /user/data-export)', () => {
       expect(response.statusCode).toBe(200);
 
       const archive = helpers.parseExportArchive({ buffer: response.body });
+      expect(archive.manifest.dateRange).toEqual({ from: '2024-01-01', to: '2024-12-31' });
+
       const data = archive.json as {
         transactions: Array<Record<string, unknown>>;
         accounts: Array<Record<string, unknown>>;
@@ -981,37 +971,337 @@ describe('Data export (POST /user/data-export)', () => {
       const notes = data.transactions.map((t) => t.note);
       expect(notes).toEqual(expect.arrayContaining(['Lower boundary', 'Upper boundary']));
     });
+  });
 
-    it('records the range on the manifest for traceability', async () => {
-      const response = await helpers.exportData({
-        format: 'json',
-        dateRange: { from: '2024-01-01', to: '2024-12-31' },
+  describe('Transaction detail columns', () => {
+    it('exports payee, payment type, external links, and location when the transaction carries them', async () => {
+      const account = await helpers.createAccount({ raw: true });
+      const payee = await helpers.createPayee({
+        payload: helpers.buildPayeePayload({ name: 'Detail Payee' }),
+        raw: true,
       });
+
+      await helpers.createTransaction({
+        payload: helpers.buildTransactionPayload({
+          accountId: account.id,
+          amount: 10,
+          transactionType: TRANSACTION_TYPES.expense,
+          paymentType: PAYMENT_TYPES.cash,
+          payeeId: payee.id,
+          note: 'Detailed row',
+          externalUrl: 'https://example.com/receipt/1',
+          externalReference: 'REF-001',
+          location: { latitude: 50.45, longitude: 30.523 },
+        }),
+        raw: true,
+      });
+
+      const response = await helpers.exportData({ format: 'csv' });
+      expect(response.statusCode).toBe(200);
       const archive = helpers.parseExportArchive({ buffer: response.body });
-      expect(archive.manifest.dateRange).toEqual({ from: '2024-01-01', to: '2024-12-31' });
+      const rows = helpers.parseExportCsv({ buffer: archive.files.get('transactions.csv')! });
+
+      const row = rows.find((r) => r.Note === 'Detailed row');
+      expect(row).toBeDefined();
+      expect(row!.Payee).toBe(payee.name);
+      expect(row!.PaymentType).toBe(PAYMENT_TYPES.cash);
+      expect(row!.ExternalUrl).toBe('https://example.com/receipt/1');
+      expect(row!.ExternalReference).toBe('REF-001');
+      expect(row!.Location).toBe('50.45,30.523');
     });
 
-    it('omits the dateRange manifest field when the request had no range', async () => {
+    it('emits empty cells for payee, external links, and location when the transaction has none', async () => {
+      const account = await helpers.createAccount({ raw: true });
+      await helpers.createTransaction({
+        payload: helpers.buildTransactionPayload({
+          accountId: account.id,
+          amount: 5,
+          transactionType: TRANSACTION_TYPES.expense,
+          note: 'Bare row',
+        }),
+        raw: true,
+      });
+
       const response = await helpers.exportData({ format: 'json' });
       const archive = helpers.parseExportArchive({ buffer: response.body });
-      expect(archive.manifest.dateRange).toBeUndefined();
+      const data = archive.json as { transactions: Array<Record<string, unknown>> };
+
+      const row = data.transactions.find((t) => t.note === 'Bare row');
+      expect(row).toBeDefined();
+      expect(row?.payee).toBe('');
+      expect(row?.externalUrl).toBe('');
+      expect(row?.externalReference).toBe('');
+      expect(row?.location).toBe('');
+    });
+  });
+
+  describe('Payees file', () => {
+    it('exports payees with their default category, aliases, and default tags', async () => {
+      const category = await helpers.addCustomCategory({ name: 'PayeeCat', color: '#AABBCC', raw: true });
+      const tagAlpha = await helpers.createTag({ payload: { name: 'payee-alpha', color: '#111111' }, raw: true });
+      const tagBeta = await helpers.createTag({ payload: { name: 'payee-beta', color: '#222222' }, raw: true });
+      const payee = await helpers.createPayee({
+        payload: helpers.buildPayeePayload({
+          name: 'Exported Payee',
+          defaultCategoryId: category.id,
+          defaultTagIds: [tagAlpha.id, tagBeta.id],
+        }),
+        raw: true,
+      });
+      await helpers.createPayeeAlias({ payeeId: payee.id, rawName: 'EXPORTED PAYEE LLC', raw: true });
+      await helpers.createPayeeAlias({ payeeId: payee.id, rawName: 'EXPORTED PAYEE INC', raw: true });
+
+      const response = await helpers.exportData({ format: 'csv' });
+      expect(response.statusCode).toBe(200);
+      const archive = helpers.parseExportArchive({ buffer: response.body });
+      const csv = archive.files.get('payees.csv');
+      expect(csv).toBeDefined();
+      const rows = helpers.parseExportCsv({ buffer: csv! });
+
+      const row = rows.find((r) => r.Name === payee.name);
+      expect(row).toBeDefined();
+      expect(row!.DefaultCategory).toBe('PayeeCat');
+      expect(row!.Aliases!.split('; ').toSorted()).toEqual(['EXPORTED PAYEE INC', 'EXPORTED PAYEE LLC']);
+      expect(row!.DefaultTags!.split('; ').toSorted()).toEqual(['payee-alpha', 'payee-beta']);
+
+      const jsonResponse = await helpers.exportData({ format: 'json' });
+      const jsonArchive = helpers.parseExportArchive({ buffer: jsonResponse.body });
+      const jsonPayee = (jsonArchive.json as { payees: Array<Record<string, unknown>> }).payees.find(
+        (p) => p.name === payee.name,
+      );
+      expect(jsonPayee).toBeDefined();
+      expect((jsonPayee!.aliases as string[]).toSorted()).toEqual(['EXPORTED PAYEE INC', 'EXPORTED PAYEE LLC']);
+      expect((jsonPayee!.defaultTags as string[]).toSorted()).toEqual(['payee-alpha', 'payee-beta']);
     });
 
-    it('rejects an inverted range with 422', async () => {
-      const response = await helpers.exportData({
-        format: 'json',
-        dateRange: { from: '2024-12-31', to: '2024-01-01' },
+    it('emits the payees file with zero rows for a user without payees', async () => {
+      const response = await helpers.exportData({ format: 'csv' });
+      expect(response.statusCode).toBe(200);
+      const archive = helpers.parseExportArchive({ buffer: response.body });
+      const csv = archive.files.get('payees.csv');
+      expect(csv).toBeDefined();
+      expect(helpers.parseExportCsv({ buffer: csv! })).toHaveLength(0);
+    });
+  });
+
+  describe('Account filter', () => {
+    it('limits transactions, balance history and the accounts file to the requested accounts', async () => {
+      const accountA = await helpers.createAccount({
+        payload: helpers.buildAccountPayload({ name: 'Filter account A' }),
+        raw: true,
       });
-      expect(response.statusCode).toBe(422);
+      const accountB = await helpers.createAccount({
+        payload: helpers.buildAccountPayload({ name: 'Filter account B' }),
+        raw: true,
+      });
+
+      await helpers.createTransaction({
+        payload: helpers.buildTransactionPayload({
+          accountId: accountA.id,
+          amount: 11,
+          transactionType: TRANSACTION_TYPES.expense,
+          note: 'Account A row',
+        }),
+        raw: true,
+      });
+      await helpers.createTransaction({
+        payload: helpers.buildTransactionPayload({
+          accountId: accountB.id,
+          amount: 22,
+          transactionType: TRANSACTION_TYPES.expense,
+          note: 'Account B row',
+        }),
+        raw: true,
+      });
+
+      const response = await helpers.exportData({ format: 'json', accountIds: [accountA.id] });
+      expect(response.statusCode).toBe(200);
+
+      const archive = helpers.parseExportArchive({ buffer: response.body });
+      const data = archive.json as {
+        transactions: Array<Record<string, unknown>>;
+        accounts: Array<Record<string, unknown>>;
+        balances_history: Array<Record<string, unknown>>;
+      };
+
+      const notes = data.transactions.map((t) => t.note);
+      expect(notes).toContain('Account A row');
+      expect(notes).not.toContain('Account B row');
+
+      expect(data.balances_history.length).toBeGreaterThan(0);
+      expect([...new Set(data.balances_history.map((b) => b.account))]).toEqual([accountA.name]);
+
+      const accountNames = data.accounts.map((a) => a.name);
+      expect(accountNames).toContain(accountA.name);
+      expect(accountNames).not.toContain(accountB.name);
+      expect(archive.manifest.accountIds).toEqual([accountA.id]);
+
+      const unfiltered = await helpers.exportData({ format: 'json' });
+      expect(unfiltered.statusCode).toBe(200);
+      const unfilteredArchive = helpers.parseExportArchive({ buffer: unfiltered.body });
+      const unfilteredAccounts = (
+        unfilteredArchive.json as {
+          accounts: Array<Record<string, unknown>>;
+        }
+      ).accounts.map((a) => a.name);
+      expect(unfilteredAccounts).toEqual(expect.arrayContaining([accountA.name, accountB.name]));
+      expect(unfilteredArchive.manifest).not.toHaveProperty('accountIds');
     });
 
-    it('rejects a malformed date string with 422', async () => {
+    it('ignores an account id that belongs to another user', async () => {
+      const foreignNeedle = {
+        account: `Foreign filtered account ${Date.now()}`,
+        note: `Foreign filtered note ${Date.now()}`,
+      };
+      let foreignAccountId = '';
+
+      const secondUser = await helpers.signUpSecondUser();
+      await helpers.asUser({
+        cookies: secondUser.cookies,
+        fn: async () => {
+          await helpers.setBaseCurrencyForActiveUser({ currencyCode: global.BASE_CURRENCY.code });
+          const foreignAccount = await helpers.createAccount({
+            payload: helpers.buildAccountPayload({ name: foreignNeedle.account }),
+            raw: true,
+          });
+          foreignAccountId = foreignAccount.id;
+          await helpers.createTransaction({
+            payload: helpers.buildTransactionPayload({
+              accountId: foreignAccount.id,
+              amount: 999,
+              transactionType: TRANSACTION_TYPES.expense,
+              note: foreignNeedle.note,
+            }),
+            raw: true,
+          });
+        },
+      });
+
+      const myAccount = await helpers.createAccount({
+        payload: helpers.buildAccountPayload({ name: 'Own filtered account' }),
+        raw: true,
+      });
+      await helpers.createTransaction({
+        payload: helpers.buildTransactionPayload({
+          accountId: myAccount.id,
+          amount: 5,
+          transactionType: TRANSACTION_TYPES.expense,
+          note: 'Own filtered row',
+        }),
+        raw: true,
+      });
+
+      const response = await helpers.exportData({ format: 'json', accountIds: [myAccount.id, foreignAccountId] });
+      expect(response.statusCode).toBe(200);
+
+      const archive = helpers.parseExportArchive({ buffer: response.body });
+      const data = archive.json as {
+        transactions: Array<Record<string, unknown>>;
+        accounts: Array<Record<string, unknown>>;
+        balances_history: Array<Record<string, unknown>>;
+      };
+
+      expect(data.transactions.map((t) => t.note)).toContain('Own filtered row');
+      expect(data.accounts.map((a) => a.name)).toContain(myAccount.name);
+
+      const filteredFiles = JSON.stringify({
+        transactions: data.transactions,
+        accounts: data.accounts,
+        balances_history: data.balances_history,
+      });
+      expect(filteredFiles).not.toContain(foreignNeedle.account);
+      expect(filteredFiles).not.toContain(foreignNeedle.note);
+    });
+
+    it('applies the account filter and the date range together', async () => {
+      const accountA = await helpers.createAccount({
+        payload: helpers.buildAccountPayload({ name: 'Combo account A' }),
+        raw: true,
+      });
+      const accountB = await helpers.createAccount({
+        payload: helpers.buildAccountPayload({ name: 'Combo account B' }),
+        raw: true,
+      });
+
+      for (const [account, label] of [
+        [accountA, 'A'],
+        [accountB, 'B'],
+      ] as const) {
+        await helpers.createTransaction({
+          payload: helpers.buildTransactionPayload({
+            accountId: account.id,
+            amount: 10,
+            transactionType: TRANSACTION_TYPES.expense,
+            note: `${label} inside`,
+            time: '2024-06-15T12:00:00.000Z',
+          }),
+          raw: true,
+        });
+        await helpers.createTransaction({
+          payload: helpers.buildTransactionPayload({
+            accountId: account.id,
+            amount: 20,
+            transactionType: TRANSACTION_TYPES.expense,
+            note: `${label} outside`,
+            time: '2025-06-15T12:00:00.000Z',
+          }),
+          raw: true,
+        });
+      }
+
       const response = await helpers.exportData({
         format: 'json',
-        // Datetime instead of date – we accept calendar-day boundaries only.
-        dateRange: { from: '2024-01-01T00:00:00Z' },
+        accountIds: [accountA.id],
+        dateRange: { from: '2024-01-01', to: '2024-12-31' },
       });
-      expect(response.statusCode).toBe(422);
+      expect(response.statusCode).toBe(200);
+
+      const archive = helpers.parseExportArchive({ buffer: response.body });
+      const data = archive.json as { transactions: Array<Record<string, unknown>> };
+      expect(data.transactions.map((t) => t.note)).toEqual(['A inside']);
+    });
+
+    it('still names the counterpart account in LinkedTransfer when the other leg is filtered out', async () => {
+      const source = await helpers.createAccount({
+        payload: helpers.buildAccountPayload({ name: 'Straddle source' }),
+        raw: true,
+      });
+      const dest = await helpers.createAccount({
+        payload: helpers.buildAccountPayload({ name: 'Straddle dest' }),
+        raw: true,
+      });
+      await helpers.createTransaction({
+        payload: {
+          ...helpers.buildTransactionPayload({
+            accountId: source.id,
+            amount: 7500,
+            transactionType: TRANSACTION_TYPES.expense,
+            transferNature: TRANSACTION_TRANSFER_NATURE.common_transfer,
+          }),
+          destinationAmount: 7500,
+          destinationAccountId: dest.id,
+        } as unknown as ReturnType<typeof helpers.buildTransactionPayload>,
+        raw: true,
+      });
+
+      const unfiltered = await helpers.exportData({ format: 'csv' });
+      const unfilteredRows = helpers.parseExportCsv({
+        buffer: helpers.parseExportArchive({ buffer: unfiltered.body }).files.get('transactions.csv')!,
+      });
+      const unfilteredOutLeg = unfilteredRows.find((r) => r.Account === source.name && r.Type === 'transfer_out');
+      expect(unfilteredOutLeg).toBeDefined();
+
+      const filtered = await helpers.exportData({ format: 'csv', accountIds: [source.id] });
+      expect(filtered.statusCode).toBe(200);
+      const filteredRows = helpers.parseExportCsv({
+        buffer: helpers.parseExportArchive({ buffer: filtered.body }).files.get('transactions.csv')!,
+      });
+
+      const transferRows = filteredRows.filter((r) => r.Type === 'transfer_out' || r.Type === 'transfer_in');
+      expect(transferRows).toHaveLength(1);
+      expect(transferRows[0]!.Account).toBe(source.name);
+      expect(transferRows[0]!.LinkedTransfer).toContain(dest.name);
+      expect(transferRows[0]!.LinkedTransfer).toBe(unfilteredOutLeg!.LinkedTransfer);
     });
   });
 

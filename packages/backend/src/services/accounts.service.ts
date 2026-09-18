@@ -272,10 +272,18 @@ export const updateAccount = withTransaction(
       message: t({ key: 'accounts.accountNotFound' }),
     });
 
-    // A vehicle's value is owned by the depreciation model + override flow. A direct
-    // `currentBalance` write here would leave `Vehicle.valueAnchor` stale and the next
-    // refresh would overwrite the edit. Enforced in the service so non-HTTP callers
-    // (MCP, internal) must go through the override flow (`POST /vehicles/:id/value`).
+    // loan and vehicle require a sidecar row that only the /loans and /vehicles endpoints create.
+    if (
+      payload.accountCategory !== undefined &&
+      payload.accountCategory !== accountData.accountCategory &&
+      isDedicatedFlowAccountCategory(payload.accountCategory)
+    ) {
+      throw new ValidationError({
+        message: t({ key: 'accounts.dedicatedFlowCategoryNotAllowed' }),
+      });
+    }
+
+    // Vehicle value changes only via balance adjustment, which re-anchors depreciation
     if (accountData.accountCategory === ACCOUNT_CATEGORIES.vehicle && payload.currentBalance !== undefined) {
       throw new ValidationError({
         message: t({ key: 'balanceAdjustment.vehicleUseOverride' }),

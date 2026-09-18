@@ -1,9 +1,11 @@
 import { ACCOUNT_STATUSES, BANK_PROVIDER_TYPE, DEACTIVATION_REASON } from '@bt/shared/types';
-import { describe, expect, it } from '@jest/globals';
+import { beforeEach, describe, expect, it } from '@jest/globals';
 import { redisClient } from '@root/redis-client';
 import { buildLockKey } from '@services/currencies/base-currency-lock';
 import * as helpers from '@tests/helpers';
-import { VALID_MONOBANK_TOKEN } from '@tests/mocks/monobank/mock-api';
+import { MOCK_IDENTIFICATION_HASH_1, getMockedTransactions } from '@tests/mocks/enablebanking/data';
+import { MONOBANK_URLS_MOCK, VALID_MONOBANK_TOKEN, getMonobankTransactionsMock } from '@tests/mocks/monobank/mock-api';
+import { HttpResponse, http } from 'msw';
 
 import { REDIS_KEYS, SyncStatus } from './sync-status-tracker';
 
@@ -25,6 +27,44 @@ async function deactivateConnection({
   await conn.update({
     isActive: false,
     metadata: { ...metadata, deactivationReason },
+  });
+}
+
+const EB_TRANSACTIONS_URL = 'https://api.enablebanking.com/accounts/:accountId/transactions';
+
+/** Create an Enable Banking connection that has completed its OAuth flow. */
+async function authorizeConnection(): Promise<string> {
+  const connectResult = await helpers.bankDataProviders.connectProvider({
+    providerType: BANK_PROVIDER_TYPE.ENABLE_BANKING,
+    credentials: helpers.enablebanking.mockCredentials(),
+    raw: true,
+  });
+
+  const state = await helpers.enablebanking.getConnectionState(connectResult.connectionId);
+
+  await helpers.makeRequest({
+    method: 'post',
+    url: '/bank-data-providers/enablebanking/oauth-callback',
+    payload: {
+      connectionId: connectResult.connectionId,
+      code: helpers.enablebanking.mockAuthCode,
+      state,
+    },
+  });
+
+  await helpers.bankDataProviders.listExternalAccounts({
+    connectionId: connectResult.connectionId,
+    raw: true,
+  });
+
+  return connectResult.connectionId;
+}
+
+function connectAccount({ connectionId, waitForSync }: { connectionId: string; waitForSync: boolean }) {
+  return helpers.bankDataProviders.connectSelectedAccounts({
+    connectionId,
+    accountExternalIds: [MOCK_IDENTIFICATION_HASH_1],
+    waitForSync,
   });
 }
 
@@ -60,6 +100,7 @@ describe('Sync Flow E2E', () => {
         connectionId: connectionResult.connectionId,
         accountExternalIds: [externalAccounts[0]!.externalId],
         raw: true,
+        waitForSync: false,
       });
 
       // Test: Get status
@@ -81,6 +122,174 @@ describe('Sync Flow E2E', () => {
       // connection it's expected for it to be "syncing" or "queued"
       expect([SyncStatus.SYNCING, SyncStatus.QUEUED].includes(accountStatus.status)).toBe(true);
     });
+
+    /**
+     * A freshly queued sync is reported as QUEUED no matter how long ago the
+     * account's previous sync finished: the QUEUED record carries its own
+     * `startedAt`, so the 20-minute staleness check never fires on it.
+     */
+    describe('Queued status after a long-finished previous sync', () => {
+      const STALE_THRESHOLD_MS = 20 * 60 * 1000;
+      const BLOCKER_FETCH_MS = 1500;
+
+      const slowStatementHandler = ({ delayMs }: { delayMs: number }) =>
+        http.get(MONOBANK_URLS_MOCK.personalStatement, async () => {
+          await helpers.sleep(delayMs);
+          return HttpResponse.json([]);
+        });
+
+      async function seedCompletedStatus({ accountId, ageMs }: { accountId: string; ageMs: number }) {
+        const at = new Date(Date.now() - ageMs).toISOString();
+        await redisClient.set(
+          REDIS_KEYS.accountSyncStatus(accountId),
+          JSON.stringify({
+            accountId,
+            status: SyncStatus.COMPLETED,
+            startedAt: at,
+            completedAt: at,
+            error: null,
+          }),
+        );
+      }
+
+      async function waitForStatus({
+        accountId,
+        expected,
+        timeoutMs = 8000,
+      }: {
+        accountId: string;
+        expected: SyncStatus[];
+        timeoutMs?: number;
+      }) {
+        const deadline = Date.now() + timeoutMs;
+
+        while (Date.now() < deadline) {
+          const { accounts } = await helpers.bankDataProviders.getAccountsSyncStatus({
+            raw: true,
+          });
+          const account = accounts.find((item) => item.accountId === accountId);
+          if (account && expected.includes(account.status)) return;
+          await helpers.sleep(100);
+        }
+
+        throw new Error(`Account ${accountId} never reached ${expected.join('/')}`);
+      }
+
+      /**
+       * Both accounts share one API token, so they share one BullMQ worker with
+       * concurrency 1: a sync on `blockerAccountId` with a slow statement mock holds
+       * the worker, keeping the next account's job in the QUEUED phase long enough to
+       * observe it over HTTP.
+       */
+      async function connectTwoAccounts() {
+        global.mswMockServer.use(getMonobankTransactionsMock({ response: [] }));
+
+        const { connectionId } = await helpers.monobank.pair();
+
+        const { accounts: externalAccounts } = await helpers.bankDataProviders.listExternalAccounts({
+          connectionId,
+          raw: true,
+        });
+
+        const { syncedAccounts } = await helpers.bankDataProviders.connectSelectedAccounts({
+          connectionId,
+          accountExternalIds: externalAccounts.slice(0, 2).map((account) => account.externalId),
+          raw: true,
+        });
+
+        return {
+          connectionId,
+          blockerAccountId: syncedAccounts[0]!.id,
+          accountId: syncedAccounts[1]!.id,
+        };
+      }
+
+      async function occupyWorker({
+        connectionId,
+        blockerAccountId,
+      }: {
+        connectionId: string;
+        blockerAccountId: string;
+      }) {
+        global.mswMockServer.use(slowStatementHandler({ delayMs: BLOCKER_FETCH_MS }));
+
+        const blockerJob = await helpers.bankDataProviders.syncTransactionsForAccount({
+          connectionId,
+          accountId: blockerAccountId,
+          raw: true,
+        });
+        await waitForStatus({
+          accountId: blockerAccountId,
+          expected: [SyncStatus.SYNCING],
+        });
+
+        return { blockerJobGroupId: blockerJob.jobGroupId! };
+      }
+
+      it('reports a queued sync when the previous sync completed longer ago than the stale threshold', async () => {
+        const { connectionId, blockerAccountId, accountId } = await connectTwoAccounts();
+        const { blockerJobGroupId } = await occupyWorker({
+          connectionId,
+          blockerAccountId,
+        });
+
+        await seedCompletedStatus({
+          accountId,
+          ageMs: STALE_THRESHOLD_MS + 5 * 60 * 1000,
+        });
+
+        const { jobGroupId } = await helpers.bankDataProviders.syncTransactionsForAccount({
+          connectionId,
+          accountId,
+          raw: true,
+        });
+
+        const { accounts, summary } = await helpers.bankDataProviders.getAccountsSyncStatus({ raw: true });
+        const account = accounts.find((item) => item.accountId === accountId);
+
+        expect(account?.status).toBe(SyncStatus.QUEUED);
+        expect(summary.queued).toBe(1);
+        expect(Date.now() - new Date(account!.startedAt!).getTime()).toBeLessThan(STALE_THRESHOLD_MS);
+
+        for (const id of [blockerJobGroupId, jobGroupId!]) {
+          await helpers.bankDataProviders.waitForSyncJobsToComplete({
+            connectionId,
+            jobGroupId: id,
+            timeoutMs: 8000,
+          });
+        }
+      });
+
+      it('reports a queued sync when the previous sync completed recently', async () => {
+        const { connectionId, blockerAccountId, accountId } = await connectTwoAccounts();
+        const { blockerJobGroupId } = await occupyWorker({
+          connectionId,
+          blockerAccountId,
+        });
+
+        await seedCompletedStatus({ accountId, ageMs: 1000 });
+
+        const { jobGroupId } = await helpers.bankDataProviders.syncTransactionsForAccount({
+          connectionId,
+          accountId,
+          raw: true,
+        });
+
+        const { accounts, summary } = await helpers.bankDataProviders.getAccountsSyncStatus({ raw: true });
+        const account = accounts.find((item) => item.accountId === accountId);
+
+        expect(account?.status).toBe(SyncStatus.QUEUED);
+        expect(summary.queued).toBe(1);
+
+        for (const id of [blockerJobGroupId, jobGroupId!]) {
+          await helpers.bankDataProviders.waitForSyncJobsToComplete({
+            connectionId,
+            jobGroupId: id,
+            timeoutMs: 8000,
+          });
+        }
+      });
+    });
   });
 
   describe('Auto Sync Check', () => {
@@ -99,7 +308,6 @@ describe('Sync Flow E2E', () => {
 
       // Mock transaction data
       const mockTransactions = helpers.monobank.mockedTransactionData(3);
-      const { getMonobankTransactionsMock } = await import('@tests/mocks/monobank/mock-api');
       global.mswMockServer.use(getMonobankTransactionsMock({ response: mockTransactions }));
 
       await helpers.bankDataProviders.connectSelectedAccounts({
@@ -148,7 +356,10 @@ describe('Sync Flow E2E', () => {
       await redisClient.set(buildLockKey(userId), 'test-lock');
       let lockedResponse;
       try {
-        lockedResponse = await helpers.makeRequest({ method: 'get', url: '/bank-data-providers/sync/check' });
+        lockedResponse = await helpers.makeRequest({
+          method: 'get',
+          url: '/bank-data-providers/sync/check',
+        });
       } finally {
         await redisClient.del(buildLockKey(userId));
       }
@@ -157,7 +368,10 @@ describe('Sync Flow E2E', () => {
       expect(lockedResponse.body.response.syncTriggered).toBe(false);
 
       // Once the lock clears, the same setup triggers — proving the lock was the only blocker.
-      const afterUnlock = await helpers.makeRequest({ method: 'get', url: '/bank-data-providers/sync/check' });
+      const afterUnlock = await helpers.makeRequest({
+        method: 'get',
+        url: '/bank-data-providers/sync/check',
+      });
       expect(afterUnlock.body.response.syncTriggered).toBe(true);
     });
 
@@ -217,7 +431,6 @@ describe('Sync Flow E2E', () => {
 
       // Mock transactions
       const mockTransactions = helpers.monobank.mockedTransactionData(5);
-      const { getMonobankTransactionsMock } = await import('@tests/mocks/monobank/mock-api');
       global.mswMockServer.use(getMonobankTransactionsMock({ response: mockTransactions }));
 
       // Connect first 2 accounts
@@ -234,29 +447,8 @@ describe('Sync Flow E2E', () => {
       });
 
       expect(response.status).toBe(200);
-      expect(response.body.response).toHaveProperty('totalAccounts');
-      expect(response.body.response).toHaveProperty('syncedAccounts');
-      expect(response.body.response).toHaveProperty('failedAccounts');
-      expect(response.body.response).toHaveProperty('accountResults');
-
       expect(response.body.response.totalAccounts).toBe(2);
-      expect(Array.isArray(response.body.response.accountResults)).toBe(true);
-      expect(response.body.response.accountResults.length).toBe(2);
-
-      // Verify each account result
-      response.body.response.accountResults.forEach(
-        (result: { accountId: number; accountName: string; status: string }) => {
-          expect(result).toHaveProperty('accountId');
-          expect(result).toHaveProperty('accountName');
-          expect(result).toHaveProperty('status');
-          expect(['success', 'failed', 'skipped']).toContain(result.status);
-        },
-      );
-
-      // Manual trigger doesn't update last auto-sync timestamp
-      // Only /check endpoint updates it when auto-sync is triggered
-      // So we just verify the sync was triggered successfully
-      expect(response.body.response.totalAccounts).toBeGreaterThan(0);
+      expect(response.body.response.queuedAccounts).toBe(2);
     });
 
     it('should handle sync when no accounts are connected', async () => {
@@ -267,8 +459,7 @@ describe('Sync Flow E2E', () => {
 
       expect(response.status).toBe(200);
       expect(response.body.response.totalAccounts).toBe(0);
-      expect(response.body.response.syncedAccounts).toBe(0);
-      expect(response.body.response.accountResults).toEqual([]);
+      expect(response.body.response.queuedAccounts).toBe(0);
     });
 
     it('should skip disabled accounts from sync', async () => {
@@ -307,8 +498,7 @@ describe('Sync Flow E2E', () => {
       expect(response.status).toBe(200);
       // Only 1 account should be synced (the enabled one)
       expect(response.body.response.totalAccounts).toBe(1);
-      expect(response.body.response.accountResults.length).toBe(1);
-      expect(response.body.response.accountResults[0]!.accountId).toBe(syncedAccounts[1]!.id);
+      expect(response.body.response.queuedAccounts).toBe(1);
     });
 
     it('should not include account in sync after archiving and re-activating (bank connection is unlinked on archive)', async () => {
@@ -423,7 +613,6 @@ describe('Sync Flow E2E', () => {
 
       // Mock transaction data
       const mockTransactions = helpers.monobank.mockedTransactionData(3);
-      const { getMonobankTransactionsMock } = await import('@tests/mocks/monobank/mock-api');
       global.mswMockServer.use(getMonobankTransactionsMock({ response: mockTransactions }));
 
       const { syncedAccounts } = await helpers.bankDataProviders.connectSelectedAccounts({
@@ -593,6 +782,95 @@ describe('Sync Flow E2E', () => {
       expect(response.status).toBe(200);
       expect(response.body.response.connectionsNeedingReauth).toHaveLength(1);
       expect(response.body.response.connectionsNeedingReauth[0].accountsCount).toBe(1);
+    });
+  });
+
+  describe('Account sync queue', () => {
+    beforeEach(() => helpers.enablebanking.resetSessionCounter());
+
+    it('connect responds before the initial sync finishes', async () => {
+      const connectionId = await authorizeConnection();
+
+      global.mswMockServer.use(
+        http.get(EB_TRANSACTIONS_URL, async ({ params }) => {
+          await new Promise((resolve) => setTimeout(resolve, 1500));
+          return HttpResponse.json({
+            transactions: getMockedTransactions(params.accountId as string, 3),
+            continuation_key: null,
+          });
+        }),
+      );
+
+      const startedAt = Date.now();
+      const result = await connectAccount({ connectionId, waitForSync: false });
+      const elapsedMs = Date.now() - startedAt;
+
+      expect(result.status).toBe(200);
+      expect(elapsedMs).toBeLessThan(1000);
+
+      const inProgress = await helpers.bankDataProviders.getAccountsSyncStatus({
+        raw: true,
+      });
+      expect(inProgress.summary.queued + inProgress.summary.syncing).toBeGreaterThanOrEqual(1);
+
+      await helpers.bankDataProviders.waitForAccountsSyncToSettle();
+
+      const accountId = result.body.response.syncedAccounts[0]!.id;
+      const transactions = await helpers.getTransactions({
+        accountIds: [accountId],
+        raw: true,
+      });
+      expect(transactions.length).toBeGreaterThan(0);
+    });
+
+    it('provider failure surfaces as FAILED account status', async () => {
+      const connectionId = await authorizeConnection();
+
+      global.mswMockServer.use(
+        http.get(
+          EB_TRANSACTIONS_URL,
+          () =>
+            new HttpResponse(JSON.stringify({ message: 'Upstream failure' }), {
+              status: 500,
+            }),
+        ),
+      );
+
+      const result = await connectAccount({ connectionId, waitForSync: false });
+      expect(result.status).toBe(200);
+
+      await helpers.bankDataProviders.waitForAccountsSyncToSettle();
+
+      const accountId = result.body.response.syncedAccounts[0]!.id;
+      const { accounts } = await helpers.bankDataProviders.getAccountsSyncStatus({ raw: true });
+      const accountStatus = accounts.find((account) => account.accountId === accountId)!;
+
+      expect(accountStatus.status).toBe(SyncStatus.FAILED);
+      expect(typeof accountStatus.error).toBe('string');
+      expect(accountStatus.error!.length).toBeGreaterThan(0);
+    });
+
+    it('re-triggering a running sync is a no-op', async () => {
+      const connectionId = await authorizeConnection();
+      const result = await connectAccount({ connectionId, waitForSync: true });
+      const accountId = result.body.response.syncedAccounts[0]!.id;
+
+      const firstTrigger = await helpers.makeRequest({
+        method: 'post',
+        url: '/bank-data-providers/sync/trigger',
+      });
+      const secondTrigger = await helpers.makeRequest({
+        method: 'post',
+        url: '/bank-data-providers/sync/trigger',
+      });
+
+      expect(firstTrigger.status).toBe(200);
+      expect(secondTrigger.status).toBe(200);
+
+      await helpers.bankDataProviders.waitForAccountsSyncToSettle();
+
+      const { accounts } = await helpers.bankDataProviders.getAccountsSyncStatus({ raw: true });
+      expect(accounts.find((account) => account.accountId === accountId)!.status).toBe(SyncStatus.COMPLETED);
     });
   });
 });

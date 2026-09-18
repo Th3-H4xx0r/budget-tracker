@@ -38,6 +38,12 @@
       @update:note-includes="$emit('update:filters', { ...filters, noteIncludes: $event })"
     />
 
+    <OperationPills
+      :label="$t('transactions.filters.attachments.label')"
+      :model-value="filters.attachmentFilter"
+      @update:model-value="$emit('update:filters', { ...filters, attachmentFilter: $event })"
+    />
+
     <AccountMultiSelectField
       :model-value="filters.accountIds"
       include-archived
@@ -49,11 +55,22 @@
       @update:category-ids="$emit('update:filters', { ...filters, categoryIds: $event })"
     />
 
-    <TagFilter :tag-ids="filters.tagIds" @update:tag-ids="$emit('update:filters', { ...filters, tagIds: $event })" />
+    <TagFilter
+      allow-blank
+      :tag-ids="filters.tagIds"
+      @update:tag-ids="$emit('update:filters', { ...filters, tagIds: $event })"
+    />
 
     <PayeeMultiSelectField
+      allow-blank
       :payee-ids="filters.payeeIds"
       @update:payee-ids="$emit('update:filters', { ...filters, payeeIds: $event })"
+    />
+
+    <BudgetMultiSelectField
+      v-if="!hideBudgets"
+      :budget-ids="filters.budgetIds"
+      @update:budget-ids="$emit('update:filters', { ...filters, budgetIds: $event })"
     />
   </div>
 
@@ -80,6 +97,7 @@ import UiButton from '@/components/lib/ui/button/Button.vue';
 import { cn } from '@/lib/utils';
 
 import AccountMultiSelectField from '@/components/fields/account-multi-select-field.vue';
+import BudgetMultiSelectField from '@/components/fields/budget-multi-select-field.vue';
 import ComboboxCategories from '@/components/common/combobox-categories.vue';
 
 import { FiltersStruct } from './const';
@@ -87,6 +105,7 @@ import AmountRangeFilter from './filters/amount-range-filter.vue';
 import DateRangeFilter from './filters/date-range-filter.vue';
 import ExclusionsFilter from './filters/exclusions.vue';
 import NoteIncludesFilter from './filters/note-includes.vue';
+import OperationPills from './filters/operation-pills.vue';
 import PayeeMultiSelectField from '@/components/fields/payee-multi-select-field.vue';
 import TagFilter from './filters/tag-filter.vue';
 import TransactionTypeFilter from './filters/transaction-type-filter.vue';
@@ -99,6 +118,8 @@ withDefaults(
     isFiltersOutOfSync: boolean;
     /** Surface the sticky footer must blend with: the panel renders both in dialogs and inline on cards. */
     surface?: 'dialog' | 'card';
+    /** Hosts already scoped to one budget (the budget page) hide the budget picker. */
+    hideBudgets?: boolean;
   }>(),
   { surface: 'dialog' },
 );

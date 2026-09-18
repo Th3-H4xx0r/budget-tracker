@@ -1,6 +1,7 @@
 import { config } from '@/common/config';
 import type { DemoBlockedFeature, DemoEndReason } from '@/common/const/demo';
 import type { FeedbackType } from '@/components/dialogs/feedback-submission';
+import type { BillingCycle, BillingTier, Feature, Plan } from '@bt/shared/types';
 import posthog from 'posthog-js';
 import type { Router } from 'vue-router';
 
@@ -50,7 +51,7 @@ type AnalyticsEvent =
   // Import funnel (import_completed tracked on backend)
   | {
       event: 'import_opened';
-      properties: { import_type: 'csv' | 'statement_parser' | 'ynab' | 'budget-bakers-wallet' | 'ms-money' };
+      properties: { import_type: 'csv' | 'statement_parser' | 'ynab' | 'budget-bakers-wallet' | 'ms-money' | 'ofx' };
     }
   // AI features (ai_categorization_completed tracked on backend)
   | { event: 'ai_feature_used'; properties: { feature: 'statement_parser' | 'categorization' } }
@@ -66,6 +67,9 @@ type AnalyticsEvent =
   | { event: 'dashboard_edit_opened' }
   | { event: 'dashboard_layout_saved'; properties: { widget_count: number } }
   | { event: 'dashboard_widget_config_saved'; properties: { widget_id: string } }
+  // Billing (completions, cancellations and refunds live in Stripe)
+  | { event: 'paywall_hit'; properties: { feature: Feature; required_plan: Plan; path: string } }
+  | { event: 'checkout_opened'; properties: { tier: BillingTier; cycle: BillingCycle; plan: Plan | null } }
   // Feedback
   | { event: 'feedback_button_clicked' }
   | { event: 'feedback_button_hovered' }

@@ -37,6 +37,9 @@
       "plannedFilter": {
         "label": "Planned"
       },
+      "attachments": {
+        "label": "Attachments"
+      },
       "filterOperation": {
         "all": "All",
         "exclude": "Exclude",
@@ -52,7 +55,8 @@
         "tagSingular": "tag",
         "tagPlural": "tags",
         "selected": "selected",
-        "searchPlaceholder": "Search tags..."
+        "searchPlaceholder": "Search tags...",
+        "blankOption": "No tags"
       },
       "payees": {
         "label": "Payees",
@@ -63,6 +67,7 @@
       "menu": {
         "type": "Type",
         "tags": "Tags",
+        "budgets": "Budgets",
         "amount": "Amount range",
         "note": "Notes"
       },
@@ -112,11 +117,7 @@
       "tagModeLabel": "Tag action",
       "tagModeAdd": "Add to existing tags",
       "tagModeReplace": "Replace all tags",
-      "tagModeRemove": "Remove these tags",
-      "unselectableReasons": {
-        "split": "Can't be selected: split transactions don't support bulk editing. Edit it individually instead.",
-        "sharedAccount": "Can't be selected: this transaction is on an account shared with you, and only its owner can edit it."
-      }
+      "tagModeRemove": "Remove these tags"
     },
     "transactionGroups": {
       "bulkActions": {
@@ -234,7 +235,11 @@
       "morePlansAtLeast": "+{count}+ more planned",
       "deletePlanTitle": "Delete planned transaction?",
       "deletePlanDescription": "This action cannot be undone.",
-      "plansLoadFailed": "Couldn't load planned transactions"
+      "plansLoadFailed": "Couldn't load planned transactions",
+      "confirmAction": "Confirm",
+      "confirmTooltip": "The money moved — record it and update the balance",
+      "confirmPlanSuccess": "Plan recorded — balance updated",
+      "confirmPlanError": "Failed to record the plan"
     }
   }
 }

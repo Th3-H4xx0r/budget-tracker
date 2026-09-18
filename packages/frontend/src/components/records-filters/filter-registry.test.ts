@@ -24,12 +24,14 @@ const NARROWING_EXAMPLES: Record<FilterKey, Partial<FiltersStruct>> = {
   type: { transactionType: TRANSACTION_TYPES.expense },
   tags: { tagIds: ['tag-1'] },
   payees: { payeeIds: ['payee-1'] },
+  budgets: { budgetIds: ['budget-1'] },
   amount: { amountGte: 10 },
   transferKinds: { transferNatures: [TRANSACTION_TRANSFER_NATURE.common_transfer] },
   refunds: { refundFilter: FILTER_OPERATION.exclude },
   transfers: { transferFilter: FILTER_OPERATION.only },
   planned: { plannedFilter: FILTER_OPERATION.only },
   note: { noteIncludes: 'coffee' },
+  attachments: { attachmentFilter: FILTER_OPERATION.only },
 };
 
 const REGISTRY_ENTRIES = Object.entries(FILTER_REGISTRY) as [FilterKey, (typeof FILTER_REGISTRY)[FilterKey]][];

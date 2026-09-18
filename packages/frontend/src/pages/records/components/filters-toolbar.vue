@@ -88,6 +88,7 @@
         <div v-else-if="filterKey === 'tags'" class="w-44">
           <TagFilter
             hide-clear-button
+            allow-blank
             :tag-ids="filters.tagIds"
             @update:tag-ids="emitFilters({ ...filters, tagIds: $event })"
           />
@@ -96,8 +97,17 @@
         <div v-else-if="filterKey === 'payees'" class="w-44">
           <PayeeMultiSelectField
             hide-clear-button
+            allow-blank
             :payee-ids="filters.payeeIds"
             @update:payee-ids="emitFilters({ ...filters, payeeIds: $event })"
+          />
+        </div>
+
+        <div v-else-if="filterKey === 'budgets'" class="w-44">
+          <BudgetMultiSelectField
+            hide-clear-button
+            :budget-ids="filters.budgetIds"
+            @update:budget-ids="emitFilters({ ...filters, budgetIds: $event })"
           />
         </div>
 
@@ -156,6 +166,17 @@
           />
         </div>
 
+        <div
+          v-else-if="filterKey === 'attachments'"
+          class="border-input bg-input-background flex h-10 items-center rounded-md border px-3"
+        >
+          <OperationPills
+            :label="$t('transactions.filters.attachments.label')"
+            :model-value="filters.attachmentFilter"
+            @update:model-value="emitFilters({ ...filters, attachmentFilter: $event })"
+          />
+        </div>
+
         <div v-else-if="filterKey === 'note'" class="w-56">
           <NoteIncludesFilter
             compact
@@ -196,6 +217,7 @@ import DateRangeFilter from '@/components/records-filters/filters/date-range-fil
 import NoteIncludesFilter from '@/components/records-filters/filters/note-includes.vue';
 import OperationPills from '@/components/records-filters/filters/operation-pills.vue';
 import AccountMultiSelectField from '@/components/fields/account-multi-select-field.vue';
+import BudgetMultiSelectField from '@/components/fields/budget-multi-select-field.vue';
 import PayeeMultiSelectField from '@/components/fields/payee-multi-select-field.vue';
 import TagFilter from '@/components/records-filters/filters/tag-filter.vue';
 import TransactionTypeFilter from '@/components/records-filters/filters/transaction-type-filter.vue';

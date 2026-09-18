@@ -4,7 +4,7 @@ import type { RouteRecordRaw } from 'vue-router';
 import { createRouter, createWebHistory } from 'vue-router';
 
 import { ROUTES_NAMES } from './constants';
-import { authPageGuard, baseCurrencyExists, redirectRouteGuard } from './guards';
+import { authPageGuard, baseCurrencyExists, billingPageGuard, redirectRouteGuard } from './guards';
 
 export { ROUTES_NAMES } from './constants';
 
@@ -119,7 +119,7 @@ const routes: RouteRecordRaw[] = [
         path: '/analytics',
         name: ROUTES_NAMES.analytics,
         component: () => import('@/pages/analytics/index.vue'),
-        meta: { i18nChunks: ['pages/analytics'] as I18nChunkName[] },
+        meta: { i18nChunks: ['pages/analytics', 'pages/transactions'] as I18nChunkName[] },
         children: [
           {
             path: 'trends-comparison',
@@ -247,7 +247,7 @@ const routes: RouteRecordRaw[] = [
         path: '/transactions/optimizations',
         name: ROUTES_NAMES.optimizations,
         component: () => import('@/pages/optimizations/index.vue'),
-        meta: { i18nChunks: ['pages/optimizations', 'pages/transactions'] as I18nChunkName[] },
+        meta: { i18nChunks: ['pages/optimizations', 'pages/automations', 'pages/transactions'] as I18nChunkName[] },
       },
       {
         path: '/transactions/optimizations/transfers',
@@ -306,6 +306,13 @@ const routes: RouteRecordRaw[] = [
             name: ROUTES_NAMES.settingsCategories,
             component: () => import('@/pages/settings/subpages/categories/index.vue'),
             meta: { i18nChunks: ['settings/categories'] as I18nChunkName[] },
+          },
+          {
+            path: 'plan-billing',
+            name: ROUTES_NAMES.settingsPlanBilling,
+            beforeEnter: billingPageGuard,
+            component: () => import('@/pages/settings/subpages/plan-billing/index.vue'),
+            meta: { i18nChunks: ['settings/plan-billing'] as I18nChunkName[] },
           },
           {
             path: 'tags',
@@ -419,6 +426,14 @@ const routes: RouteRecordRaw[] = [
                 'pages/import-shared',
                 'settings/data-management',
               ] as I18nChunkName[],
+            },
+          },
+          {
+            path: 'data-management/import/ofx',
+            name: ROUTES_NAMES.importOfx,
+            component: () => import('@/pages/import-export/ofx-import/index.vue'),
+            meta: {
+              i18nChunks: ['pages/import-ofx', 'pages/import-shared', 'settings/data-management'] as I18nChunkName[],
             },
           },
           {
@@ -568,7 +583,7 @@ const routes: RouteRecordRaw[] = [
         name: ROUTES_NAMES.welcome,
         beforeEnter: redirectRouteGuard,
         component: () => import('@/pages/auth/welcome.vue'),
-        meta: { i18nChunks: ['auth/welcome'] as I18nChunkName[] },
+        meta: { i18nChunks: ['auth/welcome', 'forms'] as I18nChunkName[] },
       },
       {
         path: '/auth/callback',

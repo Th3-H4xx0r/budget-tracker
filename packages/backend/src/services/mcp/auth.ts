@@ -4,6 +4,7 @@ import { Unauthorized } from '@js/errors';
 import { CacheClient } from '@js/utils/cache';
 import { logger } from '@js/utils/logger';
 import Users from '@models/users.model';
+import { getEntitlementsByUserId } from '@services/entitlements/resolve-entitlements.service';
 import { parseScopes } from '@services/mcp/tools/helpers';
 import { createHash } from 'node:crypto';
 
@@ -33,6 +34,7 @@ export interface McpAuthInfo {
     authUserId: string;
     username: string;
     role: UserRole;
+    readOnly: boolean;
   };
 }
 
@@ -97,6 +99,7 @@ async function verifyAccessToken({ token }: { token: string }): Promise<McpAuthI
   }
 
   const scopes = parseScopes({ scopes: tokenRecord.scopes });
+  const { readOnly } = await getEntitlementsByUserId({ userId: user.id });
 
   return {
     token,
@@ -108,6 +111,7 @@ async function verifyAccessToken({ token }: { token: string }): Promise<McpAuthI
       authUserId: user.authUserId,
       username: user.username,
       role: user.role,
+      readOnly,
     },
   };
 }
@@ -125,7 +129,9 @@ export async function verifyMcpToken({ authorizationHeader }: { authorizationHea
   try {
     return await verifyAccessToken({ token });
   } catch (error) {
-    logger.warn(`MCP token verification failed: ${(error as Error).message}`);
+    // Unauthorized is routine client churn and stays out of Sentry; anything else
+    // (auth DB, Redis, entitlements) is a real failure and is captured.
+    logger.error(error as Error);
     throw error;
   }
 }

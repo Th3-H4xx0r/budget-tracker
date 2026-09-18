@@ -150,6 +150,7 @@ import InputField from '@/components/fields/input-field.vue';
 import UiButton from '@/components/lib/ui/button/Button.vue';
 import * as Tooltip from '@/components/lib/ui/tooltip';
 import { useNotificationCenter } from '@/components/notification-center';
+import { useSyncStatus } from '@/composable/use-sync-status';
 import { useAccountsStore, useOnboardingStore, useUserStore } from '@/stores';
 import { BANK_PROVIDER_TYPE } from '@bt/shared/types';
 import { BuildingIcon, ExternalLinkIcon, InfoIcon } from '@lucide/vue';
@@ -172,6 +173,7 @@ const emit = defineEmits<{
 
 const { addSuccessNotification, addErrorNotification } = useNotificationCenter();
 const accountsStore = useAccountsStore();
+const { watchSync } = useSyncStatus();
 const { isDemo } = storeToRefs(useUserStore());
 
 const currentStep = ref(1);
@@ -180,23 +182,26 @@ const showHelp = ref(false);
 
 // Step 1 data
 const apiKey = ref('');
-const connectionId = ref<string | null>(null);
+// The key is reusable, so a retry with the same key must re-list the accounts of
+// the connection it already created instead of creating a duplicate one.
+const claimed = ref<{ token: string; connectionId: string } | null>(null);
 
 // Step 2 data
 const availableAccounts = ref<AvailableAccount[]>([]);
 
 const handleConnectProvider = async () => {
-  if (!apiKey.value || isLoading.value || isDemo.value) return;
+  const token = apiKey.value.trim();
+  if (!token || isLoading.value || isDemo.value) return;
 
   try {
     isLoading.value = true;
 
-    const response = await connectProvider(BANK_PROVIDER_TYPE.LUNCHFLOW, { apiKey: apiKey.value });
+    if (claimed.value?.token !== token) {
+      const response = await connectProvider(BANK_PROVIDER_TYPE.LUNCHFLOW, { apiKey: token });
+      claimed.value = { token, connectionId: response.connectionId };
+    }
 
-    connectionId.value = response.connectionId;
-
-    const accounts = await getAvailableAccounts(response.connectionId);
-    availableAccounts.value = accounts;
+    availableAccounts.value = await getAvailableAccounts(claimed.value.connectionId);
 
     currentStep.value = 2;
   } catch (error) {
@@ -212,7 +217,7 @@ const handleSkipImport = () => {
 };
 
 const handleImportAccounts = async () => {
-  if (!connectionId.value || availableAccounts.value.length === 0 || isLoading.value || isDemo.value) {
+  if (!claimed.value || availableAccounts.value.length === 0 || isLoading.value || isDemo.value) {
     return;
   }
 
@@ -220,7 +225,9 @@ const handleImportAccounts = async () => {
     isLoading.value = true;
 
     const allAccountIds = availableAccounts.value.map((a) => a.externalId);
-    await syncSelectedAccounts(connectionId.value, allAccountIds);
+    await syncSelectedAccounts(claimed.value.connectionId, allAccountIds);
+    // Follow the server-side initial sync in the header without re-triggering it.
+    void watchSync();
 
     await accountsStore.refetchAccounts();
 

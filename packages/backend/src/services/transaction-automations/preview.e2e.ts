@@ -1,13 +1,16 @@
 import {
   AccountOptionValue,
   type AutomationConditions,
+  CATEGORIZATION_SOURCE,
   CategoryOptionValue,
   CurrencyOptionValue,
+  type RecordId,
   TRANSACTION_TRANSFER_NATURE,
   TRANSACTION_TYPES,
   TransactionTypeOptionValue,
   asDecimal,
 } from '@bt/shared/types';
+import { generateRandomRecordId } from '@common/lib/record-id-helpers';
 import { describe, expect, it } from '@jest/globals';
 import type { LunchFlowApiTransaction } from '@services/bank-data-providers/lunchflow/types';
 import * as helpers from '@tests/helpers';
@@ -203,16 +206,17 @@ describe('POST /automations/preview', () => {
     expect(result.matches.map((match) => match.note)).toEqual(['Uber ride', 'Coffee']);
   });
 
-  it('compares an amount bound against the transaction currency', async () => {
+  it('bounds an amount in transaction currency, filters by a specific one and matches a UTC day', async () => {
+    const dates = [daysAgo(1), daysAgo(2), daysAgo(3)];
     await syncBankRows({
       transactions: [
-        bankRow({ amount: 150, date: daysAgo(1), description: 'Salary top-up' }),
-        bankRow({ amount: 50, date: daysAgo(2), description: 'Refund' }),
-        bankRow({ amount: -200, date: daysAgo(3), description: 'Rent' }),
+        bankRow({ amount: 150, date: dates[0]!, description: 'Salary top-up' }),
+        bankRow({ amount: 50, date: dates[1]!, description: 'Refund' }),
+        bankRow({ amount: -200, date: dates[2]!, description: 'Rent' }),
       ],
     });
 
-    const result = await preview({
+    const byAmount = await preview({
       match: 'all',
       items: [
         { field: 'transactionType', operator: 'equals', value: TRANSACTION_TYPES.income },
@@ -220,15 +224,9 @@ describe('POST /automations/preview', () => {
       ],
     });
 
-    expect(result.scannedCount).toBe(2);
-    expect(result.matchedCount).toBe(1);
-    expect(result.matches.map((match) => match.note)).toEqual(['Salary top-up']);
-  });
-
-  it('treats a specific currency as a filter, never converting other currencies', async () => {
-    await syncBankRows({
-      transactions: [bankRow({ amount: -100, date: daysAgo(1), description: 'USD row' })],
-    });
+    expect(byAmount.scannedCount).toBe(2);
+    expect(byAmount.matchedCount).toBe(1);
+    expect(byAmount.matches.map((match) => match.note)).toEqual(['Salary top-up']);
 
     const inUsd = await preview({
       match: 'all',
@@ -239,26 +237,19 @@ describe('POST /automations/preview', () => {
       items: [{ field: 'amount', operator: 'gte', value: { min: 1 }, currency: { mode: 'specific', code: 'EUR' } }],
     });
 
-    expect(inUsd.matchedCount).toBe(1);
-    expect(inEur).toEqual({ matchedCount: 0, scannedCount: 1, matches: [] });
-  });
-
-  it('matches a single UTC calendar day', async () => {
-    const dates = [daysAgo(1), daysAgo(2), daysAgo(3)];
-    await syncBankRows({
-      transactions: dates.map((date, index) => bankRow({ amount: -10, date, description: `Row ${index}` })),
-    });
+    expect(inUsd.matchedCount).toBe(3);
+    expect(inEur).toEqual({ matchedCount: 0, settledCount: 0, scannedCount: 3, matches: [] });
 
     const targetDay = dates[1]!.getUTCDate();
-    const result = await preview({
+    const byDay = await preview({
       match: 'all',
       items: [{ field: 'dayOfMonth', operator: 'between', value: { min: targetDay, max: targetDay } }],
     });
 
-    expect(result.scannedCount).toBe(3);
-    expect(result.matchedCount).toBe(1);
-    expect(result.matches.map((match) => match.note)).toEqual(['Row 1']);
-  });
+    expect(byDay.scannedCount).toBe(3);
+    expect(byDay.matchedCount).toBe(1);
+    expect(byDay.matches.map((match) => match.note)).toEqual(['Refund']);
+  }, 20000);
 
   it('still scans synced rows after the account was unlinked and relinked', async () => {
     const { account, connectionId, externalAccountId } = await syncBankRows({
@@ -277,16 +268,14 @@ describe('POST /automations/preview', () => {
     expect(result.matchedCount).toBe(1);
   });
 
-  it('returns zeros for a user with no eligible rows', async () => {
+  it('returns zeros for a user with no eligible rows and rejects an empty condition list', async () => {
     const result = await preview({
       match: 'all',
       items: [{ field: 'note', operator: 'contains_any', value: ['uber'] }],
     });
 
-    expect(result).toEqual({ matchedCount: 0, scannedCount: 0, matches: [] });
-  });
+    expect(result).toEqual({ matchedCount: 0, settledCount: 0, scannedCount: 0, matches: [] });
 
-  it('rejects an empty condition list', async () => {
     const response = await helpers.previewAutomation({ payload: { conditions: { match: 'all', items: [] } } });
 
     expect(response.statusCode).toBe(422);
@@ -349,5 +338,97 @@ describe('POST /automations/preview', () => {
       'Imported two',
       'Imported one',
     ]);
+  });
+
+  it('hides a saved rule match that already carries its result and lists it again once the rule changes', async () => {
+    const category = await helpers.addCustomCategory({ name: 'Rides', color: '#111111', raw: true });
+    const other = await helpers.addCustomCategory({ name: 'Taxi', color: '#222222', raw: true });
+    const rule = await helpers.createAutomation({
+      payload: {
+        name: 'Uber is transport',
+        conditions: { match: 'all', items: [{ field: 'note', operator: 'contains_any', value: ['uber'] }] },
+        actions: [{ type: 'set_category', categoryId: category.id as RecordId }],
+      },
+      raw: true,
+    });
+
+    await syncBankRows({
+      transactions: [
+        bankRow({ amount: -10, date: daysAgo(1), description: 'Uber ride' }),
+        bankRow({ amount: -20, date: daysAgo(2), description: 'Grocery' }),
+      ],
+    });
+
+    expect(await helpers.previewAutomation({ payload: { automationId: rule.id }, raw: true })).toMatchObject({
+      matchedCount: 0,
+      settledCount: 1,
+      scannedCount: 2,
+      matches: [],
+    });
+
+    await helpers.updateAutomation({
+      id: rule.id,
+      payload: { actions: [{ type: 'set_category', categoryId: other.id as RecordId }] },
+      raw: true,
+    });
+
+    const result = await helpers.previewAutomation({ payload: { automationId: rule.id }, raw: true });
+
+    expect(result).toMatchObject({ matchedCount: 1, scannedCount: 2 });
+    expect(result.matches[0]).toMatchObject({
+      note: 'Uber ride',
+      categoryId: category.id,
+      categorizationMeta: { source: CATEGORIZATION_SOURCE.userRule, ruleId: rule.id },
+    });
+  });
+
+  it('404s a saved-rule preview pointing at another user rule', async () => {
+    const second = await helpers.signUpSecondUser();
+    const foreign = await helpers.asUser({
+      cookies: second.cookies,
+      fn: () => helpers.createAutomation({ payload: helpers.buildAutomationPayload(), raw: true }),
+    });
+
+    expect((await helpers.previewAutomation({ payload: { automationId: foreign.id } })).statusCode).toBe(404);
+  });
+
+  it('caps the listed matches at `limit` while still counting every match', async () => {
+    await syncBankRows({
+      transactions: Array.from({ length: 3 }, (_, index) =>
+        bankRow({ amount: -10 - index, date: daysAgo(index + 1), description: `Uber ride ${index + 1}` }),
+      ),
+    });
+
+    const rule = await helpers.createAutomation({ payload: helpers.buildAutomationPayload(), raw: true });
+
+    const result = await helpers.previewAutomation({ payload: { automationId: rule.id, limit: 1 }, raw: true });
+
+    expect(result.matchedCount).toBe(3);
+    expect(result.matches).toHaveLength(1);
+  });
+
+  it('422s a saved rule whose category was deleted', async () => {
+    const category = await helpers.addCustomCategory({ name: 'Doomed', color: '#333333', raw: true });
+    const rule = await helpers.createAutomation({
+      payload: helpers.buildAutomationPayload({
+        actions: [{ type: 'set_category', categoryId: category.id as RecordId }],
+      }),
+      raw: true,
+    });
+    await helpers.deleteCustomCategory({ categoryId: category.id });
+
+    expect((await helpers.previewAutomation({ payload: { automationId: rule.id } })).statusCode).toBe(422);
+  });
+
+  it('rejects a body carrying neither or both of conditions and automationId', async () => {
+    const conditions: AutomationConditions = {
+      match: 'all',
+      items: [{ field: 'note', operator: 'contains_any', value: ['uber'] }],
+    };
+
+    expect((await helpers.previewAutomation({ payload: {} })).statusCode).toBe(422);
+    expect(
+      (await helpers.previewAutomation({ payload: { conditions, automationId: generateRandomRecordId() } })).statusCode,
+    ).toBe(422);
   });
 });

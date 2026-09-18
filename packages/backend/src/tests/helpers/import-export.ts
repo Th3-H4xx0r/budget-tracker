@@ -1,30 +1,41 @@
 import type {
   AccountMappingConfig,
+  AiMapImportCategoriesResponse,
   BudgetBakersWalletAccountMapping,
   BudgetBakersWalletImportProgress,
   CategoryMappingConfig,
   ColumnMappingConfig,
   CsvImportProgress,
+  DeleteImportBatchResponse,
   DetectBudgetBakersWalletDuplicatesResponse,
   DetectDuplicatesResponse,
   DetectMsMoneyDuplicatesResponse,
+  DetectOfxDuplicatesResponse,
   ExecuteBudgetBakersWalletResponse,
   ExecuteImportResponse,
   ExecuteMsMoneyResponse,
+  ExecuteOfxRequest,
+  ExecuteOfxResponse,
   ExecuteYnabResponse,
-  ExtractUniqueValuesResponse,
   ExtractedMetadata,
   ExtractedTransaction,
+  ExtractUniqueValuesResponse,
+  ImportBatchDeleteActiveStatus,
   ImportBatchesHistoryResponse,
   MsMoneyAccountMapping,
   MsMoneyImportProgress,
   MsMoneyUploadResponse,
+  OfxAccountMapping,
+  OfxImportProgress,
+  OfxUploadResponse,
   ParseBudgetBakersWalletResponse,
   ParseYnabResponse,
   StatementCostEstimate,
   StatementDetectDuplicatesResponse,
-  StatementExecuteImportResponse,
+  StatementExecuteImportQueuedResponse,
   StatementExtractionResult,
+  StatementImportProgress,
+  StatementImportSummary,
   TagMappingConfig,
   YnabAccountMapping,
   YnabImportProgress,
@@ -43,6 +54,12 @@ const FIXTURES_PATH = path.join(__dirname, '../fixtures/csv-import');
 const STATEMENT_FIXTURES_PATH = path.join(__dirname, '../fixtures');
 const YNAB_FIXTURES_PATH = path.join(__dirname, '../fixtures/ynab-import');
 const BUDGET_BAKERS_WALLET_FIXTURES_PATH = path.join(__dirname, '../fixtures/budget-bakers-wallet-import');
+const OFX_FIXTURES_PATH = path.join(__dirname, '../fixtures/ofx-import');
+
+/** Load a committed, sanitized OFX/QFX fixture as raw upload bytes. */
+export function loadOfxFixture({ filename }: { filename: string }): Buffer {
+  return fs.readFileSync(path.join(OFX_FIXTURES_PATH, filename));
+}
 
 /** Load a YNAB Register.csv fixture by filename. */
 export function loadYnabFixture(filename: string): string {
@@ -96,6 +113,25 @@ export function parseCsv<R extends boolean | undefined = false>({
   return makeRequest<ParseCsvResponse, R>({
     method: 'post',
     url: '/import/csv/parse',
+    payload,
+    raw,
+  });
+}
+
+// ============================================
+// AI Category Mapping Endpoint
+// ============================================
+
+export function aiMapImportCategories<R extends boolean | undefined = false>({
+  payload,
+  raw,
+}: {
+  payload: { sourceCategories: string[] };
+  raw?: R;
+}): UtilizeReturnType<() => AiMapImportCategoriesResponse, R> {
+  return makeRequest<AiMapImportCategoriesResponse, R>({
+    method: 'post',
+    url: '/import/ai-map-categories',
     payload,
     raw,
   });
@@ -324,19 +360,87 @@ interface StatementExecuteImportParams {
   skipIndices: number[];
 }
 
+/**
+ * POST /import/text-source/execute. The execute step is asynchronous: this
+ * enqueues a background job and resolves to `{ jobId }`. Callers poll the result
+ * via {@link waitForStatementImportCompletion}, or use
+ * {@link statementExecuteImportAndWait} to do both in one call.
+ */
 export function statementExecuteImport<R extends boolean | undefined = false>({
   payload,
   raw,
 }: {
   payload: StatementExecuteImportParams;
   raw?: R;
-}): UtilizeReturnType<() => StatementExecuteImportResponse, R> {
-  return makeRequest<StatementExecuteImportResponse, R>({
+}): UtilizeReturnType<() => StatementExecuteImportQueuedResponse, R> {
+  return makeRequest<StatementExecuteImportQueuedResponse, R>({
     method: 'post',
     url: '/import/text-source/execute',
     payload,
     raw,
   });
+}
+
+export function getStatementImportStatus<R extends boolean | undefined = false>({
+  jobId,
+  raw,
+}: {
+  jobId: string;
+  raw?: R;
+}): UtilizeReturnType<() => StatementImportProgress, R> {
+  return makeRequest<StatementImportProgress, R>({
+    method: 'get',
+    url: `/import/text-source/execute/status/${jobId}`,
+    raw,
+  });
+}
+
+/**
+ * Poll GET /import/text-source/execute/status/:jobId every 100 ms until the job
+ * leaves the running/queued states or the timeout elapses.
+ */
+export async function waitForStatementImportCompletion({
+  jobId,
+  timeoutMs = 30_000,
+}: {
+  jobId: string;
+  timeoutMs?: number;
+}): Promise<StatementImportProgress> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const progress = await getStatementImportStatus({ jobId, raw: true });
+    if (progress.status === 'completed' || progress.status === 'failed') {
+      return progress;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  throw new Error(`Statement import job ${jobId} did not finish within ${timeoutMs}ms`);
+}
+
+/**
+ * Narrow terminal statement-import progress to the `completed` branch so tests
+ * can read `summary` directly. Throws (failing the calling test) when the worker
+ * finished with `status:'failed'`.
+ */
+export function expectStatementImportCompleted(
+  progress: StatementImportProgress,
+): asserts progress is Extract<StatementImportProgress, { status: 'completed' }> {
+  if (progress.status !== 'completed') {
+    const detail = progress.status === 'failed' ? ` Error: ${progress.error}` : '';
+    throw new Error(`Expected completed statement import, got status="${progress.status}".${detail}`);
+  }
+}
+
+/** Enqueue a statement import, wait for the worker, and return its summary. */
+export async function statementExecuteImportAndWait({
+  payload,
+}: {
+  payload: StatementExecuteImportParams;
+}): Promise<StatementImportSummary> {
+  const { jobId } = await statementExecuteImport({ payload, raw: true });
+  const progress = await waitForStatementImportCompletion({ jobId });
+  expectStatementImportCompleted(progress);
+  return progress.summary;
 }
 
 // ============================================
@@ -602,6 +706,108 @@ export function expectCompleted(
 }
 
 // ============================================
+// OFX Import
+// ============================================
+
+export interface UploadOfxResult {
+  statusCode: number;
+  response: OfxUploadResponse | null;
+  errorMessage: string | null;
+}
+
+/** POST raw OFX/QFX bytes through the authenticated HTTP endpoint. */
+export async function uploadOfx({
+  file,
+  contentType = 'application/octet-stream',
+}: {
+  file: Buffer;
+  contentType?: string;
+}): Promise<UploadOfxResult> {
+  const base = request(app).post(`${API_PREFIX}/import/ofx/upload`).set('Content-Type', contentType);
+  if (global.APP_AUTH_COOKIES) base.set('Cookie', global.APP_AUTH_COOKIES);
+  const result = await base.send(file);
+  const body = result.body as { response?: OfxUploadResponse & { message?: string } };
+  return {
+    statusCode: result.status,
+    response: result.status === 200 ? (body.response ?? null) : null,
+    errorMessage: result.status === 200 ? null : (body.response?.message ?? null),
+  };
+}
+
+export async function uploadOfxFixture({ filename }: { filename: string }): Promise<OfxUploadResponse> {
+  const result = await uploadOfx({ file: loadOfxFixture({ filename }) });
+  if (!result.response) {
+    throw new Error(`Upload of ${filename} failed with ${result.statusCode}: ${result.errorMessage}`);
+  }
+  return result.response;
+}
+
+export function detectOfxDuplicates<R extends boolean | undefined = false>({
+  payload,
+  raw,
+}: {
+  payload: { uploadId: string; accountMapping: OfxAccountMapping };
+  raw?: R;
+}): UtilizeReturnType<() => DetectOfxDuplicatesResponse, R> {
+  return makeRequest<DetectOfxDuplicatesResponse, R>({
+    method: 'post',
+    url: '/import/ofx/detect-duplicates',
+    payload,
+    raw,
+  });
+}
+
+export function executeOfx<R extends boolean | undefined = false>({
+  payload,
+  raw,
+}: {
+  payload: Omit<ExecuteOfxRequest, 'skipDuplicateIndices'> & { skipDuplicateIndices?: number[] };
+  raw?: R;
+}): UtilizeReturnType<() => ExecuteOfxResponse, R> {
+  return makeRequest<ExecuteOfxResponse, R>({
+    method: 'post',
+    url: '/import/ofx/execute',
+    payload: { ...payload, skipDuplicateIndices: payload.skipDuplicateIndices ?? [] },
+    raw,
+  });
+}
+
+export function getOfxImportStatus<R extends boolean | undefined = false>({
+  jobId,
+  raw,
+}: {
+  jobId: string;
+  raw?: R;
+}): UtilizeReturnType<() => OfxImportProgress, R> {
+  return makeRequest<OfxImportProgress, R>({ method: 'get', url: `/import/ofx/status/${jobId}`, raw });
+}
+
+export async function waitForOfxImportCompletion({
+  jobId,
+  timeoutMs = 30_000,
+}: {
+  jobId: string;
+  timeoutMs?: number;
+}): Promise<OfxImportProgress> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const progress = await getOfxImportStatus({ jobId, raw: true });
+    if (progress.status === 'completed' || progress.status === 'failed') return progress;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  throw new Error(`OFX import job ${jobId} did not finish within ${timeoutMs}ms`);
+}
+
+export function expectOfxCompleted(
+  progress: OfxImportProgress,
+): asserts progress is Extract<OfxImportProgress, { status: 'completed' }> {
+  if (progress.status !== 'completed') {
+    const detail = progress.status === 'failed' ? ` Error: ${progress.error}` : '';
+    throw new Error(`Expected completed OFX import, got status="${progress.status}".${detail}`);
+  }
+}
+
+// ============================================
 // Microsoft Money Import - Upload Endpoint
 // ============================================
 
@@ -804,6 +1010,50 @@ export function getBatchesHistory<R extends boolean | undefined = false>({
     method: 'get',
     url: '/import/batches-history',
     payload,
+    raw,
+  });
+}
+
+// ============================================
+// Delete Import Batch Endpoint
+// ============================================
+
+export function getImportBatchDeleteStatus<R extends boolean | undefined = false>({
+  raw,
+}: { raw?: R } = {}): UtilizeReturnType<() => ImportBatchDeleteActiveStatus, R> {
+  return makeRequest<ImportBatchDeleteActiveStatus, R>({
+    method: 'get',
+    url: '/import/batch-delete/status',
+    raw,
+  });
+}
+
+/** Poll GET /import/batch-delete/status every 100 ms until the job settles. */
+export async function waitForImportBatchDelete({
+  timeoutMs = 60_000,
+}: { timeoutMs?: number } = {}): Promise<ImportBatchDeleteActiveStatus> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const status = await getImportBatchDeleteStatus({ raw: true });
+    if (status.state === 'completed' || status.state === 'failed') return status;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  throw new Error(`Import batch delete did not finish within ${timeoutMs}ms`);
+}
+
+export function deleteImportBatch<R extends boolean | undefined = false>({
+  batchId,
+  deleteLinkedTransfers,
+  raw,
+}: {
+  batchId: string;
+  deleteLinkedTransfers?: boolean;
+  raw?: R;
+}): UtilizeReturnType<() => DeleteImportBatchResponse, R> {
+  return makeRequest<DeleteImportBatchResponse, R>({
+    method: 'delete',
+    url: `/import/batch/${batchId}`,
+    payload: deleteLinkedTransfers !== undefined ? { deleteLinkedTransfers } : undefined,
     raw,
   });
 }

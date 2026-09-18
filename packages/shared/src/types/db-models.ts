@@ -1,3 +1,4 @@
+import type { Entitlements } from './billing';
 import {
   ACCOUNT_CATEGORIES,
   ACCOUNT_STATUSES,
@@ -39,7 +40,6 @@ import { RecordId } from './record-id';
 export interface UserModel {
   id: number;
   username: string;
-  email: string;
   firstName: string;
   lastName: string;
   middleName: string;
@@ -53,7 +53,12 @@ export interface UserModel {
   isAdmin?: boolean;
   /** Feeds the demo-account expiry countdown. */
   createdAt: Date;
+  /** Present on `GET /user` only. */
+  entitlements?: Entitlements;
 }
+
+/** `GET /user` payload. Email comes from better-auth's ba_user, not the Users table. */
+export type UserInfoResponse = UserModel & { email: string | null };
 
 export interface CategoryModel {
   color: string;
@@ -260,12 +265,27 @@ export interface TransactionCreatorSnapshot {
   avatar: string | null;
 }
 
+export interface TransactionLocation {
+  latitude: number;
+  longitude: number;
+}
+
+// Transaction form fields the user can opt into showing, persisted in the user-settings JSONB.
+export const TRANSACTION_OPTIONAL_FIELDS = ['externalUrl', 'externalReference', 'location', 'originalAmount'] as const;
+export type TransactionOptionalField = (typeof TRANSACTION_OPTIONAL_FIELDS)[number];
+
 export interface TransactionModel {
   id: RecordId;
   amount: number;
   // Amount in base currency
   refAmount: number;
   note: string;
+  /** Link to an order page, booking confirmation, receipt, etc. http(s) only. */
+  externalUrl: string | null;
+  /** Order number, invoice number, booking reference, etc. */
+  externalReference: string | null;
+  /** Where the purchase happened. */
+  location: TransactionLocation | null;
   time: Date;
   userId: number;
   /** See `TransactionCreatorSnapshot`. NULL on every row except when the creator's
@@ -296,6 +316,8 @@ export interface TransactionModel {
   originalAmount: number | null;
   originalCurrencyCode: string | null;
   refundLinked: boolean;
+  /** Serializer-derived, list reads only. */
+  hasAttachments?: boolean;
   isPlanned: boolean;
   /** Serializer-derived: set when a bank transaction merged into this row while it was planned. */
   plannedMerge?: { mergedAt: string } | null;
@@ -937,6 +959,8 @@ export interface TransactionTemplateModel {
   payeeId: RecordId | null;
   paymentType: PAYMENT_TYPES | null;
   note: string | null;
+  /** ISO 4217 code preselected in the form's "original amount" field; the amount itself is typed each time. */
+  originalCurrencyCode: string | null;
   tagIds: RecordId[];
   createdAt: Date;
   updatedAt: Date;

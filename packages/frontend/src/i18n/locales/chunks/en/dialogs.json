@@ -106,6 +106,36 @@
         "paymentTypeLabel": "Payment type",
         "noteLabel": "Note",
         "notePlaceholder": "Note",
+        "externalUrlLabel": "External URL",
+        "externalUrlPlaceholder": "Link to the order, booking or receipt page",
+        "externalReferenceLabel": "External reference",
+        "externalReferencePlaceholder": "Order number, invoice number, booking reference",
+        "location": {
+          "label": "Location",
+          "useCurrent": "Use my location",
+          "clear": "Clear location",
+          "latitudePlaceholder": "Latitude, e.g. 50.4501",
+          "longitudePlaceholder": "Longitude, e.g. 30.5234",
+          "unsupported": "Your browser does not support geolocation",
+          "denied": "Location access was denied. Allow it in your browser settings or enter coordinates manually",
+          "unavailable": "Could not determine your location. Try again or enter coordinates manually",
+          "pickOnMap": "Pick on map",
+          "picker": {
+            "title": "Pick a location",
+            "searchPlaceholder": "Search address or place",
+            "noResults": "No places found",
+            "searchFailed": "Search is unavailable right now. Try again in a moment",
+            "confirm": "Use this location",
+            "loadFailed": "Could not load the map. Check your connection and try again",
+            "retry": "Try again",
+            "consent": {
+              "title": "Map tiles come from OpenStreetMap",
+              "description": "Opening the map and searching addresses sends requests to openstreetmap.org, which sees your IP address. You can turn this off later in Settings.",
+              "enable": "Enable map",
+              "failed": "Could not save the setting. Try again"
+            }
+          }
+        },
         "tagsLabel": "Tags",
         "originalAmountLabel": "Original amount",
         "originalAmountPlaceholder": "Amount in foreign currency",
@@ -125,6 +155,7 @@
         "plannedUnavailableNotification": "Planned transactions aren't available here, so the option was turned off.",
         "plannedTooltip": "Record an upcoming transaction. Your balance stays unchanged until it goes through.",
         "plannedConnectedAccountTooltip": "Only planned transactions can sit on a bank-connected account. Switching this off clears the account and the date.",
+        "plannedConfirmTooltip": "Turn off once the money has moved — saving records it in your balance.",
         "plannedAccountsUnlockedHint": "Bank-connected accounts are now selectable",
         "plannedDatesUnlockedHint": "Future dates unlocked",
         "datetimeLabel": "Datetime",
@@ -135,6 +166,8 @@
         "closeButton": "Close",
         "deleteButton": "Delete",
         "deleteAriaLabel": "Delete transaction",
+        "deleteConfirmTitle": "Delete this transaction?",
+        "deleteConfirmDescription": "This can't be undone. Any splits and refund links attached to it will be removed too.",
         "createAriaLabel": "Create transaction",
         "editAriaLabel": "Edit transaction",
         "loadingButton": "Loading...",
@@ -150,6 +183,8 @@
         "destinationTypeAccount": "Account",
         "destinationTypePortfolio": "Portfolio",
         "toPortfolioLabel": "To portfolio",
+        "portfolioCashAlreadyReflectedLabel": "Portfolio balance already includes this money",
+        "portfolioCashAlreadyReflectedHint": "Records the transfer for contribution history without adding cash to the portfolio. Use this for old transactions when the portfolio was set up with its current balance.",
         "selectPortfolioPlaceholder": "Select portfolio",
         "noPortfoliosExist": "No portfolios exist",
         "destinationTypeLoan": "Loan",
@@ -159,7 +194,48 @@
         "validation": {
           "required": "This field is required",
           "minValue": "Amount must be 0 or greater",
-          "futureDate": "Date must be today or earlier."
+          "futureDate": "Date must be today or earlier.",
+          "latitudeRange": "Latitude must be between -90 and 90",
+          "longitudeRange": "Longitude must be between -180 and 180",
+          "locationPair": "Enter both latitude and longitude",
+          "maxLength": "Must not exceed {max} characters",
+          "httpUrl": "Enter a valid http(s) URL"
+        },
+        "attachments": {
+          "label": "Attachments",
+          "loading": "Loading attachments…",
+          "listLoadFailed": "Couldn't load attachments. Close and reopen this dialog to try again.",
+          "hint": "Up to {max} files, {size} each. JPEG, PNG, WebP or PDF.",
+          "trigger": {
+            "empty": "Add attachments",
+            "count": "{count} attachment | {count} attachments",
+            "uploading": "Uploading…"
+          },
+          "dropzone": {
+            "idle": "Drop files here or click to browse",
+            "drag": "Drop to attach"
+          },
+          "errors": {
+            "unsupportedType": "Some files were skipped: only JPEG, PNG, WebP and PDF files can be attached.",
+            "tooMany": "A transaction can have at most {max} attachments.",
+            "tooLarge": "\"{filename}\" is larger than {max} and was not uploaded.",
+            "upload": "Failed to upload the attachment.",
+            "delete": "Failed to delete the attachment."
+          },
+          "deleteConfirm": {
+            "title": "Delete attachment?",
+            "description": "\"{filename}\" will be permanently deleted. This action cannot be undone."
+          },
+          "deleteAll": "Delete all",
+          "deleteAllConfirm": {
+            "title": "Delete all attachments?",
+            "description": "All {count} files will be permanently deleted. This action cannot be undone."
+          },
+          "viewer": {
+            "loadFailed": "Could not load this file.",
+            "openInNewTab": "Open in new tab",
+            "download": "Download"
+          }
         }
       },
       "refundRecordsList": {
@@ -247,7 +323,8 @@
         "summarySelected": "{count} selected · {amount}",
         "summaryOfLimit": "{count} selected · {amount} of {limit}",
         "summaryExceedsBy": "{count} selected · {amount} — exceeds the original by {excess}",
-        "summaryExceeds": "{count} selected · {amount} — exceeds the original amount"
+        "summaryExceeds": "{count} selected · {amount} — exceeds the original amount",
+        "summaryBelowRefund": "{amount} — smaller than this refund of {limit}"
       },
       "refundInfo": {
         "trigger": "How it works?",
@@ -289,7 +366,6 @@
         "applyButton": "Apply",
         "recommendedLabel": "Recommended",
         "allTransactionsLabel": "All transactions",
-        "loadMoreButton": "Load more",
         "noMoreTransactions": "No more transactions",
         "noIncomeTransactions": "No income transactions found. Try adjusting the filters.",
         "noExpenseTransactions": "No expense transactions found. Try adjusting the filters.",
@@ -303,6 +379,7 @@
         "withdrawal": "withdrawal",
         "unlinkButton": "Unlink from Portfolio",
         "unlinkWarning": "Unlinking will reduce the cash balance of {portfolio} portfolio.",
+        "unlinkWarningNoCash": "This transfer never changed {portfolio}'s cash balance, so unlinking leaves the balance untouched.",
         "unlinkDescription": "Original transaction details will be restored.",
         "cancelButton": "Cancel",
         "confirmUnlink": "Confirm Unlink"
@@ -365,7 +442,9 @@
           "save": "Save template",
           "deleteConfirmTitle": "Delete ‘{name}’?",
           "deleteConfirmDescription": "This template will be removed. Transactions you already created from it are not affected.",
-          "duplicateName": "You already have a template called “{name}”."
+          "duplicateName": "You already have a template called “{name}”.",
+          "originalCurrencyLabel": "Original amount currency",
+          "originalCurrencyPlaceholder": "Select a currency"
         },
         "errors": {
           "create": "Couldn't save the template. Please try again.",
@@ -437,6 +516,7 @@
       "nameLabel": "Category name",
       "namePlaceholder": "Enter category name",
       "colorLabel": "Color",
+      "inheritParentColor": "Use parent's color",
       "iconLabel": "Icon",
       "iconPlaceholder": "Select icon",
       "settingsDivider": "Settings",
@@ -613,6 +693,41 @@
       "notifications": {
         "markedAsPaid": "Payment recorded",
         "markAsPaidFailed": "Failed to record payment"
+      }
+    },
+    "loanPayment": {
+      "title": "Loan payment",
+      "description": "Record or edit a payment against this loan.",
+      "createTitle": "Record Payment",
+      "editTitle": "Edit Loan Payment",
+      "payingTo": "Paying to",
+      "fromAccountLabel": "From account",
+      "fromAccountPlaceholder": "Select account",
+      "amountLabel": "Amount",
+      "amountPlaceholder": "0.00",
+      "targetAmountLabel": "Amount applied to loan",
+      "targetAmountPlaceholder": "0.00",
+      "targetAmountTooltip": "Source account is in {source}, loan is in {loan}. We pre-fill the converted amount using the current exchange rate – adjust if your bank applied a different rate.",
+      "saveButton": "Save",
+      "recordButton": "Record",
+      "overdrawWarning": "This is more than {account}'s balance and will overdraw the account.",
+      "preAnchorWarning": "This payment is dated before the loan's balance anchor ({date}), so it will be saved as history and won't reduce the outstanding balance.",
+      "overpayError": "Payment exceeds the remaining loan balance ({max}).",
+      "deleteConfirmTitle": "Delete this payment?",
+      "deleteConfirmDescription": "Both sides of the transfer will be removed and the loan balance will be restored. This cannot be undone.",
+      "preAnchorHint": "This date is before the loan's balance snapshot, so this payment won't change the outstanding balance – it's already included in the opening balance.",
+      "unlinkButton": "Unlink",
+      "unlinkConfirmTitle": "Unlink this payment?",
+      "unlinkConfirmDescription": "The transaction will be kept as a regular expense but removed from this loan. The loan balance will be recalculated.",
+      "unlinkSuccess": "Payment unlinked",
+      "unlinkError": "Couldn't unlink the payment. Please try again.",
+      "syncedAccountHint": "Paying from a synced account? Use Link payments to attach the imported expense instead.",
+      "sourceInfo": {
+        "trigger": "More details",
+        "title": "Why only these accounts?",
+        "manualOnly": "This picker lists only your manually-managed accounts.",
+        "whySynced": "Transactions on bank-synced accounts are imported directly from your bank. Recording a loan payment from one here would create a duplicate of the transaction your bank will send.",
+        "howToLink": "Instead, once the bank transaction appears, open it and choose Link payments to attach it to this loan. That keeps a single source of truth and updates the loan balance correctly."
       }
     }
   }

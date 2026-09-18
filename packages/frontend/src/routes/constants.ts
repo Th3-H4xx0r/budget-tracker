@@ -78,11 +78,13 @@ export const ROUTES_NAMES = Object.freeze({
   settingsSharedWithMe: `${ROUTER_LAYOUTS.dashboard}.settings.shared-with-me`,
   settingsHousehold: `${ROUTER_LAYOUTS.dashboard}.settings.household`,
   settingsSubscriptions: `${ROUTER_LAYOUTS.dashboard}.settings.subscriptions`,
+  settingsPlanBilling: `${ROUTER_LAYOUTS.dashboard}.settings.plan-billing`,
   importCsv: `${ROUTER_LAYOUTS.dashboard}.import-csv`,
   importStatement: `${ROUTER_LAYOUTS.dashboard}.import-statement`,
   importYnab: `${ROUTER_LAYOUTS.dashboard}.import-ynab`,
   importBudgetBakersWallet: `${ROUTER_LAYOUTS.dashboard}.import-budget-bakers-wallet`,
   importMsMoney: `${ROUTER_LAYOUTS.dashboard}.import-ms-money`,
+  importOfx: `${ROUTER_LAYOUTS.dashboard}.import-ofx`,
   importHistory: `${ROUTER_LAYOUTS.dashboard}.import-history`,
   notFound: `${ROUTER_LAYOUTS.dashboard}.not-found`,
 

@@ -2,6 +2,7 @@ import {
   AccountModel,
   CategoryModel,
   EntityLogoPayload,
+  TransactionLocation,
   TransactionModel,
   TransactionTemplateModel,
 } from './db-models';
@@ -95,6 +96,9 @@ export interface SplitInput {
 export interface CreateTransactionBody {
   amount: TransactionModel['amount'];
   note?: TransactionModel['note'];
+  externalUrl?: string;
+  externalReference?: string;
+  location?: TransactionLocation;
   time: string;
   transactionType: TransactionModel['transactionType'];
   paymentType: TransactionModel['paymentType'];
@@ -118,6 +122,8 @@ export interface CreateTransactionBody {
   /** True when the caller wants future syncs to leave this row's Payee link alone. */
   payeeLocked?: boolean;
   isPlanned?: boolean;
+  /** Run the user's automations on a manual-account row; off by default. For API integrations. */
+  applyAutomations?: boolean;
   originalAmount?: number;
   /** Any ISO 4217 code; it does not have to be connected to the user. */
   originalCurrencyCode?: string;
@@ -128,6 +134,10 @@ export interface UpdateTransactionBody {
   destinationAmount?: TransactionModel['amount'];
   destinationTransactionId?: TransactionModel['id'];
   note?: TransactionModel['note'];
+  /** `null` clears the field. */
+  externalUrl?: string | null;
+  externalReference?: string | null;
+  location?: TransactionLocation | null;
   time?: string;
   transactionType?: TransactionModel['transactionType'];
   paymentType?: TransactionModel['paymentType'];
@@ -202,7 +212,7 @@ export type CreateCategoryBody = {
 };
 export type CreateCategoryResponse = CategoryModel;
 
-export type EditCategoryBody = Partial<Pick<CategoryModel, 'name' | 'color' | 'icon'>>;
+export type EditCategoryBody = Partial<Pick<CategoryModel, 'name' | 'color' | 'icon' | 'parentId'>>;
 export type EditCategoryResponse = CategoryModel[];
 
 export interface DeleteCategoryBody {
@@ -381,6 +391,12 @@ export interface SidebarSectionsConfig {
   loans: boolean;
 }
 
+// How fiat amounts render their currency: `symbol` disambiguates (CA$, A$, SGD), `narrowSymbol`
+// is what locals use (Rp, ₴, zł) but collapses every dollar to `$`. Persisted in the
+// user-settings JSONB; the backend Zod enum is built straight off this tuple.
+export const CURRENCY_DISPLAY_PREFERENCES = ['symbol', 'narrowSymbol'] as const;
+export type CurrencyDisplayPreference = (typeof CURRENCY_DISPLAY_PREFERENCES)[number];
+
 // Net Worth Drivers Analytics
 // Splits net-worth growth per period into what the user saved (income - expenses,
 // transfers excluded) versus what the market returned on their holdings, plus the
@@ -552,6 +568,25 @@ export interface GetInvestmentContributionsResponse {
   // a stable order so the client can assign each a consistent colour across renders.
   portfolios: InvestmentContributionsPortfolioMeta[];
 }
+
+// Venture Contributions
+// Cash that left the user's accounts into venture deals within the window, read from
+// the bank transactions linked to venture events. Decimal, user base currency, one row
+// per deal ordered largest first; an income leg linked to a deal nets against it.
+export interface GetVentureContributionsPayload extends QueryPayload {
+  // yyyy-mm-dd (required)
+  from: string;
+  // yyyy-mm-dd (required)
+  to: string;
+}
+
+export interface VentureContribution {
+  dealId: string;
+  name: string;
+  amount: number;
+}
+
+export type GetVentureContributionsResponse = VentureContribution[];
 
 // Net Worth History Analytics
 // Mint-style assets/liabilities/net-worth series: every point is an end-of-bucket
@@ -784,6 +819,7 @@ export interface CreateTransactionTemplateBody {
   payeeId?: TransactionTemplateModel['payeeId'];
   paymentType?: TransactionTemplateModel['paymentType'];
   note?: TransactionTemplateModel['note'];
+  originalCurrencyCode?: TransactionTemplateModel['originalCurrencyCode'];
   /** Full replacement of the template's tag set. */
   tagIds?: TransactionTemplateModel['tagIds'];
 }
