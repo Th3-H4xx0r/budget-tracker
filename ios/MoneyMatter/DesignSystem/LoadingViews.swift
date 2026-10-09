@@ -37,11 +37,10 @@ extension View {
 }
 
 /// A compact failure row with a Retry button, for a card or section that failed to load
-/// while the rest of the screen is fine.
+/// while the rest of the screen is fine. Drawn as an `ErrorRow`.
 struct InlineRetryView: View {
     let message: String
     let retry: () async -> Void
-    @State private var isRetrying = false
 
     init(_ message: String, retry: @escaping () async -> Void) {
         self.message = message
@@ -49,47 +48,20 @@ struct InlineRetryView: View {
     }
 
     var body: some View {
-        HStack(spacing: 12) {
-            Label(message, systemImage: "exclamationmark.triangle")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-            Spacer(minLength: 8)
-            Button {
-                isRetrying = true
-                Task {
-                    await retry()
-                    isRetrying = false
-                }
-            } label: {
-                if isRetrying {
-                    ProgressView()
-                } else {
-                    Text("Retry")
-                }
-            }
-            .buttonStyle(.bordered)
-            .disabled(isRetrying)
-        }
-        .frame(minHeight: 44)
+        ErrorRow(message, retry: retry)
     }
 }
 
-/// A full-screen failure state with a Try Again action.
+/// A full-screen failure state: the error's title and message as an `ErrorRow` with Retry,
+/// centred on the screen.
 struct LoadFailedView: View {
     let error: APIError
     let retry: () async -> Void
 
     var body: some View {
-        ContentUnavailableView {
-            Label(ErrorMessage.title(for: error), systemImage: "exclamationmark.triangle")
-        } description: {
-            Text(ErrorMessage.message(for: error))
-        } actions: {
-            Button("Try Again") {
-                Task { await retry() }
-            }
-            .buttonStyle(.bordered)
-        }
+        ErrorRow(title: ErrorMessage.title(for: error), message: ErrorMessage.message(for: error), retry: retry)
+            .padding(DS.Space.l)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 
@@ -100,11 +72,12 @@ struct TransactionRowsPlaceholder: View {
     var body: some View {
         ForEach(0..<count, id: \.self) { _ in
             HStack(spacing: 12) {
-                Circle()
+                RoundedRectangle(cornerRadius: IconTileMetrics.size * DS.Radius.iconTileFraction, style: .continuous)
                     .fill(Color(.systemGray5))
-                    .frame(width: 36, height: 36)
+                    .frame(width: IconTileMetrics.size, height: IconTileMetrics.size)
                 VStack(alignment: .leading, spacing: 4) {
                     Text(verbatim: "Placeholder payee")
+                        .font(.headline)
                     Text(verbatim: "Account · 12:00")
                         .font(.subheadline)
                 }

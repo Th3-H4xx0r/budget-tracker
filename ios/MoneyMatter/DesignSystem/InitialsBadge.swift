@@ -1,29 +1,25 @@
 import MoneyMatterKit
 import SwiftUI
 
-/// A circular monogram, for avatars and logo-less accounts or payees.
+/// A monogram in `IconTile` styling, for avatars and logo-less accounts or payees: up to
+/// two letters in the colour on a 15 % tint of it, with 30 % continuous corners.
 struct InitialsBadge: View {
     let text: String
     var colorHex: String?
-    @ScaledMetric private var size: CGFloat
+    private let size: CGFloat
 
     init(_ text: String, colorHex: String? = nil, size: CGFloat = 32) {
         self.text = text
         self.colorHex = colorHex
-        _size = ScaledMetric(wrappedValue: size, relativeTo: .body)
+        self.size = size
     }
 
     var body: some View {
-        Circle()
-            .fill(Color(hex: colorHex).map(AnyShapeStyle.init) ?? AnyShapeStyle(Color.accentColor.gradient))
-            .overlay {
-                Text(verbatim: String(text.prefix(2)).uppercased())
-                    .font(.system(size: size * 0.4, weight: .semibold, design: .rounded))
-                    .foregroundStyle(.white)
-                    .minimumScaleFactor(0.5)
-            }
-            .frame(width: size, height: size)
-            .accessibilityHidden(true)
+        IconTile(
+            text: String(text.prefix(2)).uppercased(),
+            color: Color(hex: colorHex) ?? DS.Palette.accent,
+            size: size
+        )
     }
 }
 

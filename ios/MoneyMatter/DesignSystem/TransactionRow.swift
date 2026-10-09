@@ -1,8 +1,9 @@
 import MoneyMatterKit
 import SwiftUI
 
-/// The standard transaction row: category circle, title, "account · time" subtitle,
-/// coloured amount, and a Fraud capsule for rows marked as fraud.
+/// The standard transaction row, in the `EntityRow` structure: a category `IconTile`, the
+/// title in `.headline`, an "account · time" subtitle, and the amount over a detail line
+/// (the fraud badge for rows marked as fraud).
 ///
 /// Title rule: payee name, else note, else category name.
 struct TransactionRow: View {
@@ -14,40 +15,20 @@ struct TransactionRow: View {
     /// Show the date as well as the time, for lists that aren't grouped by day.
     var showsDate = false
 
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-
     var body: some View {
-        HStack(alignment: dynamicTypeSize.isAccessibilitySize ? .top : .center, spacing: 12) {
-            CategoryIcon(category: category, isTransfer: transaction.isTransfer)
-
-            let layout = dynamicTypeSize.isAccessibilitySize
-                ? AnyLayout(VStackLayout(alignment: .leading, spacing: 6))
-                : AnyLayout(HStackLayout(alignment: .center, spacing: 8))
-            layout {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(title)
-                        .font(.body)
-                        .lineLimit(dynamicTypeSize.isAccessibilitySize ? 3 : 1)
-                    Text(subtitle)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(dynamicTypeSize.isAccessibilitySize ? 3 : 1)
-                }
-                if !dynamicTypeSize.isAccessibilitySize {
-                    Spacer(minLength: 8)
-                }
-                VStack(alignment: dynamicTypeSize.isAccessibilitySize ? .leading : .trailing, spacing: 4) {
-                    AmountText(transaction: transaction, digits: digits)
-                        .font(.body.weight(.medium))
-                    if transaction.isFraud {
-                        FraudBadge()
-                    }
+        EntityRow(title, subtitle: subtitle) {
+            CategoryIconTile(category: category, isTransfer: transaction.isTransfer)
+        } trailing: {
+            VStack(alignment: .trailing, spacing: DS.Space.xxs) {
+                AmountText(transaction: transaction, digits: digits)
+                    .font(.body)
+                    .lineLimit(1)
+                if transaction.isFraud {
+                    FraudBadge()
                 }
             }
         }
-        .padding(.vertical, 2)
-        .contentShape(.rect)
-        .accessibilityElement(children: .combine)
+        .padding(.vertical, DS.Space.xxs)
     }
 
     private var title: String {
@@ -66,15 +47,10 @@ struct TransactionRow: View {
     }
 }
 
-/// The red capsule on rows marked as fraud.
+/// The badge on rows marked as fraud: a red `StatusBadge`.
 struct FraudBadge: View {
     var body: some View {
-        Text("Fraud")
-            .font(.caption2.weight(.bold))
-            .foregroundStyle(.white)
-            .padding(.horizontal, 6)
-            .padding(.vertical, 2)
-            .background(.red, in: .capsule)
+        StatusBadge(label: String(localized: "Fraud"), color: DS.Palette.danger)
     }
 }
 

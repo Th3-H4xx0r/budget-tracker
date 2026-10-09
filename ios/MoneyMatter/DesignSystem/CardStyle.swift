@@ -1,37 +1,51 @@
 import SwiftUI
 
 extension View {
-    /// The content card used on Home and in detail headers: grouped secondary background,
-    /// continuous corners, no glass (content stays standard).
-    func cardStyle(padding: CGFloat = 16, cornerRadius: CGFloat = 20) -> some View {
-        self
-            .padding(padding)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color(.secondarySystemGroupedBackground), in: .rect(cornerRadius: cornerRadius, style: .continuous))
+    /// The `DSCard` panel: 16 pt padding, the secondary grouped surface, 22 pt continuous
+    /// corners, no shadow or border. For heroes, charts and summaries that aren't
+    /// row-shaped; never nested.
+    func cardStyle(padding: CGFloat = DS.cardPadding, cornerRadius: CGFloat = DS.Radius.card) -> some View {
+        dsCardSurface(
+            padding: EdgeInsets(top: padding, leading: padding, bottom: padding, trailing: padding),
+            cornerRadius: cornerRadius
+        )
     }
 
-    /// Liquid Glass for interactive or floating cards only, such as the Home review card and
-    /// the review stack card. Wrap sibling glass views in a `GlassEffectContainer`.
-    func glassCardStyle(padding: CGFloat = 16, cornerRadius: CGFloat = 24, tint: Color? = nil) -> some View {
+    /// The same `DSCard` panel as `cardStyle()`: Liquid Glass is reserved for floating
+    /// controls, never cards. A `tint` lays a 15 % wash of that colour over the panel, for
+    /// state feedback such as a review card mid-swipe.
+    func glassCardStyle(padding: CGFloat = DS.cardPadding, cornerRadius: CGFloat = DS.Radius.card, tint: Color? = nil) -> some View {
         self
             .padding(padding)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .glassEffect(.regular.tint(tint).interactive(), in: .rect(cornerRadius: cornerRadius, style: .continuous))
+            .background {
+                let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                ZStack {
+                    shape.fill(DS.Surface.panel)
+                    if let tint {
+                        shape.fill(tint.opacity(DS.tintFill))
+                    }
+                }
+            }
     }
 }
 
-/// A card section title with an optional trailing action, e.g. "Latest Transactions · See All".
+/// A card's title: plain `.headline` primary text (no icon, colour or upper case), with an
+/// optional trailing accessory in `.subheadline`, e.g. "Latest transactions · See all".
 struct CardHeader<Accessory: View>: View {
     let title: LocalizedStringKey
     @ViewBuilder var accessory: Accessory
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline) {
+        HStack(alignment: .firstTextBaseline, spacing: DS.Space.s) {
             Text(title)
                 .font(.headline)
+                .foregroundStyle(.primary)
+                .textCase(nil)
                 .accessibilityAddTraits(.isHeader)
-            Spacer()
+            Spacer(minLength: DS.Space.s)
             accessory
+                .font(.subheadline)
         }
     }
 }
@@ -58,5 +72,5 @@ extension CardHeader where Accessory == EmptyView {
         }
         .padding()
     }
-    .background(Color(.systemGroupedBackground))
+    .background(DS.Surface.canvas)
 }

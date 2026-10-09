@@ -124,3 +124,33 @@ struct CategoryIcon: View {
             .accessibilityHidden(true)
     }
 }
+
+/// A category as a 32 pt `IconTile`: its symbol (or initial) in the category colour on a
+/// 15 % tint of it. Transfers get neutral arrows.
+struct CategoryIconTile: View {
+    private let color: Color
+    private let symbol: String?
+    private let initial: String
+    private let size: CGFloat
+
+    init(category: Category?, isTransfer: Bool = false, size: CGFloat = IconTileMetrics.size) {
+        self.size = size
+        if isTransfer, category == nil {
+            color = Color(.systemGray)
+            symbol = "arrow.left.arrow.right"
+            initial = ""
+        } else {
+            color = Color(hex: category?.color) ?? Color(.systemGray)
+            symbol = CategorySymbol.systemName(forIcon: category?.icon)
+            initial = category?.name.first.map { String($0).uppercased() } ?? "?"
+        }
+    }
+
+    var body: some View {
+        if let symbol {
+            IconTile(systemImage: symbol, color: color, size: size)
+        } else {
+            IconTile(text: initial, color: color, size: size)
+        }
+    }
+}
