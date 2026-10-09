@@ -37,8 +37,11 @@ struct HomePeriodSelector: View {
     }
 }
 
-// MARK: - Review card
+// MARK: - Review row
 
+/// The compact review row: the unreviewed count on a shield tile, with the fraud badge when
+/// any are marked. Tapping starts the review stack; the review page and the fraud list sit
+/// in the context menu and the accessibility actions.
 struct HomeReviewCard: View {
     let state: LoadState<ReviewSummary>
     let retry: () async -> Void
@@ -48,168 +51,166 @@ struct HomeReviewCard: View {
     var body: some View {
         switch state {
         case .failed:
-            InlineRetryView(String(localized: "Couldn't load review status"), retry: retry)
-                .cardStyle(padding: 12)
+            ErrorRow(String(localized: "Couldn't load review status"), retry: retry)
         case .loaded(let summary) where summary.unreviewedCount > 0:
-            card(summary)
+            row(summary)
         case .idle, .loading, .loaded:
             EmptyView()
         }
     }
 
-    private func card(_ summary: ReviewSummary) -> some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Button {
-                router.openReviewPage(.unreviewed)
-            } label: {
-                HStack(alignment: .top, spacing: 12) {
-                    Image(systemName: "checkmark.shield.fill")
-                        .font(.title2)
-                        .foregroundStyle(.tint)
+    private func row(_ summary: ReviewSummary) -> some View {
+        Button {
+            router.presentReviewStack(expectedTotal: summary.unreviewedCount)
+        } label: {
+            EntityRow(
+                String(localized: "\(summary.unreviewedCount) transactions to review"),
+                subtitle: String(localized: "Check recent bank transactions for anything you don't recognize"),
+                systemImage: "checkmark.shield.fill"
+            ) {
+                HStack(spacing: DS.Space.s) {
+                    if summary.fraudCount > 0 {
+                        StatusBadge(label: String(localized: "\(summary.fraudCount) fraud"), color: DS.Palette.danger)
+                    }
+                    Image(systemName: "chevron.right")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(.tertiary)
                         .accessibilityHidden(true)
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("^[\(summary.unreviewedCount) transaction](inflect: true) to review")
-                            .font(.headline)
-                        Text("Check recent bank transactions for anything you don't recognize")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                    }
-                    Spacer(minLength: 0)
                 }
-                .contentShape(.rect)
             }
-            .buttonStyle(.plain)
-
-            HStack {
-                if summary.fraudCount > 0 {
-                    Button {
-                        router.openReviewPage(.fraud)
-                    } label: {
-                        Text("\(summary.fraudCount) marked as fraud")
-                            .font(.subheadline.weight(.medium))
-                            .frame(minHeight: 44)
-                    }
-                    .buttonStyle(.borderless)
-                    .tint(.red)
+            .padding(.vertical, DS.Space.m)
+            .padding(.horizontal, DS.Space.l)
+            .background(DS.Surface.panel, in: .rect(cornerRadius: DS.Radius.control, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .contextMenu {
+            Button("Review", systemImage: "rectangle.stack") {
+                router.presentReviewStack(expectedTotal: summary.unreviewedCount)
+            }
+            Button("See All", systemImage: "list.bullet") { router.openReviewPage(.unreviewed) }
+            if summary.fraudCount > 0 {
+                Button("\(summary.fraudCount) marked as fraud", systemImage: "exclamationmark.shield") {
+                    router.openReviewPage(.fraud)
                 }
-                Spacer()
-                Button {
-                    router.presentReviewStack(expectedTotal: summary.unreviewedCount)
-                } label: {
-                    Text("Review")
-                        .padding(.horizontal, 8)
-                }
-                .buttonStyle(.glassProminent)
-                .controlSize(.large)
             }
         }
-        .glassCardStyle()
+        .accessibilityAction(named: Text("See All")) { router.openReviewPage(.unreviewed) }
+        .accessibilityAction(named: Text("\(summary.fraudCount) marked as fraud")) { router.openReviewPage(.fraud) }
     }
 }
 
-// MARK: - Balance trend
+// MARK: - Net worth hero
 
+/// One day of the hero chart.
+private struct HomeChartPoint: Hashable {
+    let date: Date
+    let amount: Decimal
+}
+
+/// The Home hero, Stocks style: net worth with its change over the selected range and an
+/// "Updated" line, a full-width scrubbable chart, and the 1M to All range picker. Scrubbing
+/// shows the scrubbed day's balance in the hero.
 struct BalanceTrendCard: View {
     let state: LoadState<BalanceTrend>
+    let range: HomeBalanceRange
+    let updatedAt: Date?
     let currencyCode: String
     let digits: Int?
+    let setRange: (HomeBalanceRange) -> Void
     let retry: () async -> Void
 
+    @State private var scrubbed: HomeChartPoint?
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            CardHeader("Balance")
+        VStack(alignment: .leading, spacing: DS.Space.l) {
             switch state {
             case .failed(let error):
-                InlineRetryView(ErrorMessage.message(for: error), retry: retry)
+                ErrorRow(ErrorMessage.message(for: error), retry: retry)
             case .loaded(let trend):
                 content(trend)
             case .idle, .loading:
                 content(BalanceTrend.placeholder)
                     .redactedWhileLoading(true)
             }
+            Picker("Range", selection: Binding(get: { range }, set: setRange)) {
+                ForEach(HomeBalanceRange.allCases) { option in
+                    Text(verbatim: option.label).tag(option)
+                }
+            }
+            .pickerStyle(.segmented)
         }
-        .cardStyle()
     }
 
     private func content(_ trend: BalanceTrend) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            VStack(alignment: .leading, spacing: 2) {
-                AmountText(trend.currentTotal ?? 0, currencyCode: currencyCode, digits: digits)
-                    .font(.system(.largeTitle, design: .rounded, weight: .bold))
-                    .minimumScaleFactor(0.5)
-                    .lineLimit(1)
-                if let change = trend.change {
-                    HStack(spacing: 4) {
-                        Image(systemName: change >= 0 ? "arrow.up.right" : "arrow.down.right")
-                            .accessibilityHidden(true)
-                        AmountText(change, currencyCode: currencyCode, digits: digits, showsPlusSign: true)
-                        Text("vs. last month")
-                            .foregroundStyle(.secondary)
-                    }
-                    .font(.subheadline)
-                    .foregroundStyle(change >= 0 ? Color.green : Color.red)
-                }
+        let points = trend.points.map { HomeChartPoint(date: $0.date.startDate(), amount: $0.totalBalance) }
+        let baseline = trend.previousTotal ?? points.first?.amount
+        let shown = scrubbed?.amount ?? trend.currentTotal ?? 0
+        let delta = baseline.map { shown - $0 }
+        return VStack(alignment: .leading, spacing: DS.Space.l) {
+            HeroValueHeader(
+                MoneyFormat.string(shown, currencyCode: currencyCode, digits: digits),
+                numericValue: shown.doubleValue,
+                valueAnimation: scrubbed == nil ? .snappy : nil,
+                change: delta.map { changeText($0, baseline: baseline ?? 0) },
+                direction: ChangeDirection(delta),
+                changeLabel: scrubbed == nil ? rangeLabel : nil
+            ) {
+                status
             }
 
-            if trend.points.count > 1 {
-                chart(trend.points)
+            if points.count > 1 {
+                ScrubbableAreaChart(
+                    points,
+                    date: \.date,
+                    value: \.amount,
+                    selection: $scrubbed,
+                    height: 224,
+                    baseline: baseline,
+                    drawInKey: range
+                )
+                .accessibilityChartDescriptor(BalanceChartDescriptor(points: trend.points, currencyCode: currencyCode))
             } else {
                 Text("Not enough data for a trend yet.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, minHeight: 80)
+                    .frame(maxWidth: .infinity, minHeight: 120)
             }
         }
     }
 
-    private func chart(_ points: [BalancePoint]) -> some View {
-        let values = points.map(\.totalBalance.doubleValue)
-        let low = values.min() ?? 0
-        let high = values.max() ?? 0
-        let padding = max((high - low) * 0.1, 1)
-        let floor = low - padding
-
-        return Chart(points) { point in
-            AreaMark(
-                x: .value("Date", point.date.startDate(), unit: .day),
-                yStart: .value("Floor", floor),
-                yEnd: .value("Balance", point.totalBalance.doubleValue)
-            )
-            .foregroundStyle(
-                LinearGradient(
-                    colors: [Color.accentColor.opacity(0.35), Color.accentColor.opacity(0.02)],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-            )
-            .interpolationMethod(.monotone)
-
-            LineMark(
-                x: .value("Date", point.date.startDate(), unit: .day),
-                y: .value("Balance", point.totalBalance.doubleValue)
-            )
-            .foregroundStyle(Color.accentColor)
-            .lineStyle(StrokeStyle(lineWidth: 2.5, lineCap: .round, lineJoin: .round))
-            .interpolationMethod(.monotone)
-        }
-        .chartYScale(domain: floor...(high + padding))
-        .chartXAxis {
-            AxisMarks(values: .stride(by: .day, count: 7)) { _ in
-                AxisValueLabel(format: .dateTime.day().month(.abbreviated))
+    @ViewBuilder
+    private var status: some View {
+        if let scrubbed {
+            Text(scrubbed.date.formatted(date: .abbreviated, time: .omitted))
+        } else if let updatedAt {
+            TimelineView(.periodic(from: .now, by: 30)) { context in
+                StatusDot(updatedText(updatedAt, now: context.date), color: DS.Palette.success, font: .footnote)
             }
         }
-        .chartYAxis {
-            AxisMarks(position: .trailing, values: .automatic(desiredCount: 3)) { value in
-                AxisGridLine()
-                AxisValueLabel {
-                    if let amount = value.as(Double.self) {
-                        Text(verbatim: MoneyFormat.compactString(Decimal(amount), currencyCode: currencyCode))
-                    }
-                }
-            }
+    }
+
+    private var rangeLabel: String {
+        switch range {
+        case .oneMonth: String(localized: "Past month")
+        case .threeMonths: String(localized: "Past 3 months")
+        case .sixMonths: String(localized: "Past 6 months")
+        case .oneYear: String(localized: "Past year")
+        case .all: String(localized: "All time")
         }
-        .frame(height: 160)
-        .accessibilityChartDescriptor(BalanceChartDescriptor(points: points, currencyCode: currencyCode))
+    }
+
+    private func updatedText(_ date: Date, now: Date) -> String {
+        if now.timeIntervalSince(date) < 60 { return String(localized: "Updated just now") }
+        let relative = date.formatted(.relative(presentation: .named, unitsStyle: .wide))
+        return String(localized: "Updated \(relative)")
+    }
+
+    private func changeText(_ delta: Decimal, baseline: Decimal) -> String {
+        let amount = MoneyFormat.string(abs(delta), currencyCode: currencyCode, digits: digits)
+        let sign = delta >= 0 ? "+" : "\u{2212}"
+        guard baseline != 0 else { return sign + amount }
+        let percent = (delta / abs(baseline)).doubleValue
+        return "\(sign)\(amount) (\(percent.formatted(.percent.precision(.fractionLength(2)).sign(strategy: .always()))))"
     }
 }
 

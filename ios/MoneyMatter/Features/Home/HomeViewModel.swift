@@ -17,6 +17,38 @@ struct BalanceTrend: Equatable {
     }
 }
 
+/// The hero chart's range on Home.
+enum HomeBalanceRange: String, CaseIterable, Identifiable, Hashable {
+    case oneMonth = "1M"
+    case threeMonths = "3M"
+    case sixMonths = "6M"
+    case oneYear = "1Y"
+    case all = "All"
+
+    var id: Self { self }
+
+    /// The segmented picker's label.
+    var label: String {
+        switch self {
+        case .all: String(localized: "All")
+        default: rawValue
+        }
+    }
+
+    /// The first day of the range ending `today`. "All" reaches back ten years; leading
+    /// empty days are trimmed after loading.
+    func firstDay(today: CalendarDate) -> CalendarDate {
+        let days = switch self {
+        case .oneMonth: 30
+        case .threeMonths: 91
+        case .sixMonths: 182
+        case .oneYear: 365
+        case .all: 3_650
+        }
+        return today.adding(days: -days)
+    }
+}
+
 struct SpendingBreakdown: Equatable {
     let total: Decimal
     /// Largest first.
@@ -37,6 +69,9 @@ final class HomeViewModel {
     static let latestCount = 5
 
     private(set) var period = MonthPeriod(containing: .now)
+    private(set) var balanceRange: HomeBalanceRange = .oneMonth
+    /// When the balance hero last loaded, for its "Updated" line.
+    private(set) var balanceUpdatedAt: Date?
     private(set) var reviewSummary: LoadState<ReviewSummary> = .idle
     private(set) var balance: LoadState<BalanceTrend> = .idle
     private(set) var spending: LoadState<SpendingBreakdown> = .idle
@@ -102,11 +137,15 @@ final class HomeViewModel {
 
     private func setPeriod(_ newPeriod: MonthPeriod) async {
         period = newPeriod
-        balance = .loading
         spending = .loading
-        async let balanceLoad: Void = loadBalance()
-        async let spendingLoad: Void = loadSpending()
-        _ = await (balanceLoad, spendingLoad)
+        await loadSpending()
+    }
+
+    func setBalanceRange(_ range: HomeBalanceRange) async {
+        guard range != balanceRange else { return }
+        balanceRange = range
+        balance = .loading
+        await loadBalance()
     }
 
     func loadReviewSummary() async {
@@ -116,18 +155,34 @@ final class HomeViewModel {
     }
 
     func loadBalance() async {
-        let range = dateRange(for: period)
+        let today = CalendarDate(date: .now)
+        let range = balanceRange
+        let from = range.firstDay(today: today)
         await load(into: \.balance) { [stats] in
-            // One extra day in front, for the previous period's closing balance. One extra day at
+            // One extra day in front, for the closing balance before the range. One extra day at
             // the end too: the API reports the last requested day as 0, so that point is dropped.
-            let points = try await stats.balanceHistory(from: range.from.adding(days: -1), to: range.to.adding(days: 1))
+            let points = try await stats.balanceHistory(from: from.adding(days: -1), to: today.adding(days: 1))
                 .sorted { $0.date < $1.date }
-            let previous = points.last { $0.date < range.from }
+            let previous = points.last { $0.date < from }
+            var inRange = points.filter { $0.date >= from && $0.date <= today }
+            if range == .all, let firstValue = inRange.firstIndex(where: { $0.totalBalance != 0 }) {
+                inRange.removeFirst(firstValue)
+            }
             return BalanceTrend(
-                points: points.filter { $0.date >= range.from && $0.date <= range.to },
-                previousTotal: previous?.totalBalance
+                points: Self.downsampled(inRange, limit: 400),
+                previousTotal: range == .all ? nil : previous?.totalBalance
             )
         }
+        if balance.value != nil { balanceUpdatedAt = .now }
+    }
+
+    /// At most `limit` points, evenly strided, always keeping the latest.
+    private static func downsampled(_ points: [BalancePoint], limit: Int) -> [BalancePoint] {
+        guard points.count > limit, let last = points.last else { return points }
+        let stride = Int((Double(points.count) / Double(limit)).rounded(.up))
+        var result = Swift.stride(from: 0, to: points.count - 1, by: stride).map { points[$0] }
+        result.append(last)
+        return result
     }
 
     func loadSpending() async {

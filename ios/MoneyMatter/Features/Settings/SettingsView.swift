@@ -1,8 +1,9 @@
 import MoneyMatterKit
 import SwiftUI
 
-/// The Settings hub, opened as a sheet from the Home avatar: profile, a section per settings
-/// area (each row pushes that area's screen), server, sign out, and version.
+/// The Settings hub, opened as a sheet from the Home avatar, laid out like iOS Settings: a
+/// profile header, a section per settings area whose rows carry a solid-colour
+/// `SettingsIconTile` and push that area's screen, then server, sign out, and version.
 struct SettingsView: View {
     @Environment(SessionStore.self) private var session
     @Environment(\.dismiss) private var dismiss
@@ -12,7 +13,7 @@ struct SettingsView: View {
 
     var body: some View {
         NavigationStack {
-            Form {
+            List {
                 profileSection
                 organizationSection
                 sharingSection
@@ -41,11 +42,15 @@ struct SettingsView: View {
                 }
 
                 Section {
-                    LabeledContent("Version", value: AppConfig.appVersion)
+                    LabeledContent("Version") {
+                        Text(verbatim: AppConfig.appVersion)
+                            .monospacedDigit()
+                    }
                 }
             }
+            .listStyle(.insetGrouped)
             .navigationTitle("Settings")
-            .navigationBarTitleDisplayMode(.inline)
+            .navigationBarTitleDisplayMode(.large)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button(role: .close) { dismiss() }
@@ -67,20 +72,22 @@ struct SettingsView: View {
     }
 
     private var profileSection: some View {
-        Section("Profile") {
-            HStack(spacing: 14) {
-                InitialsBadge(session.user?.initials ?? "?", size: 48)
-                VStack(alignment: .leading, spacing: 2) {
+        Section {
+            HStack(spacing: DS.Space.m) {
+                IconTile(text: String((session.user?.initials ?? "?").prefix(2)).uppercased(), color: DS.Palette.accent, size: 56)
+                VStack(alignment: .leading, spacing: DS.Space.xxs) {
                     Text(session.user?.displayName ?? "")
-                        .font(.headline)
+                        .font(.title3.weight(.semibold))
+                        .lineLimit(1)
                     if let email = session.user?.email {
                         Text(email)
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
+                            .lineLimit(1)
                     }
                 }
             }
-            .padding(.vertical, 4)
+            .padding(.vertical, DS.Space.xs)
             .accessibilityElement(children: .combine)
 
             if let base = session.baseCurrency {
@@ -91,64 +98,64 @@ struct SettingsView: View {
 
     private var organizationSection: some View {
         Section("Organization") {
-            NavigationLink { CategoriesSettingsScreen() } label: { Label("Categories", systemImage: "square.grid.2x2") }
-            NavigationLink { TagsSettingsScreen() } label: { Label("Tags", systemImage: "tag") }
-            NavigationLink { PayeesScreen() } label: { Label("Payees", systemImage: "person.2") }
-            NavigationLink { CurrenciesSettingsScreen() } label: { Label("Currencies", systemImage: "dollarsign.circle") }
-            NavigationLink { AccountGroupsScreen() } label: { Label("Account Groups", systemImage: "folder") }
+            NavigationLink { CategoriesSettingsScreen() } label: { SettingsHubRow("Categories", systemImage: "square.grid.2x2", color: .orange) }
+            NavigationLink { TagsSettingsScreen() } label: { SettingsHubRow("Tags", systemImage: "tag", color: .pink) }
+            NavigationLink { PayeesScreen() } label: { SettingsHubRow("Payees", systemImage: "person.2", color: .teal) }
+            NavigationLink { CurrenciesSettingsScreen() } label: { SettingsHubRow("Currencies", systemImage: "dollarsign.circle", color: .green) }
+            NavigationLink { AccountGroupsScreen() } label: { SettingsHubRow("Account Groups", systemImage: "folder", color: .indigo) }
         }
     }
 
     private var sharingSection: some View {
         Section("Sharing") {
-            NavigationLink { SharedWithMeScreen() } label: { Label("Shared with Me", systemImage: "person.crop.circle.badge.checkmark") }
-            NavigationLink { HouseholdScreen() } label: { Label("Household", systemImage: "house.and.flag") }
+            NavigationLink { SharedWithMeScreen() } label: { SettingsHubRow("Shared with Me", systemImage: "person.crop.circle.badge.checkmark", color: .blue) }
+            NavigationLink { HouseholdScreen() } label: { SettingsHubRow("Household", systemImage: "house", color: .purple) }
         }
     }
 
     private var dataSection: some View {
         Section("Data") {
-            NavigationLink { ImportScreen() } label: { Label("Import", systemImage: "square.and.arrow.down") }
-            NavigationLink { ExportScreen() } label: { Label("Export", systemImage: "square.and.arrow.up") }
-            NavigationLink { BackupRestoreScreen() } label: { Label("Backup & Restore", systemImage: "externaldrive") }
+            NavigationLink { ImportScreen() } label: { SettingsHubRow("Import", systemImage: "square.and.arrow.down", color: .gray) }
+            NavigationLink { ExportScreen() } label: { SettingsHubRow("Export", systemImage: "square.and.arrow.up", color: .gray) }
+            NavigationLink { BackupRestoreScreen() } label: { SettingsHubRow("Backup & Restore", systemImage: "externaldrive", color: .cyan) }
         }
     }
 
     private var aiSection: some View {
         Section("AI") {
-            NavigationLink { AIFeaturesScreen() } label: { Label("Features", systemImage: "sparkles") }
-            NavigationLink { AIKeysScreen() } label: { Label("API Keys", systemImage: "key") }
-            NavigationLink { AIEndpointsScreen() } label: { Label("Endpoints", systemImage: "server.rack") }
-            NavigationLink { AIIntegrationsScreen() } label: { Label("Integrations (MCP)", systemImage: "puzzlepiece.extension") }
+            NavigationLink { AIFeaturesScreen() } label: { SettingsHubRow("Features", systemImage: "sparkles", color: DS.Palette.accent) }
+            NavigationLink { AIKeysScreen() } label: { SettingsHubRow("API Keys", systemImage: "key", color: DS.Palette.accent) }
+            NavigationLink { AIEndpointsScreen() } label: { SettingsHubRow("Endpoints", systemImage: "server.rack", color: DS.Palette.accent) }
+            NavigationLink { AIIntegrationsScreen() } label: { SettingsHubRow("Integrations (MCP)", systemImage: "puzzlepiece.extension", color: .mint) }
         }
     }
 
     private var appSection: some View {
         Section("App") {
-            NavigationLink { AppearanceSettingsScreen() } label: { Label("Appearance", systemImage: "circle.lefthalf.filled") }
-            NavigationLink { LanguageSettingsScreen() } label: { Label("Language", systemImage: "globe") }
-            NavigationLink { GeneralSettingsScreen() } label: { Label("General", systemImage: "gearshape") }
+            NavigationLink { AppearanceSettingsScreen() } label: { SettingsHubRow("Appearance", systemImage: "circle.lefthalf.filled", color: .blue) }
+            NavigationLink { LanguageSettingsScreen() } label: { SettingsHubRow("Language", systemImage: "globe", color: .red) }
+            NavigationLink { GeneralSettingsScreen() } label: { SettingsHubRow("General", systemImage: "gearshape", color: .gray) }
         }
     }
 
     private var securitySection: some View {
         Section("Security") {
-            NavigationLink { LoginMethodsScreen() } label: { Label("Login Methods & Passkeys", systemImage: "person.badge.key") }
-            NavigationLink { SessionsScreen() } label: { Label("Sessions", systemImage: "iphone.and.arrow.forward") }
-            NavigationLink { PasswordScreen() } label: { Label("Password", systemImage: "lock") }
-            NavigationLink { DangerZoneScreen() } label: { Label("Danger Zone", systemImage: "exclamationmark.triangle") }
+            NavigationLink { LoginMethodsScreen() } label: { SettingsHubRow("Login Methods & Passkeys", systemImage: "person.badge.key", color: .green) }
+            NavigationLink { SessionsScreen() } label: { SettingsHubRow("Sessions", systemImage: "iphone", color: .gray) }
+            NavigationLink { PasswordScreen() } label: { SettingsHubRow("Password", systemImage: "lock", color: .yellow) }
+            NavigationLink { DangerZoneScreen() } label: { SettingsHubRow("Danger Zone", systemImage: "exclamationmark.triangle", color: .red) }
         }
     }
 
     private var planSection: some View {
         Section {
-            NavigationLink { PlanBillingScreen() } label: { Label("Plan & Billing", systemImage: "creditcard") }
+            NavigationLink { PlanBillingScreen() } label: { SettingsHubRow("Plan & Billing", systemImage: "creditcard", color: .green) }
         }
     }
 
     private var adminSection: some View {
         Section {
-            NavigationLink { AdminScreen() } label: { Label("Admin", systemImage: "shield.lefthalf.filled") }
+            NavigationLink { AdminScreen() } label: { SettingsHubRow("Admin", systemImage: "shield.lefthalf.filled", color: .brown) }
         }
     }
 
@@ -157,6 +164,28 @@ struct SettingsView: View {
         Task {
             await action()
             isWorking = false
+        }
+    }
+}
+
+/// One Settings-hub destination: a solid `SettingsIconTile` and the area's name, as the label
+/// of a `NavigationLink`.
+private struct SettingsHubRow: View {
+    let title: LocalizedStringKey
+    let systemImage: String
+    let color: Color
+
+    init(_ title: LocalizedStringKey, systemImage: String, color: Color) {
+        self.title = title
+        self.systemImage = systemImage
+        self.color = color
+    }
+
+    var body: some View {
+        Label {
+            Text(title)
+        } icon: {
+            SettingsIconTile(systemImage: systemImage, color: color)
         }
     }
 }

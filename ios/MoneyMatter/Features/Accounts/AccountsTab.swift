@@ -18,6 +18,7 @@ struct AccountsTab: View {
     @State private var groupsError: APIError?
     @State private var isCreatePresented = false
     @State private var isArchivedExpanded = false
+    @State private var syncMonitor = BankSyncMonitor.shared
 
     var body: some View {
         @Bindable var router = router
@@ -35,7 +36,7 @@ struct AccountsTab: View {
                     }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("Add Account", systemImage: "plus") {
+                    Button("Add account", systemImage: "plus") {
                         isCreatePresented = true
                     }
                 }
@@ -85,19 +86,31 @@ struct AccountsTab: View {
                 .listRowBackground(Color.clear)
             } else if !referenceData.hasLoaded {
                 Section {
-                    ProgressView()
-                        .frame(maxWidth: .infinity)
+                    HeroValueHeader("$0,000.00", status: String(localized: "Net worth"))
                 }
-                .listRowBackground(Color.clear)
+                .accountsHeroRow()
+                .redacted(reason: .placeholder)
+                .accessibilityHidden(true)
+                Section {
+                    ForEach(0..<3, id: \.self) { _ in
+                        EntityRow("Account name", subtitle: "Category") {
+                            IconTile(text: "AA")
+                        } trailing: {
+                            EntityRowValue("$0,000.00")
+                        }
+                    }
+                }
+                .redacted(reason: .placeholder)
+                .accessibilityHidden(true)
             } else {
                 Section {
                     ContentUnavailableView {
-                        Label("No Accounts", systemImage: "wallet.bifold")
+                        Label("No accounts", systemImage: "wallet.bifold")
                     } description: {
                         Text("Add an account to start tracking balances and transactions.")
                     } actions: {
-                        Button("Add Account") { isCreatePresented = true }
-                            .buttonStyle(.borderedProminent)
+                        Button("Add account") { isCreatePresented = true }
+                            .dsProminentButton()
                     }
                 }
                 .listRowBackground(Color.clear)
@@ -106,13 +119,14 @@ struct AccountsTab: View {
             Section {
                 netWorthHeader
             }
+            .accountsHeroRow()
             ForEach(groupSections) { section in
                 Section(section.name) {
                     ForEach(section.accounts) { accountLink($0) }
                 }
             }
             if !otherAccounts.isEmpty {
-                Section(groupSections.isEmpty ? "Accounts" : "Other Accounts") {
+                Section(groupSections.isEmpty ? "Accounts" : "Other accounts") {
                     ForEach(otherAccounts) { accountLink($0) }
                 }
             }
@@ -134,44 +148,63 @@ struct AccountsTab: View {
     }
 
     private var assetsSection: some View {
-        Section("Assets") {
+        Section {
             NavigationLink(value: AccountsRoute.loans) {
-                Label("Loans", systemImage: "banknote")
+                EntityRow(String(localized: "Loans"), systemImage: "banknote", tint: DS.Palette.warning)
             }
             NavigationLink(value: AccountsRoute.investments) {
-                Label("Investments", systemImage: "chart.line.uptrend.xyaxis")
+                EntityRow(String(localized: "Investments"), systemImage: "chart.line.uptrend.xyaxis", tint: DS.Palette.up)
             }
             NavigationLink(value: AccountsRoute.venture) {
-                Label("Venture", systemImage: "briefcase")
+                EntityRow(String(localized: "Venture"), systemImage: "briefcase", tint: DS.Palette.accent)
             }
             NavigationLink(value: AccountsRoute.vehicles) {
-                Label("Vehicles", systemImage: "car")
+                EntityRow(String(localized: "Vehicles"), systemImage: "car", tint: DS.Palette.info)
             }
+        } header: {
+            DSGroupHeader(String(localized: "Assets"))
         }
     }
 
     private var connectionsSection: some View {
         Section {
             NavigationLink(value: AccountsRoute.bankConnections) {
-                Label("Bank Connections", systemImage: "building.columns")
+                EntityRow(String(localized: "Bank connections"), systemImage: "building.columns", tint: DS.Palette.teal) {
+                    if !syncMonitor.connectionIDsNeedingAttention.isEmpty {
+                        StatusBadge(label: String(localized: "Needs attention"), color: DS.Palette.warning)
+                    } else if let failed = syncMonitor.status?.summary.failed, failed > 0 {
+                        StatusBadge(label: String(localized: "Sync failed"), color: DS.Palette.danger)
+                    }
+                }
             }
         }
     }
 
     private var netWorthHeader: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("Net Worth")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-            if let code = session.baseCurrency?.currencyCode {
-                AmountText(netWorth, currencyCode: code, digits: referenceData.digits(for: code))
-                    .font(.system(.largeTitle, design: .rounded, weight: .bold))
-                    .minimumScaleFactor(0.5)
-                    .lineLimit(1)
-            }
-        }
-        .padding(.vertical, 4)
+        let code = session.baseCurrency?.currencyCode ?? ""
+        return HeroValueHeader(
+            code.isEmpty ? "" : MoneyFormat.string(netWorth, currencyCode: code, digits: referenceData.digits(for: code)),
+            numericValue: NSDecimalNumber(decimal: netWorth).doubleValue,
+            changeLabel: nil,
+            status: hasBankAccounts ? BankSyncText.summary(syncMonitor.status, isSyncing: syncMonitor.isSyncing) : String(localized: "Net worth"),
+            statusColor: hasBankAccounts ? syncColor : nil,
+            statusPulsing: syncMonitor.isSyncing
+        )
         .accessibilityElement(children: .combine)
+        .accessibilityLabel(Text("Net worth"))
+        .accessibilityValue(Text(verbatim: code.isEmpty ? "" : MoneyFormat.string(netWorth, currencyCode: code, digits: referenceData.digits(for: code))))
+    }
+
+    private var hasBankAccounts: Bool {
+        referenceData.accounts.contains(where: { $0.bankDataProviderConnectionId != nil })
+    }
+
+    private var syncColor: Color {
+        if syncMonitor.isSyncing { return DS.Palette.accent }
+        if !syncMonitor.connectionIDsNeedingAttention.isEmpty || (syncMonitor.status?.summary.failed ?? 0) > 0 {
+            return DS.Palette.warning
+        }
+        return DS.Palette.success
     }
 
     private func accountLink(_ account: Account) -> some View {

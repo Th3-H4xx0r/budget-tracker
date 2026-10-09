@@ -27,9 +27,10 @@ private struct ReviewPageContent: View {
             case .idle, .loading:
                 TransactionRowsPlaceholder(count: 6)
             case .failed(let error):
-                InlineRetryView(ErrorMessage.message(for: error)) {
+                ErrorRow(ErrorMessage.message(for: error)) {
                     await model.load(model.status)
                 }
+                .listRowInsets(EdgeInsets())
             case .loaded(let page):
                 if page.rows.isEmpty {
                     emptyState
@@ -57,12 +58,13 @@ private struct ReviewPageContent: View {
                     Label("Start Review", systemImage: "rectangle.stack")
                         .frame(maxWidth: .infinity, minHeight: 32)
                 }
-                .buttonStyle(.glassProminent)
+                .dsProminentButton()
                 .controlSize(.large)
                 .padding(.horizontal)
                 .padding(.bottom, 8)
             }
         }
+        .listStyle(.insetGrouped)
         .navigationTitle("Review")
         .navigationBarTitleDisplayMode(.inline)
         .refreshable {

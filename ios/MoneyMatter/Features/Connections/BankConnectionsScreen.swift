@@ -52,11 +52,13 @@ struct BankConnectionsScreen: View {
                     Text("Connect a bank to import accounts and sync transactions automatically.")
                 } actions: {
                     Button("Connect a Bank") { isConnectPresented = true }
-                        .buttonStyle(.borderedProminent)
+                        .dsProminentButton()
                 }
             }
         }
+        .listStyle(.insetGrouped)
         .navigationTitle("Bank Connections")
+        .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button("Connect a Bank", systemImage: "plus") { isConnectPresented = true }
@@ -80,26 +82,31 @@ struct BankConnectionsScreen: View {
 
     private var syncSection: some View {
         Section {
-            HStack(spacing: 12) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(BankSyncText.summary(monitor.status, isSyncing: monitor.isSyncing))
-                    if let failed = monitor.status?.summary.failed, failed > 0 {
-                        Text("\(failed) accounts failed to sync")
-                            .font(.subheadline)
-                            .foregroundStyle(.red)
-                    }
-                }
-                Spacer(minLength: 8)
-                if monitor.isSyncing {
-                    ProgressView()
-                } else {
-                    Button("Sync Now") {
-                        Task { await syncNow() }
-                    }
-                    .buttonStyle(.bordered)
+            VStack(alignment: .leading, spacing: DS.Space.xs) {
+                StatusDot(
+                    BankSyncText.summary(monitor.status, isSyncing: monitor.isSyncing),
+                    color: monitor.isSyncing ? DS.Palette.info : DS.Palette.success,
+                    pulsing: monitor.isSyncing,
+                    font: .body
+                )
+                .monospacedDigit()
+                if let failed = monitor.status?.summary.failed, failed > 0 {
+                    StatusDot(String(localized: "\(failed) accounts failed to sync"), color: DS.Palette.danger)
+                        .monospacedDigit()
                 }
             }
             .frame(minHeight: 44)
+            if monitor.isSyncing {
+                HStack(spacing: DS.Space.m) {
+                    ProgressView()
+                    Text("Syncing…")
+                        .foregroundStyle(.secondary)
+                }
+            } else {
+                InlineActionRow(String(localized: "Sync Now"), systemImage: "arrow.triangle.2.circlepath") {
+                    Task { await syncNow() }
+                }
+            }
         } header: {
             Text("Sync")
         } footer: {
@@ -115,17 +122,13 @@ struct BankConnectionsScreen: View {
                     NavigationLink {
                         BankConnectionDetailScreen(connectionID: connection.connectionId)
                     } label: {
-                        Label {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(connection.bankName ?? connection.providerName)
-                                Text("Reconnect to resume syncing \(connection.accountsCount) accounts.")
-                                    .font(.subheadline)
-                                    .foregroundStyle(.secondary)
-                            }
-                        } icon: {
-                            Image(systemName: "exclamationmark.triangle.fill")
-                                .foregroundStyle(.orange)
-                        }
+                        EntityRow(
+                            connection.bankName ?? connection.providerName,
+                            subtitle: String(localized: "Reconnect to resume syncing \(connection.accountsCount) accounts."),
+                            subtitleLineLimit: 2,
+                            systemImage: "exclamationmark.triangle.fill",
+                            tint: DS.Palette.warning
+                        )
                     }
                 }
             } header: {
@@ -161,36 +164,22 @@ private struct BankConnectionRow: View {
     let status: BankSyncStatus.ConnectionStatus?
 
     static var placeholder: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "building.columns")
-                .frame(width: 32)
-            VStack(alignment: .leading) {
-                Text(verbatim: "Placeholder bank")
-                Text(verbatim: "3 accounts · synced today")
-                    .font(.subheadline)
-            }
+        EntityRow("Placeholder bank", subtitle: "3 accounts · synced today", systemImage: "building.columns") {
+            StatusBadge(label: "Active", color: DS.Palette.success)
         }
     }
 
     var body: some View {
         if let connection {
-            HStack(spacing: 12) {
-                Image(systemName: BankSyncText.providerSymbol(connection.providerType))
-                    .font(.title3)
-                    .foregroundStyle(.tint)
-                    .frame(width: 32)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(connection.providerName.isEmpty ? (connection.bankName ?? BankSyncText.providerName(connection.providerType)) : connection.providerName)
-                        .lineLimit(1)
-                    Text(subtitle(connection))
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
-                }
-                Spacer(minLength: 8)
+            EntityRow(
+                connection.providerName.isEmpty ? (connection.bankName ?? BankSyncText.providerName(connection.providerType)) : connection.providerName,
+                subtitle: subtitle(connection),
+                subtitleLineLimit: 2,
+                systemImage: BankSyncText.providerSymbol(connection.providerType),
+                tint: DS.Palette.accent
+            ) {
                 BankConsentBadge(isActive: connection.isActive, status: status)
             }
-            .accessibilityElement(children: .combine)
         }
     }
 
@@ -204,19 +193,15 @@ private struct BankConnectionRow: View {
     }
 }
 
-/// Active, expiring soon, expired, or inactive.
+/// Active, expiring soon, expired, or inactive, as a `StatusBadge`.
 struct BankConsentBadge: View {
     let isActive: Bool
     let status: BankSyncStatus.ConnectionStatus?
 
     var body: some View {
         let (text, color) = content
-        Text(text)
-            .font(.caption.weight(.semibold))
-            .foregroundStyle(color)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 3)
-            .background(color.opacity(0.15), in: .capsule)
+        StatusBadge(label: text, color: color)
+            .monospacedDigit()
     }
 
     private var content: (String, Color) {

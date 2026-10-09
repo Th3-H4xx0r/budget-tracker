@@ -29,7 +29,8 @@ struct SignUpView: View {
                     systemImage: "person.crop.circle.badge.xmark",
                     description: Text("This server isn't accepting new accounts. Ask the person who runs it for access.")
                 )
-                .background { AuthBackground() }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(DS.Surface.canvas.ignoresSafeArea())
             } else if model.needsEmailVerification {
                 ContentUnavailableView {
                     Label("Check Your Email", systemImage: "envelope.badge")
@@ -37,10 +38,11 @@ struct SignUpView: View {
                     Text("Check your email to verify your account, then sign in.")
                 } actions: {
                     Button("Back to Sign In") { dismiss() }
-                        .buttonStyle(.glassProminent)
+                        .dsGlassProminentButton()
                         .controlSize(.large)
                 }
-                .background { AuthBackground() }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(DS.Surface.canvas.ignoresSafeArea())
             } else {
                 form
             }
@@ -100,9 +102,9 @@ struct SignUpView: View {
                 Button {
                     Task { await model.signUp(session: session) }
                 } label: {
-                    ProgressButtonLabel(title: "Create Account", isWorking: model.isWorking)
+                    ProgressButtonLabel(title: "Create Account", isWorking: model.isWorking, spinnerTint: DS.Palette.onAccent)
                 }
-                .buttonStyle(.glassProminent)
+                .dsGlassProminentButton()
                 .controlSize(.large)
                 .disabled(!model.canSubmit)
             }

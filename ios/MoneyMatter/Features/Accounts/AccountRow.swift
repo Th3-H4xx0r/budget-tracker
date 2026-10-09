@@ -32,31 +32,46 @@ enum AccountInitials {
     }
 }
 
-/// Initials badge, name, category, and balance in the account currency.
+/// An `EntityRow` for an account: its initials tile, name over category, and the balance in
+/// the account currency over its bank-sync state.
 struct AccountRow: View {
     let account: Account
     var digits: Int?
 
+    @State private var monitor = BankSyncMonitor.shared
+
     var body: some View {
-        HStack(spacing: 12) {
-            InitialsBadge(AccountInitials.text(for: account), colorHex: account.logoColor, size: 36)
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 4) {
-                    Text(account.name)
-                        .lineLimit(1)
-                    if account.bankDataProviderConnectionId != nil {
-                        BankRelinkIndicator(account: account)
-                    }
-                }
-                Text(AccountCategoryLabel.text(for: account.accountCategory))
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+        EntityRow(account.name, subtitle: AccountCategoryLabel.text(for: account.accountCategory)) {
+            InitialsBadge(AccountInitials.text(for: account), colorHex: account.logoColor)
+        } trailing: {
+            VStack(alignment: .trailing, spacing: DS.Space.xxs) {
+                AmountText(account.currentBalance, currencyCode: account.currencyCode, digits: digits)
+                    .font(.body)
+                    .lineLimit(1)
+                syncState
             }
-            Spacer(minLength: 8)
-            AmountText(account.currentBalance, currencyCode: account.currencyCode, digits: digits)
-                .font(.body.weight(.medium))
         }
-        .padding(.vertical, 2)
-        .accessibilityElement(children: .combine)
+    }
+
+    @ViewBuilder
+    private var syncState: some View {
+        if account.bankDataProviderConnectionId != nil {
+            if monitor.needsRelink(account) {
+                StatusBadge(label: String(localized: "Reconnect"), color: DS.Palette.warning)
+                    .accessibilityLabel(Text("Bank connection needs reconnecting"))
+            } else if monitor.status?.status(forAccountID: account.id)?.status == .syncing {
+                StatusDot(String(localized: "Syncing"), color: DS.Palette.accent, pulsing: true, font: .footnote)
+            }
+        }
+    }
+}
+
+extension View {
+    /// A hero row in an inset-grouped list: no panel behind it, so the value sits on the canvas
+    /// the way IntelliStock's dashboard hero does.
+    func accountsHeroRow() -> some View {
+        self
+            .listRowBackground(Color.clear)
+            .listRowInsets(EdgeInsets(top: DS.Space.s, leading: DS.Space.xs, bottom: DS.Space.s, trailing: DS.Space.xs))
     }
 }

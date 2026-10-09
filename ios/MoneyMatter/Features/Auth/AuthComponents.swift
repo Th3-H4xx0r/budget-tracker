@@ -23,44 +23,15 @@ struct AuthScreen<Content: View>: View {
             .scrollBounceBehavior(.basedOnSize)
             .scrollDismissesKeyboard(.interactively)
         }
-        .background { AuthBackground() }
+        .background(DS.Surface.canvas.ignoresSafeArea())
     }
-}
-
-/// The grouped background with a soft accent glow at the top.
-struct AuthBackground: View {
-    @Environment(\.colorScheme) private var colorScheme
-
-    var body: some View {
-        GeometryReader { proxy in
-            let radius = max(proxy.size.width, proxy.size.height) * 0.6
-            ZStack {
-                Color(.systemGroupedBackground)
-                RadialGradient(
-                    colors: [Color.accentColor.opacity(glowOpacity), Color.accentColor.opacity(0)],
-                    center: .top,
-                    startRadius: 0,
-                    endRadius: radius
-                )
-                RadialGradient(
-                    colors: [Color.indigo.opacity(glowOpacity * 0.5), Color.indigo.opacity(0)],
-                    center: UnitPoint(x: 0.95, y: 0),
-                    startRadius: 0,
-                    endRadius: radius * 0.6
-                )
-            }
-        }
-        .ignoresSafeArea()
-        .accessibilityHidden(true)
-    }
-
-    private var glowOpacity: Double { colorScheme == .dark ? 0.3 : 0.18 }
 }
 
 // MARK: - Header
 
-/// The app mark as an app-icon-style tile: a white symbol on an accent gradient.
-struct AppMarkBadge: View {
+/// The app mark: a 64 pt icon tile with a white glyph on a solid accent fill, corners at
+/// 30 % of the side. `IconTile` draws a 15 % tint, so the solid app-icon variant lives here.
+private struct AuthAppMark: View {
     var systemImage = "chart.pie.fill"
     @ScaledMetric(relativeTo: .title) private var scaledSize: CGFloat = 64
 
@@ -68,30 +39,14 @@ struct AppMarkBadge: View {
     private var size: CGFloat { min(scaledSize, 88) }
 
     var body: some View {
-        let shape = RoundedRectangle(cornerRadius: size * 0.28, style: .continuous)
         Image(systemName: systemImage)
-            .font(.system(size: size * 0.44, weight: .semibold))
+            .font(.system(size: size * 0.46, weight: .semibold))
             .foregroundStyle(.white)
             .frame(width: size, height: size)
-            .background {
-                shape.fill(
-                    LinearGradient(
-                        colors: [
-                            Color.accentColor.mix(with: .white, by: 0.18),
-                            Color.accentColor.mix(with: .black, by: 0.22)
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
-            }
-            .overlay {
-                shape.strokeBorder(
-                    LinearGradient(colors: [.white.opacity(0.45), .white.opacity(0.05)], startPoint: .top, endPoint: .bottom),
-                    lineWidth: 1
-                )
-            }
-            .shadow(color: Color.accentColor.opacity(0.35), radius: 14, y: 6)
+            .background(
+                DS.Palette.accent,
+                in: .rect(cornerRadius: size * DS.Radius.iconTileFraction, style: .continuous)
+            )
             .accessibilityHidden(true)
     }
 }
@@ -104,8 +59,8 @@ struct AuthHeader<Accessory: View>: View {
     @ViewBuilder var accessory: Accessory
 
     var body: some View {
-        VStack(spacing: 14) {
-            AppMarkBadge(systemImage: systemImage)
+        VStack(spacing: DS.Space.m) {
+            AuthAppMark(systemImage: systemImage)
             VStack(spacing: 6) {
                 title
                     .font(.title2.bold())
@@ -130,29 +85,21 @@ extension AuthHeader where Accessory == EmptyView {
     }
 }
 
-/// A compact capsule showing the connected server; tapping it starts a server change.
+/// The connected server as a `StatusBadge`-style accent capsule; tapping it starts a
+/// server change. The 44 pt tap target extends beyond the small capsule.
 struct ServerChip: View {
     let host: String
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 6) {
+            HStack(spacing: DS.Space.xs) {
                 Image(systemName: "server.rack")
-                    .imageScale(.small)
                 Text(verbatim: host)
-                    .lineLimit(1)
                     .truncationMode(.middle)
                 Image(systemName: "chevron.right")
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(.tertiary)
             }
-            .font(.footnote.weight(.medium))
-            .foregroundStyle(.secondary)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 7)
-            .background(.regularMaterial, in: .capsule)
-            .overlay { Capsule().strokeBorder(Color(.separator).opacity(0.6), lineWidth: 0.5) }
+            .dsBadge(DS.Palette.accent)
             .frame(minHeight: 44)
             .contentShape(.rect)
         }
@@ -170,13 +117,12 @@ private enum AuthFieldMetrics {
     static let iconSpacing: CGFloat = 12
 }
 
-/// Stacks icon-led field rows in one rounded material card, separated like a grouped form.
+/// Stacks icon-led field rows in one inset-grouped panel, separated like a grouped form.
 struct AuthFieldCard<Content: View>: View {
     @ViewBuilder var content: Content
     @ScaledMetric(relativeTo: .body) private var iconWidth = AuthFieldMetrics.iconWidth
 
     var body: some View {
-        let shape = RoundedRectangle(cornerRadius: 18, style: .continuous)
         VStack(spacing: 0) {
             Group(subviews: content) { subviews in
                 ForEach(subviews.indices, id: \.self) { index in
@@ -188,8 +134,7 @@ struct AuthFieldCard<Content: View>: View {
                 }
             }
         }
-        .background(.regularMaterial, in: shape)
-        .overlay { shape.strokeBorder(Color(.separator).opacity(0.5), lineWidth: 0.5) }
+        .background(DS.Surface.panel, in: .rect(cornerRadius: DS.Radius.card, style: .continuous))
     }
 }
 
@@ -290,6 +235,7 @@ struct PasswordStrengthHint: View {
                 }
                 Text("Use at least \(minimumLength) characters for your password.")
                     .foregroundStyle(.secondary)
+                    .monospacedDigit()
             }
             .font(.footnote)
         }
@@ -335,32 +281,14 @@ struct PasswordStrengthHint: View {
 
 // MARK: - Messages
 
-/// An inline error banner: a warning symbol and the message on a red-tinted material.
+/// An inline form error drawn as an `ErrorRow`, read by VoiceOver as one "Error:" element.
 struct AuthBanner: View {
     let message: String
 
     var body: some View {
-        let shape = RoundedRectangle(cornerRadius: 14, style: .continuous)
-        HStack(alignment: .firstTextBaseline, spacing: 10) {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .foregroundStyle(.red)
-                .accessibilityHidden(true)
-            Text(message)
-                .foregroundStyle(.primary)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .font(.subheadline)
-        .padding(.horizontal, 14)
-        .padding(.vertical, 12)
-        .background {
-            ZStack {
-                shape.fill(.regularMaterial)
-                shape.fill(Color.red.opacity(0.14))
-            }
-        }
-        .overlay { shape.strokeBorder(Color.red.opacity(0.3), lineWidth: 0.75) }
-        .accessibilityElement(children: .ignore)
+        ErrorRow(message)
+            .fixedSize(horizontal: false, vertical: true)
+            .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text("Error: \(message)"))
         .transition(.opacity.combined(with: .scale(scale: 0.97, anchor: .top)))
     }
@@ -391,6 +319,8 @@ struct ProgressButtonLabel: View {
     var systemImage: String?
     var image: Image?
     let isWorking: Bool
+    /// The spinner colour; prominent buttons pass `DS.Palette.onAccent` so it reads on the fill.
+    var spinnerTint: Color?
     @ScaledMetric(relativeTo: .body) private var markSize: CGFloat = 18
 
     var body: some View {
@@ -414,6 +344,7 @@ struct ProgressButtonLabel: View {
             .opacity(isWorking ? 0 : 1)
             if isWorking {
                 ProgressView()
+                    .tint(spinnerTint)
             }
         }
         .frame(maxWidth: .infinity)

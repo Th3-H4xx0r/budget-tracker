@@ -180,7 +180,7 @@ struct TransactionsTab: View {
     }
 
     private var moreMenu: some View {
-        Menu("More", systemImage: "ellipsis.circle") {
+        Menu("More", systemImage: "ellipsis") {
             Button("Select", systemImage: "checkmark.circle") {
                 withAnimation { editMode = .active }
             }

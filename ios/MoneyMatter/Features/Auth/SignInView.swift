@@ -80,9 +80,9 @@ struct SignInView: View {
             Button {
                 Task { await model.signIn(session: session) }
             } label: {
-                ProgressButtonLabel(title: "Sign In", isWorking: model.activeMethod == .email)
+                ProgressButtonLabel(title: "Sign In", isWorking: model.activeMethod == .email, spinnerTint: DS.Palette.onAccent)
             }
-            .buttonStyle(.glassProminent)
+            .dsGlassProminentButton()
             .controlSize(.large)
             .disabled(!model.canSubmitEmail)
         }

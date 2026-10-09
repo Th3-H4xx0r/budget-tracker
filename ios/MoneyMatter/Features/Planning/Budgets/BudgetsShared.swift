@@ -46,6 +46,26 @@ enum BudgetTimeStatus: Equatable {
         }
     }
 
+    /// `text` as a plain string, for row subtitles.
+    var label: String {
+        switch self {
+        case .ended:
+            String(localized: "Ended")
+        case .upcoming(let days):
+            switch days {
+            case 0: String(localized: "Starts today")
+            case 1: String(localized: "Starts tomorrow")
+            default: String(localized: "Starts in \(days) days")
+            }
+        case .active(let days):
+            switch days {
+            case 0: String(localized: "Last day")
+            case 1: String(localized: "1 day left")
+            default: String(localized: "\(days) days left")
+            }
+        }
+    }
+
     var tint: Color {
         switch self {
         case .ended: .secondary
@@ -66,11 +86,24 @@ enum BudgetFormatting {
         }
     }
 
-    /// Green under 70%, orange to 90%, red above, as on the web.
+    /// The accent while within the limit, red once over it.
     static func utilizationColor(_ rate: Double) -> Color {
-        if rate > 90 { return .red }
-        if rate > 70 { return .orange }
-        return .green
+        rate > 100 ? DS.Palette.down : DS.Palette.accent
+    }
+
+    /// What a budget has spent: the negative of its net balance, never below zero.
+    static func spent(_ stats: PlanningBudgetStats?) -> Decimal {
+        max(0, -(stats?.balance ?? 0))
+    }
+
+    /// "$120.00 left" or "$40.00 over", red when over.
+    static func remaining(spent: Decimal, limit: Decimal, currencyCode: String) -> (text: String, color: Color) {
+        if spent > limit {
+            let over = MoneyFormat.string(spent - limit, currencyCode: currencyCode)
+            return (String(localized: "\(over) over"), DS.Palette.down)
+        }
+        let left = MoneyFormat.string(limit - spent, currencyCode: currencyCode)
+        return (String(localized: "\(left) left"), Color.secondary)
     }
 
     static func typeLabel(_ type: PlanningBudgetType) -> Text {
@@ -81,7 +114,8 @@ enum BudgetFormatting {
     }
 }
 
-/// A capsule progress bar with the percent of the limit used.
+/// A thin utilization bar in the accent, red once the budget is over its limit, with an
+/// optional "Used" caption and percent above it.
 struct BudgetUtilizationBar: View {
     let rate: Double
     var showsLabel = true
@@ -90,7 +124,7 @@ struct BudgetUtilizationBar: View {
     private var color: Color { BudgetFormatting.utilizationColor(rate) }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: DS.Space.xs) {
             if showsLabel {
                 HStack {
                     Text("Used")
@@ -98,18 +132,17 @@ struct BudgetUtilizationBar: View {
                     Spacer()
                     Text(rate / 100, format: .percent.precision(.fractionLength(0)))
                         .monospacedDigit()
-                        .fontWeight(.medium)
-                        .foregroundStyle(color)
+                        .foregroundStyle(rate > 100 ? DS.Palette.down : Color.secondary)
                 }
                 .font(.caption)
             }
             GeometryReader { proxy in
                 ZStack(alignment: .leading) {
-                    Capsule().fill(Color.secondary.opacity(0.2))
+                    Capsule().fill(Color(uiColor: .tertiarySystemFill))
                     Capsule().fill(color).frame(width: proxy.size.width * clamped)
                 }
             }
-            .frame(height: 6)
+            .frame(height: 4)
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text("Budget used"))
@@ -117,36 +150,29 @@ struct BudgetUtilizationBar: View {
     }
 }
 
-/// Income, expenses, and net in three compact columns.
+/// Income, expenses, and net as a three-column `StatGrid`.
 struct BudgetStatTriplet: View {
     let stats: PlanningBudgetStats?
     let currencyCode: String
 
     var body: some View {
-        HStack(alignment: .top) {
-            column(title: "Income", amount: stats?.actualIncome ?? 0, style: .income)
-            column(title: "Expenses", amount: stats?.actualExpense ?? 0, style: .neutral)
-            column(
-                title: "Net",
-                amount: stats?.balance ?? 0,
-                style: (stats?.balance ?? 0) >= 0 ? .income : .expense
+        let net = stats?.balance ?? 0
+        StatGrid(columns: 3) {
+            StatCell(
+                label: String(localized: "Income"),
+                value: MoneyFormat.string(stats?.actualIncome ?? 0, currencyCode: currencyCode),
+                valueColor: DS.Palette.up
+            )
+            StatCell(
+                label: String(localized: "Expenses"),
+                value: MoneyFormat.string(abs(stats?.actualExpense ?? 0), currencyCode: currencyCode)
+            )
+            StatCell(
+                label: String(localized: "Net"),
+                value: MoneyFormat.string(net, currencyCode: currencyCode),
+                valueColor: net >= 0 ? DS.Palette.up : DS.Palette.down
             )
         }
         .redactedWhileLoading(stats == nil)
-    }
-
-    private func column(title: LocalizedStringKey, amount: Decimal, style: AmountStyle) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(title)
-                .font(.caption2)
-                .textCase(.uppercase)
-                .foregroundStyle(.secondary)
-            AmountText(style == .neutral ? abs(amount) : amount, currencyCode: currencyCode, style: style)
-                .font(.subheadline.weight(.medium))
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .accessibilityElement(children: .combine)
     }
 }

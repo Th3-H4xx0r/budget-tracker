@@ -48,7 +48,7 @@ private struct ReviewStackContent: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
             .padding()
-            .background(Color(.systemGroupedBackground))
+            .background(DS.Surface.canvas)
             .toolbar { toolbar }
             .navigationBarTitleDisplayMode(.inline)
         }
@@ -183,7 +183,7 @@ private struct ReviewStackContent: View {
             }
         } actions: {
             Button("Done") { close() }
-                .buttonStyle(.glassProminent)
+                .dsGlassProminentButton()
                 .controlSize(.large)
         }
     }

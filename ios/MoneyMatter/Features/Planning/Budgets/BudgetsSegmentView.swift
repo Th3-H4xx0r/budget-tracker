@@ -26,7 +26,7 @@ struct BudgetsSegmentView: View {
                             Label("Show Archived", systemImage: "archivebox")
                         }
                     } label: {
-                        Label("Filter", systemImage: "line.3.horizontal.decrease")
+                        Label("More", systemImage: "ellipsis")
                     }
                     .accessibilityLabel(Text("Budget filters"))
                     Button {
@@ -76,7 +76,7 @@ struct BudgetsSegmentView: View {
                     Text("Create a budget to track spending against a limit, by category or by hand-picked transactions.")
                 } actions: {
                     Button("New Budget") { isCreating = true }
-                        .buttonStyle(.borderedProminent)
+                        .dsProminentButton()
                 }
             } else {
                 list(budgets)
@@ -86,8 +86,8 @@ struct BudgetsSegmentView: View {
 
     private func list(_ budgets: [PlanningBudget]) -> some View {
         List {
-            ForEach(budgets) { budget in
-                Section {
+            Section {
+                ForEach(budgets) { budget in
                     NavigationLink {
                         BudgetDetailScreen(budgetID: budget.id, initial: budget) {
                             await load()
@@ -121,7 +121,6 @@ struct BudgetsSegmentView: View {
             }
         }
         .listStyle(.insetGrouped)
-        .listSectionSpacing(.compact)
         .refreshable { await load() }
     }
 
@@ -207,110 +206,58 @@ struct BudgetsSegmentView: View {
     }
 }
 
-/// One budget card: status, name, limit, categories, dates, totals, and utilization.
+/// One budget: an `EntityRow` with what was spent over what is left, and a thin
+/// utilization bar under it when the budget has a limit.
 private struct BudgetCardRow: View {
     let budget: PlanningBudget
     let stats: PlanningBudgetStats?
     let currencyCode: String
 
     private var timeStatus: BudgetTimeStatus? { BudgetTimeStatus(budget: budget) }
+    private var spent: Decimal { BudgetFormatting.spent(stats) }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            statusLabel
-            HStack(spacing: 12) {
-                Image(systemName: budget.type == .category ? "tag" : "tray.full")
-                    .font(.title3)
-                    .foregroundStyle(.secondary)
-                    .frame(width: 40, height: 40)
-                    .background(.quaternary, in: .rect(cornerRadius: 10))
-                    .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(budget.name)
-                        .font(.headline)
-                        .lineLimit(2)
-                    subtitle
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
+        VStack(alignment: .leading, spacing: DS.Space.s) {
+            EntityRow(budget.name, subtitle: subtitle) {
+                IconTile(systemImage: budget.type == .category ? "tag.fill" : "tray.full.fill")
+            } trailing: {
+                trailing.redactedWhileLoading(stats == nil)
             }
-            if budget.type == .category, !budget.categories.isEmpty {
-                categoryChips
-            }
-            if let range = BudgetFormatting.dateRange(start: budget.startDate, end: budget.endDate) {
-                Label { range } icon: { Image(systemName: "calendar") }
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            } else if budget.type == .category {
-                Text("Auto-tracked from categories")
-                    .font(.caption)
-                    .italic()
-                    .foregroundStyle(.secondary)
-            }
-            Divider()
-            BudgetStatTriplet(stats: stats, currencyCode: currencyCode)
             if budget.limitAmount != nil {
-                BudgetUtilizationBar(rate: stats?.utilizationRate ?? 0)
+                BudgetUtilizationBar(rate: stats?.utilizationRate ?? 0, showsLabel: false)
+                    .padding(.leading, IconTileMetrics.size + DS.Space.m)
                     .redactedWhileLoading(stats == nil)
             }
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, DS.Space.xxs)
         .opacity(budget.isArchived ? 0.6 : 1)
     }
 
-    @ViewBuilder private var statusLabel: some View {
-        if budget.isArchived {
-            Label("Archived", systemImage: "archivebox")
-                .font(.caption.weight(.medium))
-                .foregroundStyle(.secondary)
-        } else if let timeStatus {
-            timeStatus.text
-                .font(.caption.weight(.medium))
-                .foregroundStyle(timeStatus.tint)
-        } else {
-            Text("No time period")
-                .font(.caption.weight(.medium))
-                .foregroundStyle(.tertiary)
-        }
-    }
-
-    @ViewBuilder private var subtitle: some View {
-        let count = budget.categories.count
+    @ViewBuilder private var trailing: some View {
+        let spentText = MoneyFormat.string(spent, currencyCode: currencyCode)
         if let limit = budget.limitAmount {
-            if budget.type == .category, count > 0 {
-                Text("Limit \(MoneyFormat.string(limit, currencyCode: currencyCode)) · \(count) categories")
-                    .monospacedDigit()
-            } else {
-                Text("Limit \(MoneyFormat.string(limit, currencyCode: currencyCode))")
-                    .monospacedDigit()
-            }
-        } else if budget.type == .category, count > 0 {
-            Text("\(count) categories")
+            let remaining = BudgetFormatting.remaining(spent: spent, limit: limit, currencyCode: currencyCode)
+            EntityRowValue(spentText, detail: remaining.text, detailColor: remaining.color)
         } else {
-            BudgetFormatting.typeLabel(budget.type)
+            EntityRowValue(spentText, detail: String(localized: "No limit"))
         }
     }
 
-    private var categoryChips: some View {
-        HStack(spacing: 6) {
-            ForEach(budget.categories.prefix(3)) { category in
-                let color = Color(hex: category.color) ?? .secondary
-                Text(category.name)
-                    .font(.caption)
-                    .lineLimit(1)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 3)
-                    .foregroundStyle(color)
-                    .background(color.opacity(0.15), in: .capsule)
-            }
-            if budget.categories.count > 3 {
-                Text("+\(budget.categories.count - 3)")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 3)
-                    .background(.quaternary, in: .capsule)
-            }
+    private var subtitle: String {
+        var parts: [String] = []
+        if budget.isArchived {
+            parts.append(String(localized: "Archived"))
+        } else if let timeStatus {
+            parts.append(timeStatus.label)
         }
+        let count = budget.categories.count
+        if budget.type == .category, count > 0 {
+            parts.append(String(localized: "\(count) categories"))
+        } else if budget.type == .category {
+            parts.append(String(localized: "Category budget"))
+        } else {
+            parts.append(String(localized: "Manual budget"))
+        }
+        return parts.joined(separator: " · ")
     }
 }

@@ -33,6 +33,7 @@ struct TransactionListView<Header: View>: View {
                 }
             }
         }
+        .listStyle(.insetGrouped)
         .refreshable {
             await model.reload(using: services.transactions)
         }
@@ -192,10 +193,11 @@ struct TransactionListView<Header: View>: View {
                     digits: referenceData.digits(for: total.currencyCode),
                     showsPlusSign: true
                 )
-                .font(.footnote)
                 .foregroundStyle(.secondary)
             }
         }
+        .font(.subheadline)
+        .textCase(nil)
     }
 
     /// The day's net in one currency: the account's own on account detail, else the base

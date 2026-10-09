@@ -38,9 +38,9 @@ struct ServerView: View {
                     Button {
                         Task { await connect() }
                     } label: {
-                        ProgressButtonLabel(title: "Connect", isWorking: isConnecting)
+                        ProgressButtonLabel(title: "Connect", isWorking: isConnecting, spinnerTint: DS.Palette.onAccent)
                     }
-                    .buttonStyle(.glassProminent)
+                    .dsGlassProminentButton()
                     .controlSize(.large)
                     .disabled(isConnecting || address.trimmingCharacters(in: .whitespaces).isEmpty)
                 }

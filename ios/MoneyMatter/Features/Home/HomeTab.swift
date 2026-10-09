@@ -12,17 +12,8 @@ struct HomeTab: View {
         NavigationStack(path: $router.homePath) {
             HomeScreen(model: HomeViewModel(services: services), dashboard: HomeDashboardModel(client: services.client))
                 .navigationTitle("Home")
-                .toolbar {
-                    ToolbarItem(placement: .topBarTrailing) {
-                        Button("Notifications", systemImage: "bell") {
-                            router.homePath.append(.notifications)
-                        }
-                        .notificationsUnreadBadge()
-                    }
-                    ToolbarItem(placement: .topBarTrailing) {
-                        ProfileButton()
-                    }
-                }
+                // No bar: net worth leads the screen, with the glass buttons beside it.
+                .toolbar(.hidden, for: .navigationBar)
                 .navigationDestination(for: HomeRoute.self) { route in
                     switch route {
                     case .transaction(let id):
@@ -47,6 +38,9 @@ private struct HomeScreen: View {
     @Environment(AppRouter.self) private var router
     @Environment(SessionStore.self) private var session
     @Environment(ReferenceDataStore.self) private var referenceData
+    @Environment(AppServices.self) private var services
+    @Environment(\.scenePhase) private var scenePhase
+    @State private var unread = NotificationsUnreadCounter.shared
 
     init(model: HomeViewModel, dashboard: HomeDashboardModel) {
         _model = State(initialValue: model)
@@ -60,6 +54,19 @@ private struct HomeScreen: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 16) {
+                header
+
+                BalanceTrendCard(
+                    state: model.balance,
+                    range: model.balanceRange,
+                    updatedAt: model.balanceUpdatedAt,
+                    currencyCode: currencyCode,
+                    digits: digits,
+                    setRange: { range in Task { await model.setBalanceRange(range) } },
+                    retry: { await model.loadBalance() }
+                )
+                .padding(.bottom, DS.Space.s)
+
                 HomeReviewCard(state: model.reviewSummary) {
                     await model.loadReviewSummary()
                 }
@@ -80,7 +87,7 @@ private struct HomeScreen: View {
                         Text("Choose what Home shows.")
                     } actions: {
                         Button("Edit Home") { isEditing = true }
-                            .buttonStyle(.borderedProminent)
+                            .dsProminentButton()
                     }
                 }
 
@@ -90,21 +97,18 @@ private struct HomeScreen: View {
                     }
                 }
 
-                Button("Edit Home", systemImage: "slider.horizontal.3") { isEditing = true }
-                    .buttonStyle(.bordered)
-                    .padding(.top, 4)
+                InlineActionRow(String(localized: "Edit Home"), systemImage: "slider.horizontal.3") { isEditing = true }
+                    .padding(.vertical, DS.Space.m)
+                    .padding(.horizontal, DS.Space.l)
+                    .background(DS.Surface.panel, in: .rect(cornerRadius: DS.Radius.control, style: .continuous))
+                    .padding(.top, DS.Space.xs)
             }
             .padding(.horizontal)
             .padding(.bottom, 24)
             .animation(.default, value: model.reviewSummary.value)
             .animation(.default, value: widgets.map(\.widgetId))
         }
-        .background(Color(.systemGroupedBackground))
-        .toolbar {
-            ToolbarItem(placement: .topBarLeading) {
-                Button("Edit Home", systemImage: "slider.horizontal.3") { isEditing = true }
-            }
-        }
+        .background(DS.Surface.canvas)
         .sheet(isPresented: $isEditing) {
             HomeEditSheet(initialWidgets: widgets) { updated in
                 try await dashboard.saveLayout(updated)
@@ -137,6 +141,39 @@ private struct HomeScreen: View {
         }
     }
 
+    /// "Net worth" with the notifications and profile glass buttons at the top right.
+    private var header: some View {
+        HStack(spacing: DS.Space.m) {
+            Text("Net worth")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .accessibilityAddTraits(.isHeader)
+            Spacer(minLength: 0)
+            GlassCircleButton(
+                systemImage: "bell",
+                badge: unread.count,
+                accessibilityLabel: String(localized: "Notifications")
+            ) {
+                router.homePath.append(.notifications)
+            }
+            GlassCircleButton(accessibilityLabel: String(localized: "Profile and Settings")) {
+                router.presentSettings()
+            } label: {
+                Text(verbatim: session.user?.initials ?? "?")
+                    .font(.subheadline.weight(.semibold))
+            }
+        }
+        .padding(.top, DS.Space.xs)
+        .task(id: scenePhase) {
+            // Keeps the shared unread count fresh while Home is on screen.
+            guard scenePhase == .active else { return }
+            while !Task.isCancelled {
+                await unread.refresh(client: services.client)
+                try? await Task.sleep(for: .seconds(60))
+            }
+        }
+    }
+
     private func loadDashboardIfNeeded() async {
         guard dashboard.settings.value == nil else { return }
         await refreshDashboard()
@@ -161,9 +198,8 @@ private struct HomeScreen: View {
     private func card(_ kind: DashboardWidgetKind, config: DashboardWidgetConfig) -> some View {
         switch kind {
         case .balanceTrend:
-            BalanceTrendCard(state: model.balance, currencyCode: currencyCode, digits: digits) {
-                await model.loadBalance()
-            }
+            // The net worth hero at the top of Home draws the balance trend.
+            EmptyView()
         case .spendingCategories:
             SpendingCard(state: model.spending, currencyCode: currencyCode, digits: digits) {
                 await model.loadSpending()

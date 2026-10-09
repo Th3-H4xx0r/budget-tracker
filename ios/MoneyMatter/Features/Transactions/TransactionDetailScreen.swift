@@ -30,17 +30,21 @@ struct TransactionDetailScreen: View {
         state.value ?? initial
     }
 
+    /// The entity name for the inline title: payee, else category, else the kind.
+    private var screenTitle: String {
+        guard let transaction else { return String(localized: "Transaction") }
+        if let payee = referenceData.payee(id: transaction.payeeId) { return payee.name }
+        if let category = referenceData.category(id: transaction.categoryId) { return category.name }
+        return transaction.isTransfer ? String(localized: "Transfer") : String(localized: "Transaction")
+    }
+
     var body: some View {
         content
-            .navigationTitle("Transaction")
+            .navigationTitle(screenTitle)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 if let transaction {
-                    ToolbarItemGroup(placement: .topBarTrailing) {
-                        Button("Delete", systemImage: "trash") {
-                            isConfirmingDelete = true
-                        }
-                        .disabled(isDeleting)
+                    ToolbarItem(placement: .topBarTrailing) {
                         Button("Edit") {
                             editing = transaction
                         }
@@ -83,8 +87,20 @@ struct TransactionDetailScreen: View {
         } else {
             switch state {
             case .idle, .loading:
-                ProgressView()
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                List {
+                    Section {
+                        HeroValueHeader("$000.00", status: "Placeholder date")
+                            .padding(.vertical, 6)
+                    }
+                    Section {
+                        StatGrid(columns: 2) {
+                            StatCell(label: "Account", value: "Placeholder")
+                            StatCell(label: "Category", value: "Placeholder")
+                        }
+                    }
+                }
+                .listStyle(.insetGrouped)
+                .redactedWhileLoading(true)
             case .failed(let error):
                 LoadFailedView(error: error) { await load() }
             case .loaded:
@@ -103,68 +119,47 @@ struct TransactionDetailScreen: View {
         let payee = referenceData.payee(id: transaction.payeeId)
         let tags = transaction.tags ?? initial?.tags ?? []
         return List {
-            Section {
-                VStack(spacing: 10) {
-                    CategoryIcon(category: category, isTransfer: transaction.isTransfer, size: 56)
-                    AmountText(transaction: transaction, digits: referenceData.digits(for: transaction.currencyCode))
-                        .font(.system(.largeTitle, design: .rounded, weight: .bold))
-                    Text(payee?.name ?? category?.name ?? (transaction.isTransfer ? String(localized: "Transfer") : String(localized: "Transaction")))
-                        .font(.headline)
-                        .multilineTextAlignment(.center)
-                    if transaction.isFraud {
-                        FraudBadge()
-                    }
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 8)
-            }
-            .listRowBackground(Color.clear)
+            heroSection(transaction, category: category)
 
-            Section {
-                LabeledContent("Account", value: account?.name ?? "—")
-                if transaction.isTransfer {
-                    LabeledContent("Type", value: transferTitle(transaction.transferNature))
-                } else {
-                    LabeledContent("Category") {
-                        HStack(spacing: 8) {
-                            CategoryIcon(category: category, size: 22)
-                            Text(category?.name ?? "—")
-                        }
+            Section("Details") {
+                StatGrid(columns: 2) {
+                    StatCell(label: String(localized: "Account"), value: account?.name ?? "—")
+                    if transaction.isTransfer {
+                        StatCell(label: String(localized: "Type"), value: transferTitle(transaction.transferNature))
+                    } else {
+                        StatCell(label: String(localized: "Category"), value: category?.name ?? "—")
+                    }
+                    StatCell(
+                        label: String(localized: "Date"),
+                        value: transaction.time.formatted(date: .abbreviated, time: .omitted),
+                        footnote: transaction.time.formatted(date: .omitted, time: .shortened)
+                    )
+                    StatCell(label: String(localized: "Payee"), value: payee?.name ?? "—")
+                    if !transaction.isTransfer, transaction.paymentType != .unknown {
+                        StatCell(label: String(localized: "Payment type"), value: TransactionPaymentTypeLabel.title(transaction.paymentType))
+                    }
+                    if let original = transaction.originalAmount, let code = transaction.originalCurrencyCode {
+                        StatCell(
+                            label: String(localized: "Original amount"),
+                            value: MoneyFormat.string(original, currencyCode: code, digits: referenceData.digits(for: code))
+                        )
+                    }
+                    if let refCode = transaction.refCurrencyCode, refCode != transaction.currencyCode {
+                        StatCell(
+                            label: String(localized: "In \(refCode)"),
+                            value: MoneyFormat.string(transaction.signedRefAmount, currencyCode: refCode, digits: referenceData.digits(for: refCode))
+                        )
                     }
                 }
-                LabeledContent("Date", value: transaction.time.formatted(date: .long, time: .shortened))
-                if let payee {
-                    LabeledContent("Payee", value: payee.name)
-                }
+                .padding(.vertical, DS.Space.xs)
                 if !tags.isEmpty {
                     LabeledContent("Tags", value: tags.map(\.name).formatted(.list(type: .and)))
-                }
-                if !transaction.isTransfer, transaction.paymentType != .unknown {
-                    LabeledContent("Payment Type", value: TransactionPaymentTypeLabel.title(transaction.paymentType))
-                }
-                if transaction.isPlanned {
-                    LabeledContent("Status") {
-                        Label("Planned", systemImage: "calendar.badge.clock")
-                            .foregroundStyle(.orange)
-                    }
-                }
-                if let original = transaction.originalAmount, let code = transaction.originalCurrencyCode {
-                    LabeledContent("Original Amount") {
-                        AmountText(original, currencyCode: code, digits: referenceData.digits(for: code))
-                    }
-                }
-                if let refCode = transaction.refCurrencyCode, refCode != transaction.currencyCode {
-                    LabeledContent("In \(refCode)") {
-                        AmountText(transaction.signedRefAmount, currencyCode: refCode, digits: referenceData.digits(for: refCode))
-                    }
                 }
             }
 
             if let splits = transaction.splits, !splits.isEmpty {
                 splitsSection(transaction, splits: splits)
             }
-
-            reviewSection(transaction)
 
             if let note = transaction.note, !note.isEmpty {
                 Section("Note") {
@@ -173,6 +168,10 @@ struct TransactionDetailScreen: View {
                 }
             }
 
+            TransactionLinksSection(transaction: transaction, canEdit: transaction.canEdit ?? true)
+
+            TransactionAttachmentsSection(transactionId: transaction.id, canEdit: transaction.canEdit ?? true)
+
             if let location = transaction.location {
                 Section("Location") {
                     TransactionLocationPreview(location: location)
@@ -180,11 +179,51 @@ struct TransactionDetailScreen: View {
                 }
             }
 
-            TransactionLinksSection(transaction: transaction, canEdit: transaction.canEdit ?? true)
+            reviewSection(transaction)
 
-            TransactionAttachmentsSection(transactionId: transaction.id, canEdit: transaction.canEdit ?? true)
+            Section {
+                InlineActionRow(String(localized: "Edit transaction"), systemImage: "pencil") {
+                    editing = transaction
+                }
+                InlineActionRow(String(localized: "Delete transaction"), systemImage: "trash", role: .destructive) {
+                    isConfirmingDelete = true
+                }
+                .disabled(isDeleting)
+            }
         }
+        .listStyle(.insetGrouped)
         .refreshable { await load() }
+    }
+
+    /// The signed amount at hero size (income green, expense primary with a minus), with the
+    /// date and any planned or fraud badge as its status line.
+    private func heroSection(_ transaction: Transaction, category: Category?) -> some View {
+        let style = AmountStyle(transaction)
+        let digits = referenceData.digits(for: transaction.currencyCode)
+        let shown: Decimal = switch style {
+        case .expense: -abs(transaction.signedAmount)
+        case .income: abs(transaction.signedAmount)
+        case .transfer, .neutral: transaction.signedAmount
+        }
+        return Section {
+            VStack(alignment: .leading, spacing: DS.Space.m) {
+                CategoryIconTile(category: category, isTransfer: transaction.isTransfer, size: 44)
+                HeroValueHeader(MoneyFormat.string(shown, currencyCode: transaction.currencyCode, digits: digits)) {
+                    HStack(spacing: DS.Space.s) {
+                        Text(transaction.time.formatted(date: .long, time: .shortened))
+                            .monospacedDigit()
+                        if transaction.isPlanned {
+                            StatusBadge(label: String(localized: "Planned"), color: DS.Palette.warning)
+                        }
+                        if transaction.isFraud {
+                            FraudBadge()
+                        }
+                    }
+                }
+                .foregroundStyle(style.color)
+            }
+            .padding(.vertical, 6)
+        }
     }
 
     private func splitsSection(_ transaction: Transaction, splits: [TransactionSplit]) -> some View {
@@ -193,18 +232,10 @@ struct TransactionDetailScreen: View {
         return Section("Splits") {
             ForEach(splits) { split in
                 let category = referenceData.category(id: split.categoryId)
-                HStack(spacing: 10) {
-                    CategoryIcon(category: category, size: 24)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(category?.name ?? "—")
-                        if let note = split.note, !note.isEmpty {
-                            Text(note)
-                                .font(.footnote)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                    Spacer()
-                    AmountText(split.amount, currencyCode: transaction.currencyCode, digits: digits)
+                EntityRow(category?.name ?? "—", subtitle: split.note) {
+                    CategoryIconTile(category: category)
+                } trailing: {
+                    EntityRowValue(MoneyFormat.string(split.amount, currencyCode: transaction.currencyCode, digits: digits))
                 }
             }
             LabeledContent("On \(referenceData.category(id: transaction.categoryId)?.name ?? String(localized: "main category"))") {
@@ -227,11 +258,14 @@ struct TransactionDetailScreen: View {
         let status = reviewStatusOverride ?? transaction.reviewStatus
         return Section("Review") {
             LabeledContent("Status") {
-                Text(reviewTitle(status))
-                    .foregroundStyle(status == .fraud ? .red : .secondary)
+                StatusBadge(label: reviewTitle(status), color: reviewColor(status))
             }
             ForEach(reviewActions(for: status), id: \.action) { item in
-                Button(item.title, role: item.action == .fraud ? .destructive : nil) {
+                InlineActionRow(
+                    item.title,
+                    systemImage: reviewSymbol(item.action),
+                    role: item.action == .fraud ? .destructive : nil
+                ) {
                     Task { await updateReview(transaction, action: item.action) }
                 }
                 .disabled(isUpdatingReview)
@@ -239,12 +273,29 @@ struct TransactionDetailScreen: View {
         }
     }
 
-    private func reviewActions(for status: ReviewStatus) -> [(title: LocalizedStringKey, action: ReviewAction)] {
+    private func reviewColor(_ status: ReviewStatus) -> Color {
         switch status {
-        case .unreviewed: [("Looks Good", .reviewed), ("Fraud", .fraud)]
-        case .reviewed: [("Mark as Fraud", .fraud), ("Move to Unreviewed", .unreviewed)]
-        case .fraud: [("Not Fraud", .reviewed), ("Move to Unreviewed", .unreviewed)]
-        case .notRequired, .unknown: [("Mark as Fraud", .fraud)]
+        case .unreviewed: DS.Palette.warning
+        case .reviewed: DS.Palette.success
+        case .fraud: DS.Palette.danger
+        case .notRequired, .unknown: .gray
+        }
+    }
+
+    private func reviewSymbol(_ action: ReviewAction) -> String {
+        switch action {
+        case .reviewed: "checkmark.shield"
+        case .fraud: "exclamationmark.shield"
+        case .unreviewed, .checkLater: "arrow.uturn.backward"
+        }
+    }
+
+    private func reviewActions(for status: ReviewStatus) -> [(title: String, action: ReviewAction)] {
+        switch status {
+        case .unreviewed: [(String(localized: "Looks good"), .reviewed), (String(localized: "Fraud"), .fraud)]
+        case .reviewed: [(String(localized: "Mark as fraud"), .fraud), (String(localized: "Move to unreviewed"), .unreviewed)]
+        case .fraud: [(String(localized: "Not fraud"), .reviewed), (String(localized: "Move to unreviewed"), .unreviewed)]
+        case .notRequired, .unknown: [(String(localized: "Mark as fraud"), .fraud)]
         }
     }
 
