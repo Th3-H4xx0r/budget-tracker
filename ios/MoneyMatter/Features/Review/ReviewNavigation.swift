@@ -11,7 +11,8 @@ extension Notification.Name {
 /// Entry points into the review feature, usable from any tab.
 extension AppRouter {
     /// Pushes the review page on the selected tab's stack. Accounts has no review route, so
-    /// it switches to Transactions first.
+    /// it switches to Transactions first. Planning and Insights register
+    /// `TransactionsRoute` destinations, so they push it in place.
     func openReviewPage(_ status: ReviewListStatus = .unreviewed) {
         switch selectedTab {
         case .home:
@@ -21,6 +22,10 @@ extension AppRouter {
         case .accounts:
             selectedTab = .transactions
             transactionsPath.append(.reviewPage(status))
+        case .planning:
+            planningPath.append(TransactionsRoute.reviewPage(status))
+        case .insights:
+            insightsPath.append(TransactionsRoute.reviewPage(status))
         }
     }
 
@@ -30,6 +35,8 @@ extension AppRouter {
         case .home: homePath.append(.transaction(id: id))
         case .accounts: accountsPath.append(.transaction(id: id))
         case .transactions: transactionsPath.append(.transaction(id: id))
+        case .planning: planningPath.append(TransactionsRoute.transaction(id: id))
+        case .insights: insightsPath.append(TransactionsRoute.transaction(id: id))
         }
     }
 }

@@ -609,7 +609,7 @@ describe('Statement Parser - Execute Import endpoint', () => {
         {
           date: '2024-01-15 10:30:00',
           description: 'Grocery shopping',
-          amount: 10050, // Statement parser expects cents
+          amount: 100.5, // Extracted amounts are decimals, same as the web store sends
           type: 'expense',
         },
       ];
@@ -632,14 +632,88 @@ describe('Statement Parser - Execute Import endpoint', () => {
       // extractedTransaction should preserve the input
       expect(duplicate.extractedTransaction.date).toBe('2024-01-15 10:30:00');
       expect(duplicate.extractedTransaction.description).toBe('Grocery shopping');
-      expect(duplicate.extractedTransaction.amount).toBe(10050);
+      expect(duplicate.extractedTransaction.amount).toBe(100.5);
       expect(duplicate.extractedTransaction.type).toBe('expense');
 
       // existingTransaction should have DB transaction data
       expect(typeof duplicate.existingTransaction.id).toBe('string');
       expect(duplicate.existingTransaction.date).toBe('2024-01-15');
-      expect(duplicate.existingTransaction.amount).toBe(10050);
+      expect(duplicate.existingTransaction.amount).toBe(100.5);
       expect(duplicate.existingTransaction.note).toBe('Existing note');
+    });
+
+    it('matches an extracted decimal amount against an existing transaction of the same amount', async () => {
+      const account = await helpers.createAccount({ raw: true });
+
+      await helpers.createTransaction({
+        payload: helpers.buildTransactionPayload({
+          accountId: account.id,
+          amount: 100.5,
+          transactionType: TRANSACTION_TYPES.expense,
+          time: new Date('2024-01-15').toISOString(),
+        }),
+        raw: true,
+      });
+
+      const result = await helpers.statementDetectDuplicates({
+        payload: {
+          accountId: account.id,
+          transactions: [
+            {
+              date: '2024-01-15 10:30:00',
+              description: 'Grocery shopping',
+              amount: 100.5,
+              type: 'expense',
+            },
+          ],
+        },
+        raw: true,
+      });
+
+      expect(result.duplicates).toHaveLength(1);
+      expect(result.duplicates[0]!.transactionIndex).toBe(0);
+      expect(result.duplicates[0]!.extractedTransaction.amount).toBe(100.5);
+    });
+
+    it('does not match an extracted decimal amount one cent off the existing transaction', async () => {
+      const account = await helpers.createAccount({ raw: true });
+
+      await helpers.createTransaction({
+        payload: helpers.buildTransactionPayload({
+          accountId: account.id,
+          amount: 100.5,
+          transactionType: TRANSACTION_TYPES.expense,
+          time: new Date('2024-01-15').toISOString(),
+        }),
+        raw: true,
+      });
+
+      // The 100.5 row anchors the assertion: the endpoint is matching decimals,
+      // and the 100.49 row alone is left out.
+      const result = await helpers.statementDetectDuplicates({
+        payload: {
+          accountId: account.id,
+          transactions: [
+            {
+              date: '2024-01-15 10:30:00',
+              description: 'One cent short',
+              amount: 100.49,
+              type: 'expense',
+            },
+            {
+              date: '2024-01-15 10:30:00',
+              description: 'Exact amount',
+              amount: 100.5,
+              type: 'expense',
+            },
+          ],
+        },
+        raw: true,
+      });
+
+      expect(result.duplicates).toHaveLength(1);
+      expect(result.duplicates[0]!.transactionIndex).toBe(1);
+      expect(result.duplicates.some((d) => d.transactionIndex === 0)).toBe(false);
     });
 
     it('rejects a negative amount and an unknown transaction type', async () => {

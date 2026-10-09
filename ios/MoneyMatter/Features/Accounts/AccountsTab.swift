@@ -1,8 +1,8 @@
 import MoneyMatterKit
 import SwiftUI
 
-/// Root of the Accounts tab: net worth, accounts by root group, other accounts, and a
-/// collapsed Archived section.
+/// Root of the Accounts tab: net worth, accounts by root group, other accounts, a collapsed
+/// Archived section, then the Assets and Bank Connections entry points.
 struct AccountsTab: View {
     private struct GroupSection: Identifiable {
         let id: String
@@ -24,9 +24,16 @@ struct AccountsTab: View {
         NavigationStack(path: $router.accountsPath) {
             List {
                 content
+                assetsSection
+                connectionsSection
             }
             .navigationTitle("Accounts")
             .toolbar {
+                if referenceData.accounts.contains(where: { $0.bankDataProviderConnectionId != nil }) {
+                    ToolbarItem(placement: .topBarLeading) {
+                        BankSyncToolbarMenu()
+                    }
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Add Account", systemImage: "plus") {
                         isCreatePresented = true
@@ -53,6 +60,16 @@ struct AccountsTab: View {
                     AccountDetailScreen(accountID: id)
                 case .transaction(let id):
                     TransactionDetailScreen(transactionID: id)
+                case .loans:
+                    LoansScreen()
+                case .investments:
+                    PortfoliosScreen()
+                case .venture:
+                    VentureScreen()
+                case .vehicles:
+                    VehiclesScreen()
+                case .bankConnections:
+                    BankConnectionsScreen()
                 }
             }
         }
@@ -112,6 +129,31 @@ struct AccountsTab: View {
                         Text("Archived (\(archivedAccounts.count))")
                     }
                 }
+            }
+        }
+    }
+
+    private var assetsSection: some View {
+        Section("Assets") {
+            NavigationLink(value: AccountsRoute.loans) {
+                Label("Loans", systemImage: "banknote")
+            }
+            NavigationLink(value: AccountsRoute.investments) {
+                Label("Investments", systemImage: "chart.line.uptrend.xyaxis")
+            }
+            NavigationLink(value: AccountsRoute.venture) {
+                Label("Venture", systemImage: "briefcase")
+            }
+            NavigationLink(value: AccountsRoute.vehicles) {
+                Label("Vehicles", systemImage: "car")
+            }
+        }
+    }
+
+    private var connectionsSection: some View {
+        Section {
+            NavigationLink(value: AccountsRoute.bankConnections) {
+                Label("Bank Connections", systemImage: "building.columns")
             }
         }
     }

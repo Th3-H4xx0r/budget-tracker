@@ -10,6 +10,12 @@ struct TransactionEditorSheet: View {
     @State private var errorAlert: ErrorAlert?
     @State private var isConfirmingDelete = false
     @State private var isDeleting = false
+    @State private var isPickingTemplate = false
+    @State private var isManagingTemplates = false
+    @State private var isNamingTemplate = false
+    @State private var templateName = ""
+    @State private var savedTemplateName: String?
+    @State private var isAttachmentUploadFailed = false
     @FocusState private var isAmountFocused: Bool
 
     init(mode: TransactionEditorModel.Mode) {
@@ -57,6 +63,10 @@ struct TransactionEditorSheet: View {
                     }
                 }
 
+                if model.showsSplits {
+                    TransactionSplitsSection(model: model, currencyCode: model.currencyCode(in: referenceData))
+                }
+
                 Section {
                     DatePicker("Date", selection: $model.time, displayedComponents: [.date, .hourAndMinute])
                 }
@@ -82,6 +92,14 @@ struct TransactionEditorSheet: View {
                         .lineLimit(1...6)
                 }
 
+                TransactionDetailsFieldsSection(model: model)
+
+                if let transaction = model.editedTransaction {
+                    TransactionAttachmentsSection(transactionId: transaction.id, canEdit: transaction.canEdit ?? true)
+                } else {
+                    TransactionPendingAttachmentsSection(model: model)
+                }
+
                 if let message = model.validationMessage {
                     Section {
                         Label(message, systemImage: "exclamationmark.circle")
@@ -104,6 +122,9 @@ struct TransactionEditorSheet: View {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
                 }
+                ToolbarItem(placement: .topBarTrailing) {
+                    templatesMenu
+                }
                 ToolbarItem(placement: .confirmationAction) {
                     if model.isSaving {
                         ProgressView()
@@ -122,6 +143,35 @@ struct TransactionEditorSheet: View {
                     errorAlert = ErrorAlert(error)
                 }
                 if !model.isEditing { isAmountFocused = true }
+                await model.loadDetails(client: services.client)
+            }
+            .navigationDestination(isPresented: $isPickingTemplate) {
+                TransactionTemplatePickerScreen { template in
+                    withAnimation { model.apply(template) }
+                }
+            }
+            .navigationDestination(isPresented: $isManagingTemplates) {
+                TransactionTemplatesScreen()
+            }
+            .alert("Save as Template", isPresented: $isNamingTemplate) {
+                TextField("Template name", text: $templateName)
+                Button("Save") { Task { await saveTemplate() } }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("The type, amount, account, category, payee, payment type, note, and tags are saved.")
+            }
+            .alert("Transaction Saved", isPresented: $isAttachmentUploadFailed) {
+                Button("OK") { dismiss() }
+            } message: {
+                Text("Some attachments couldn't be uploaded. Add them again from the transaction's details.")
+            }
+            .alert(
+                "Template Saved",
+                isPresented: Binding(get: { savedTemplateName != nil }, set: { if !$0 { savedTemplateName = nil } })
+            ) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(verbatim: savedTemplateName ?? "")
             }
             .confirmationDialog("Delete this transaction?", isPresented: $isConfirmingDelete, titleVisibility: .visible) {
                 Button("Delete Transaction", role: .destructive) {
@@ -134,6 +184,32 @@ struct TransactionEditorSheet: View {
             }
             .errorAlert($errorAlert)
             .interactiveDismissDisabled(model.isSaving || isDeleting)
+        }
+    }
+
+    private var templatesMenu: some View {
+        Menu("Templates", systemImage: "doc.on.doc") {
+            if !model.isEditing {
+                Button("Apply Template", systemImage: "square.and.arrow.down") { isPickingTemplate = true }
+            }
+            if model.kind != .transfer, !model.keepsTransferNature {
+                Button("Save as Template", systemImage: "square.and.arrow.up") {
+                    templateName = ""
+                    isNamingTemplate = true
+                }
+            }
+            Button("Manage Templates", systemImage: "list.bullet") { isManagingTemplates = true }
+        }
+    }
+
+    private func saveTemplate() async {
+        let name = templateName.trimmingCharacters(in: .whitespaces)
+        guard !name.isEmpty, let client = services.client else { return }
+        do {
+            let template = try await client.send(Endpoints.createTransactionTemplate(model.templateRequest(name: String(name.prefix(100)))))
+            savedTemplateName = template.name
+        } catch {
+            errorAlert = ErrorAlert(error)
         }
     }
 
@@ -195,7 +271,8 @@ struct TransactionEditorSheet: View {
 
     /// Active system accounts, plus the edited row's own account so the picker can show it.
     private var selectableAccounts: [Account] {
-        var accounts = referenceData.activeAccounts.filter(\.isSystem)
+        // Plans may sit on bank-connected accounts; real rows there come from the sync.
+        var accounts = referenceData.activeAccounts.filter { $0.isSystem || (model.isPlanned && model.kind != .transfer) }
         for id in [model.editedTransaction?.accountId, model.destinationAccountId].compactMap(\.self)
         where !accounts.contains(where: { $0.id == id }) {
             if let account = referenceData.account(id: id) { accounts.append(account) }
@@ -216,8 +293,13 @@ struct TransactionEditorSheet: View {
         }
         model.validationMessage = nil
         do {
-            let rows = try await model.save(referenceData: referenceData, service: services.transactions)
+            let rows = try await model.save(referenceData: referenceData, service: services.transactions, client: services.client)
+            let uploaded = await uploadPendingAttachments(to: rows)
             TransactionChangeFeed.shared.publish(model.changesTransferShape ? .invalidated : .saved(rows))
+            guard uploaded else {
+                isAttachmentUploadFailed = true
+                return
+            }
             dismiss()
             await referenceData.refreshAccounts()
         } catch {
@@ -228,6 +310,25 @@ struct TransactionEditorSheet: View {
                 errorAlert = ErrorAlert(error)
             }
         }
+    }
+
+    /// Uploads files picked before the transaction existed. A failed upload is reported, but
+    /// the transaction itself is already saved.
+    private func uploadPendingAttachments(to rows: [Transaction]) async -> Bool {
+        guard !model.pendingAttachments.isEmpty, let client = services.client,
+              let target = rows.first(where: { $0.accountId == model.accountId }) ?? rows.first else { return true }
+        var allUploaded = true
+        for file in model.pendingAttachments {
+            do {
+                _ = try await client.uploadTransactionAttachment(
+                    TransactionAttachmentUpload(transactionId: target.id, filename: file.filename, data: file.data)
+                )
+            } catch {
+                allUploaded = false
+            }
+        }
+        model.pendingAttachments = []
+        return allUploaded
     }
 
     private func delete() async {

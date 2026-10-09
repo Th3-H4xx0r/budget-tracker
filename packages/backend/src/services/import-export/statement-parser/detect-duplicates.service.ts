@@ -1,5 +1,6 @@
 import type { ExtractedTransaction, StatementDuplicateMatch } from '@bt/shared/types';
 import { asCents } from '@bt/shared/types';
+import { Money } from '@common/types/money';
 import {
   type TransactionToCheck,
   detectDuplicates as genericDetectDuplicates,
@@ -14,23 +15,20 @@ interface DetectDuplicatesParams {
 /**
  * Detect duplicate transactions for statement import.
  *
- * This is a wrapper around the generic detectDuplicates service
- * that handles the ExtractedTransaction -> TransactionToCheck mapping
- * and returns StatementDuplicateMatch format.
+ * This is a wrapper around the generic detectDuplicates service, which compares
+ * amounts in cents. Extracted amounts arrive as decimals, so they are converted
+ * to cents for matching, while the response echoes each extracted transaction
+ * exactly as sent and reports the existing transaction's amount as a decimal.
  */
 export async function detectDuplicates({
   userId,
   accountId,
   transactions,
 }: DetectDuplicatesParams): Promise<StatementDuplicateMatch[]> {
-  // Map ExtractedTransaction to the generic TransactionToCheck format
-  // We need to preserve the original transaction for the response
-  type ExtractedWithBase = ExtractedTransaction & TransactionToCheck;
-
-  const transactionsToCheck: ExtractedWithBase[] = transactions.map((tx) => ({
-    ...tx,
-    // ExtractedTransaction.amount is unbranded; cast to Cents for duplicate detection
-    amount: asCents(tx.amount),
+  const transactionsToCheck: TransactionToCheck[] = transactions.map((tx) => ({
+    date: tx.date,
+    amount: asCents(Money.fromDecimal(tx.amount).toCents()),
+    type: tx.type,
   }));
 
   const duplicates = await genericDetectDuplicates({
@@ -39,10 +37,12 @@ export async function detectDuplicates({
     transactions: transactionsToCheck,
   });
 
-  // Map back to StatementDuplicateMatch format
   return duplicates.map((d) => ({
     transactionIndex: d.index,
-    extractedTransaction: d.incoming,
-    existingTransaction: d.existing,
+    extractedTransaction: transactions[d.index]!,
+    existingTransaction: {
+      ...d.existing,
+      amount: Money.fromCents(d.existing.amount).toNumber(),
+    },
   }));
 }

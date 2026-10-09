@@ -1,0 +1,1 @@
+// Assets endpoints and models.

@@ -105,6 +105,9 @@ final class TransactionListModel {
     private(set) var searchText = ""
 
     private(set) var transactions: [Transaction] = []
+    /// Pending plans (`isPlanned`), soonest first, shown above the list on the unscoped,
+    /// unfiltered list.
+    private(set) var planned: [Transaction] = []
     private(set) var isLoading = false
     private(set) var isLoadingMore = false
     private(set) var hasMore = false
@@ -129,10 +132,19 @@ final class TransactionListModel {
         !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
+    static let plannedLimit = 20
+
+    /// Plans get their own section on the main list, without filters or search.
+    var showsPlannedSection: Bool {
+        scopeAccountIds.isEmpty && filter.activeCount == 0 && !isSearching
+    }
+
     var days: [TransactionDay] {
         let calendar = Calendar.current
         var result: [TransactionDay] = []
-        for transaction in transactions {
+        // Rows in the Planned section aren't repeated below, so every row id is unique.
+        let plannedIds = showsPlannedSection ? Set(planned.map(\.id)) : []
+        for transaction in transactions where !plannedIds.contains(transaction.id) {
             let day = calendar.startOfDay(for: transaction.time)
             if result.last?.id == day {
                 result[result.count - 1].transactions.append(transaction)
@@ -180,7 +192,9 @@ final class TransactionListModel {
         }
         do {
             let page = try await service.transactions(makeQuery(offset: 0))
+            let plans = await loadPlanned(using: service)
             guard current == generation else { return }
+            planned = plans
             transactions = page
             serverOffset = page.count
             hasMore = page.count >= Self.pageSize
@@ -192,6 +206,18 @@ final class TransactionListModel {
             guard current == generation, !apiError.isCancellation else { return }
             self.error = apiError
         }
+    }
+
+    /// Plans for the Planned section; empty when the section is hidden or the request fails,
+    /// since the main list still shows every plan.
+    private func loadPlanned(using service: any TransactionsServicing) async -> [Transaction] {
+        guard showsPlannedSection else { return [] }
+        var query = TransactionListQuery(limit: Self.plannedLimit, offset: 0)
+        query.sortBy = .time
+        query.order = .ascending
+        query.includeTags = true
+        query.isPlanned = true
+        return (try? await service.transactions(query)) ?? []
     }
 
     func loadMore(using service: any TransactionsServicing) async {
@@ -230,9 +256,16 @@ final class TransactionListModel {
                 row.id == id || (transferId != nil && row.transferId == transferId)
             }
             serverOffset = max(0, serverOffset - (before - transactions.count))
+            planned.removeAll { $0.id == id }
             return false
         case .saved(let rows):
             for row in rows {
+                if let index = planned.firstIndex(where: { $0.id == row.id }) {
+                    if row.isPlanned { planned[index] = row } else { planned.remove(at: index) }
+                } else if row.isPlanned, showsPlannedSection {
+                    planned.append(row)
+                    planned.sort { $0.time < $1.time }
+                }
                 let index = transactions.firstIndex { $0.id == row.id }
                 let inScope = scopeAccountIds.isEmpty || scopeAccountIds.contains(row.accountId)
                 switch (index, inScope) {

@@ -41,8 +41,13 @@ struct AccountRow: View {
         HStack(spacing: 12) {
             InitialsBadge(AccountInitials.text(for: account), colorHex: account.logoColor, size: 36)
             VStack(alignment: .leading, spacing: 2) {
-                Text(account.name)
-                    .lineLimit(1)
+                HStack(spacing: 4) {
+                    Text(account.name)
+                        .lineLimit(1)
+                    if account.bankDataProviderConnectionId != nil {
+                        BankRelinkIndicator(account: account)
+                    }
+                }
                 Text(AccountCategoryLabel.text(for: account.accountCategory))
                     .font(.subheadline)
                     .foregroundStyle(.secondary)

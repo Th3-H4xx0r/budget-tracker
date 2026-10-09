@@ -1,11 +1,14 @@
 import Foundation
 import MoneyMatterKit
 import Observation
+import SwiftUI
 
 enum AppTab: Hashable, CaseIterable {
     case home
     case accounts
     case transactions
+    case planning
+    case insights
 }
 
 /// Pushes within the Home tab's stack.
@@ -13,18 +16,27 @@ enum HomeRoute: Hashable {
     case transaction(id: String)
     case account(id: String)
     case reviewPage(ReviewListStatus)
+    case notifications
 }
 
 /// Pushes within the Accounts tab's stack.
 enum AccountsRoute: Hashable {
     case account(id: String)
     case transaction(id: String)
+    case loans
+    case investments
+    case venture
+    case vehicles
+    case bankConnections
 }
 
 /// Pushes within the Transactions tab's stack.
 enum TransactionsRoute: Hashable {
     case transaction(id: String)
     case reviewPage(ReviewListStatus)
+    case groups
+    case automations
+    case optimizations
 }
 
 /// A request to open the review card stack.
@@ -42,6 +54,10 @@ final class AppRouter {
     var homePath: [HomeRoute] = []
     var accountsPath: [AccountsRoute] = []
     var transactionsPath: [TransactionsRoute] = []
+    /// Type-erased so the Planning area can push its own route types.
+    var planningPath = NavigationPath()
+    /// Type-erased so the Insights area can push its own route types.
+    var insightsPath = NavigationPath()
     var isSettingsPresented = false
     var reviewStack: ReviewStackRequest?
 
@@ -52,6 +68,8 @@ final class AppRouter {
             case .home: homePath.removeAll()
             case .accounts: accountsPath.removeAll()
             case .transactions: transactionsPath.removeAll()
+            case .planning: planningPath = NavigationPath()
+            case .insights: insightsPath = NavigationPath()
             }
         }
         selectedTab = tab

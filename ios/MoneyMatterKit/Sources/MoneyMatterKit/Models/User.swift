@@ -14,6 +14,8 @@ public struct User: Sendable, Hashable, Identifiable, Decodable {
     public let authUserId: String?
     public let createdAt: Date?
     public let entitlements: Entitlements?
+    /// Set by the server from its admin username list, independent of `role`.
+    public let isAdmin: Bool
 
     public init(
         id: Int,
@@ -27,7 +29,8 @@ public struct User: Sendable, Hashable, Identifiable, Decodable {
         defaultCategoryId: String? = nil,
         authUserId: String? = nil,
         createdAt: Date? = nil,
-        entitlements: Entitlements? = nil
+        entitlements: Entitlements? = nil,
+        isAdmin: Bool = false
     ) {
         self.id = id
         self.username = username
@@ -41,11 +44,12 @@ public struct User: Sendable, Hashable, Identifiable, Decodable {
         self.authUserId = authUserId
         self.createdAt = createdAt
         self.entitlements = entitlements
+        self.isAdmin = isAdmin
     }
 
     private enum CodingKeys: String, CodingKey {
         case id, username, firstName, lastName, middleName, avatar, email, role
-        case defaultCategoryId, authUserId, createdAt, entitlements
+        case defaultCategoryId, authUserId, createdAt, entitlements, isAdmin
     }
 
     public init(from decoder: any Decoder) throws {
@@ -62,6 +66,7 @@ public struct User: Sendable, Hashable, Identifiable, Decodable {
         authUserId = try container.decodeIfPresent(String.self, forKey: .authUserId)
         createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt)
         entitlements = try? container.decodeIfPresent(Entitlements.self, forKey: .entitlements)
+        isAdmin = (try? container.decodeIfPresent(Bool.self, forKey: .isAdmin)) ?? false
     }
 
     /// "First Last", falling back to the username.

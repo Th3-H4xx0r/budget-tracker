@@ -139,11 +139,29 @@ struct TransactionDetailScreen: View {
                 if !tags.isEmpty {
                     LabeledContent("Tags", value: tags.map(\.name).formatted(.list(type: .and)))
                 }
+                if !transaction.isTransfer, transaction.paymentType != .unknown {
+                    LabeledContent("Payment Type", value: TransactionPaymentTypeLabel.title(transaction.paymentType))
+                }
+                if transaction.isPlanned {
+                    LabeledContent("Status") {
+                        Label("Planned", systemImage: "calendar.badge.clock")
+                            .foregroundStyle(.orange)
+                    }
+                }
+                if let original = transaction.originalAmount, let code = transaction.originalCurrencyCode {
+                    LabeledContent("Original Amount") {
+                        AmountText(original, currencyCode: code, digits: referenceData.digits(for: code))
+                    }
+                }
                 if let refCode = transaction.refCurrencyCode, refCode != transaction.currencyCode {
                     LabeledContent("In \(refCode)") {
                         AmountText(transaction.signedRefAmount, currencyCode: refCode, digits: referenceData.digits(for: refCode))
                     }
                 }
+            }
+
+            if let splits = transaction.splits, !splits.isEmpty {
+                splitsSection(transaction, splits: splits)
             }
 
             reviewSection(transaction)
@@ -154,8 +172,45 @@ struct TransactionDetailScreen: View {
                         .textSelection(.enabled)
                 }
             }
+
+            if let location = transaction.location {
+                Section("Location") {
+                    TransactionLocationPreview(location: location)
+                        .listRowInsets(EdgeInsets())
+                }
+            }
+
+            TransactionLinksSection(transaction: transaction, canEdit: transaction.canEdit ?? true)
+
+            TransactionAttachmentsSection(transactionId: transaction.id, canEdit: transaction.canEdit ?? true)
         }
         .refreshable { await load() }
+    }
+
+    private func splitsSection(_ transaction: Transaction, splits: [TransactionSplit]) -> some View {
+        let digits = referenceData.digits(for: transaction.currencyCode)
+        let remaining = transaction.amount - splits.reduce(0) { $0 + $1.amount }
+        return Section("Splits") {
+            ForEach(splits) { split in
+                let category = referenceData.category(id: split.categoryId)
+                HStack(spacing: 10) {
+                    CategoryIcon(category: category, size: 24)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(category?.name ?? "—")
+                        if let note = split.note, !note.isEmpty {
+                            Text(note)
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    Spacer()
+                    AmountText(split.amount, currencyCode: transaction.currencyCode, digits: digits)
+                }
+            }
+            LabeledContent("On \(referenceData.category(id: transaction.categoryId)?.name ?? String(localized: "main category"))") {
+                AmountText(remaining, currencyCode: transaction.currencyCode, digits: digits)
+            }
+        }
     }
 
     private func transferTitle(_ nature: TransferNature) -> String {
@@ -226,7 +281,11 @@ struct TransactionDetailScreen: View {
     private func load() async {
         if state.value == nil, initial == nil { state = .loading }
         do {
-            state = .loaded(try await services.transactions.transaction(id: transactionID))
+            if let client = services.client {
+                state = .loaded(try await client.send(Endpoints.transactionWithSplits(id: transactionID)))
+            } else {
+                state = .loaded(try await services.transactions.transaction(id: transactionID))
+            }
         } catch {
             let apiError = APIError(error)
             guard !apiError.isCancellation else { return }

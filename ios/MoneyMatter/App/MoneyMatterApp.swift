@@ -11,6 +11,7 @@ struct MoneyMatterApp: App {
                 Color.clear
             } else {
                 RootView()
+                    .settingsAppearanceTheme()
                     .environment(dependencies)
                     .environment(dependencies.session)
                     .environment(dependencies.referenceData)

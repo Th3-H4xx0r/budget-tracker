@@ -7,6 +7,8 @@ struct TransactionListView<Header: View>: View {
     let model: TransactionListModel
     var emptyTitle: LocalizedStringKey = "No Transactions"
     var emptyDescription: LocalizedStringKey = "Transactions you add or import appear here."
+    /// Row ids picked in edit mode. Nil turns multi-select off.
+    var selection: Binding<Set<String>>? = nil
     @ViewBuilder var header: () -> Header
 
     @Environment(AppServices.self) private var services
@@ -15,11 +17,21 @@ struct TransactionListView<Header: View>: View {
     @State private var editing: Transaction?
     @State private var pendingDelete: Transaction?
     @State private var errorAlert: ErrorAlert?
+    @State private var markingDoneId: String?
 
     var body: some View {
-        List {
-            header()
-            content
+        Group {
+            if let selection {
+                List(selection: selection) {
+                    header()
+                    content
+                }
+            } else {
+                List {
+                    header()
+                    content
+                }
+            }
         }
         .refreshable {
             await model.reload(using: services.transactions)
@@ -80,6 +92,9 @@ struct TransactionListView<Header: View>: View {
             }
             .listRowBackground(Color.clear)
         } else {
+            if model.showsPlannedSection, !model.planned.isEmpty {
+                plannedSection
+            }
             ForEach(model.days) { day in
                 Section {
                     ForEach(day.transactions) { transaction in
@@ -104,6 +119,47 @@ struct TransactionListView<Header: View>: View {
                     }
                 }
             }
+        }
+    }
+
+    private var plannedSection: some View {
+        Section {
+            ForEach(model.planned) { transaction in
+                row(for: transaction)
+                    .swipeActions(edge: .leading) {
+                        Button("Mark Done", systemImage: "checkmark.circle") {
+                            Task { await markDone(transaction) }
+                        }
+                        .tint(.green)
+                    }
+            }
+        } header: {
+            HStack {
+                Label("Planned", systemImage: "calendar.badge.clock")
+                Spacer()
+                if model.planned.count >= TransactionListModel.plannedLimit {
+                    Text("Next \(TransactionListModel.plannedLimit)")
+                }
+            }
+        } footer: {
+            Text("Swipe right on a plan to mark it as paid.")
+        }
+    }
+
+    /// Turns a plan into a real transaction (`isPlanned: false`).
+    private func markDone(_ transaction: Transaction) async {
+        guard let client = services.client, markingDoneId == nil else { return }
+        markingDoneId = transaction.id
+        defer { markingDoneId = nil }
+        do {
+            let rows = try await client.send(Endpoints.updateTransactionAdvanced(
+                id: transaction.id,
+                TransactionAdvancedUpdateRequest(isPlanned: false)
+            ))
+            TransactionChangeFeed.shared.publish(.saved(rows))
+            await referenceData.refreshAccounts()
+        } catch {
+            errorAlert = ErrorAlert(error)
         }
     }
 
@@ -179,8 +235,9 @@ extension TransactionListView where Header == EmptyView {
     init(
         model: TransactionListModel,
         emptyTitle: LocalizedStringKey = "No Transactions",
-        emptyDescription: LocalizedStringKey = "Transactions you add or import appear here."
+        emptyDescription: LocalizedStringKey = "Transactions you add or import appear here.",
+        selection: Binding<Set<String>>? = nil
     ) {
-        self.init(model: model, emptyTitle: emptyTitle, emptyDescription: emptyDescription) { EmptyView() }
+        self.init(model: model, emptyTitle: emptyTitle, emptyDescription: emptyDescription, selection: selection) { EmptyView() }
     }
 }

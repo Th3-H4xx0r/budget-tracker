@@ -13,6 +13,7 @@ struct AccountDetailScreen: View {
     @State private var model: TransactionListModel
     @State private var isEditPresented = false
     @State private var isAddTransactionPresented = false
+    @State private var isSharePresented = false
     @State private var pendingDeleteCount: Int?
     @State private var isWorking = false
     @State private var errorAlert: ErrorAlert?
@@ -37,6 +38,9 @@ struct AccountDetailScreen: View {
                     Section {
                         header(account)
                     }
+                    if let connectionID = account.bankDataProviderConnectionId {
+                        bankConnectionSection(account, connectionID: connectionID)
+                    }
                 }
                 .toolbar { toolbar(account) }
             } else if referenceData.hasLoaded {
@@ -55,6 +59,9 @@ struct AccountDetailScreen: View {
             if let account {
                 AccountFormSheet(mode: .edit(account))
             }
+        }
+        .sheet(isPresented: $isSharePresented) {
+            ShareResourceSheet(resourceType: .account, resourceID: accountID)
         }
         .sheet(isPresented: $isAddTransactionPresented) {
             TransactionEditorSheet(mode: .create(accountId: accountID))
@@ -109,6 +116,30 @@ struct AccountDetailScreen: View {
         .padding(.vertical, 8)
     }
 
+    private func bankConnectionSection(_ account: Account, connectionID: String) -> some View {
+        Section {
+            NavigationLink {
+                BankConnectionDetailScreen(connectionID: connectionID)
+            } label: {
+                if BankSyncMonitor.shared.needsRelink(account) {
+                    Label {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Reconnect Bank")
+                            Text("Syncing stopped. Reconnect to resume.")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                        }
+                    } icon: {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundStyle(.orange)
+                    }
+                } else {
+                    Label("Bank Connection", systemImage: "building.columns")
+                }
+            }
+        }
+    }
+
     @ToolbarContentBuilder
     private func toolbar(_ account: Account) -> some ToolbarContent {
         ToolbarItemGroup(placement: .topBarTrailing) {
@@ -121,6 +152,11 @@ struct AccountDetailScreen: View {
                 isEditPresented = true
             }
             Menu {
+                if !account.isSharedWithMe || account.share?.permission == "manage" {
+                    Button("Share", systemImage: "person.badge.plus") {
+                        isSharePresented = true
+                    }
+                }
                 Button(
                     account.isArchived ? "Unarchive" : "Archive",
                     systemImage: account.isArchived ? "archivebox.fill" : "archivebox"
