@@ -251,9 +251,10 @@ struct InsightsCalculatorScreen: View {
         guard let client = services.client else { return }
         let today = CalendarDate(date: .now)
         do {
-            let points = try await client.send(Endpoints.combinedBalanceHistory(from: today, to: today))
+            // One day past today: the API reports the last requested day as 0.
+            let points = try await client.send(Endpoints.combinedBalanceHistory(from: today, to: today.adding(days: 1)))
             seedFailed = nil
-            if !hasSeededBalance, let total = points.first?.totalBalance, total > 0 {
+            if !hasSeededBalance, let total = points.first(where: { $0.date == today })?.totalBalance, total > 0 {
                 initialBalance = NSDecimalNumber(decimal: total).doubleValue
                 hasSeededBalance = true
             }

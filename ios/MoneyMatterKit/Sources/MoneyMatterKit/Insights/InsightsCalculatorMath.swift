@@ -21,6 +21,26 @@ public struct InsightsProjectionParams: Sendable, Hashable {
         self.annualReturnRate = annualReturnRate
         self.annualInflationRate = annualInflationRate
     }
+
+    /// Rates at or below -100% make the monthly rate and the inflation deflator undefined.
+    public static let rateRange: ClosedRange<Double> = -99.99...1_000
+    public static let yearsRange: ClosedRange<Double> = 0...100
+    public static let amountRange: ClosedRange<Double> = -1e15...1e15
+
+    /// The inputs bounded so the projection stays finite: non-finite values become 0, rates stay
+    /// above -100%, the horizon within 0–100 years.
+    public var clamped: InsightsProjectionParams {
+        func clamp(_ value: Double, _ range: ClosedRange<Double>) -> Double {
+            value.isFinite ? min(max(value, range.lowerBound), range.upperBound) : 0
+        }
+        return InsightsProjectionParams(
+            initialBalance: clamp(initialBalance, Self.amountRange),
+            monthlyContribution: clamp(monthlyContribution, Self.amountRange),
+            timeHorizonYears: clamp(timeHorizonYears, Self.yearsRange),
+            annualReturnRate: clamp(annualReturnRate, Self.rateRange),
+            annualInflationRate: clamp(annualInflationRate, Self.rateRange)
+        )
+    }
 }
 
 /// One month of the projection.
@@ -52,6 +72,7 @@ public struct InsightsProjectionSummary: Sendable, Hashable {
 /// annual rate, with the contribution added at each month's end, deflated by inflation.
 public enum InsightsProjection {
     public static func points(_ params: InsightsProjectionParams) -> [InsightsProjectionPoint] {
+        let params = params.clamped
         let totalMonths = Int((params.timeHorizonYears * 12).rounded())
         let monthlyRate = pow(1 + params.annualReturnRate / 100, 1.0 / 12) - 1
         var points = [InsightsProjectionPoint(
@@ -74,6 +95,7 @@ public enum InsightsProjection {
     }
 
     public static func summary(_ params: InsightsProjectionParams, points: [InsightsProjectionPoint]) -> InsightsProjectionSummary {
+        let params = params.clamped
         guard points.count > 1, let last = points.last else {
             return InsightsProjectionSummary(
                 initialBalance: params.initialBalance,

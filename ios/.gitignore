@@ -7,3 +7,4 @@ DerivedData/
 # Swift Package Manager
 .build/
 .swiftpm/
+build/

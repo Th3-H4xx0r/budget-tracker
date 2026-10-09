@@ -88,10 +88,13 @@ public enum DashboardWidgetKind: String, Sendable, CaseIterable, Identifiable {
 /// One entry of `dashboard.widgets` in user settings. `colSpan`/`rowSpan` size the widget on
 /// the web grid; the app keeps them so a save from the phone doesn't reshape the web layout.
 public struct DashboardWidgetConfig: Sendable, Hashable, Codable, Identifiable {
-    public var widgetId: String
-    public var colSpan: Int
-    public var rowSpan: Int?
-    public var config: [String: DashboardConfigValue]?
+    public var widgetId: String { didSet { raw["widgetId"] = .string(widgetId) } }
+    public var colSpan: Int { didSet { raw["colSpan"] = .number(Double(colSpan)) } }
+    public var rowSpan: Int? { didSet { raw["rowSpan"] = rowSpan.map { .number(Double($0)) } } }
+    public var config: [String: DashboardConfigValue]? { didSet { raw["config"] = config.map { .object($0) } } }
+    /// The entry as it's written back. Keys this app doesn't know, and values it couldn't read,
+    /// stay as saved until the matching field is changed here.
+    private var raw: [String: DashboardConfigValue]
 
     public var id: String { widgetId }
     public var kind: DashboardWidgetKind? { DashboardWidgetKind(rawValue: widgetId) }
@@ -101,6 +104,10 @@ public struct DashboardWidgetConfig: Sendable, Hashable, Codable, Identifiable {
         self.colSpan = colSpan
         self.rowSpan = rowSpan
         self.config = config
+        var raw: [String: DashboardConfigValue] = ["widgetId": .string(widgetId), "colSpan": .number(Double(colSpan))]
+        raw["rowSpan"] = rowSpan.map { .number(Double($0)) }
+        raw["config"] = config.map { .object($0) }
+        self.raw = raw
     }
 
     /// A newly added widget at its registry default size.
@@ -108,16 +115,37 @@ public struct DashboardWidgetConfig: Sendable, Hashable, Codable, Identifiable {
         self.init(widgetId: kind.rawValue, colSpan: kind.defaultColSpan, rowSpan: kind.defaultRowSpan)
     }
 
-    private enum CodingKeys: String, CodingKey {
-        case widgetId, colSpan, rowSpan, config
+    /// Reads a saved entry; `nil` unless it's an object with a string `widgetId`.
+    public init?(json: DashboardConfigValue) {
+        guard case .object(let object) = json, case .string(let widgetId)? = object["widgetId"] else { return nil }
+        func int(_ key: String) -> Int? {
+            guard case .number(let value)? = object[key] else { return nil }
+            return Int(exactly: value)
+        }
+        self.widgetId = widgetId
+        colSpan = int("colSpan") ?? 1
+        rowSpan = int("rowSpan")
+        if case .object(let config)? = object["config"] {
+            self.config = config
+        } else {
+            config = nil
+        }
+        raw = object
     }
 
+    /// The entry as raw JSON, including keys this app doesn't read.
+    public var json: DashboardConfigValue { .object(raw) }
+
     public init(from decoder: any Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        widgetId = try container.decode(String.self, forKey: .widgetId)
-        colSpan = (try? container.decodeIfPresent(Int.self, forKey: .colSpan)) ?? 1
-        rowSpan = try? container.decodeIfPresent(Int.self, forKey: .rowSpan)
-        config = try? container.decodeIfPresent([String: DashboardConfigValue].self, forKey: .config)
+        let value = try DashboardConfigValue(from: decoder)
+        guard let widget = DashboardWidgetConfig(json: value) else {
+            throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "Not a dashboard widget"))
+        }
+        self = widget
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        try json.encode(to: encoder)
     }
 
     /// Pending planned transactions count unless the widget opted out; a missing key is `true`.
@@ -148,13 +176,31 @@ public enum DashboardLayout {
     ]
 
     /// The widgets to show: the saved list when it has entries, else the default layout. Unknown
-    /// ids and repeats are dropped, as the web dashboard does.
+    /// ids and repeats are dropped from display, as the web dashboard does; `merge` keeps them
+    /// in the saved list.
     public static func resolve(saved: [DashboardWidgetConfig]?) -> [DashboardWidgetConfig] {
         let layout = (saved?.isEmpty == false ? saved : nil) ?? defaultWidgets
         var seen = Set<String>()
         return layout.filter { widget in
             widget.kind != nil && seen.insert(widget.widgetId).inserted
         }
+    }
+
+    /// The widget list to save. `PATCH` replaces the array wholesale, so entries this app can't
+    /// show (unknown widget ids, malformed items) keep their saved positions; the slots of known
+    /// widgets take `widgets` in order, extras go at the end and leftover slots are dropped.
+    public static func merge(_ widgets: [DashboardWidgetConfig], into saved: [DashboardConfigValue]?) -> [DashboardConfigValue] {
+        var pending = widgets.map(\.json)[...]
+        var result: [DashboardConfigValue] = []
+        for entry in saved ?? [] {
+            if DashboardWidgetConfig(json: entry)?.kind == nil {
+                result.append(entry)
+            } else if let next = pending.popFirst() {
+                result.append(next)
+            }
+        }
+        result.append(contentsOf: pending)
+        return result
     }
 
     /// Registry widgets that aren't in `widgets`, in registry order.
@@ -168,14 +214,22 @@ public enum DashboardLayout {
 
 /// The dashboard-related slice of `GET /user/settings`; other keys are ignored.
 public struct DashboardUserSettings: Sendable, Hashable, Decodable {
-    /// `nil` when the user never saved a layout.
+    /// The saved entries this app can read, unknown widget ids included. `nil` when the user
+    /// never saved a layout.
     public let widgets: [DashboardWidgetConfig]?
+    /// Every saved entry as raw JSON, malformed ones included, for `DashboardLayout.merge`.
+    public let entries: [DashboardConfigValue]?
     /// Whether a manual credit account's balance already includes its credit limit.
     public let includeCreditLimitInStats: Bool
 
-    public init(widgets: [DashboardWidgetConfig]?, includeCreditLimitInStats: Bool = false) {
-        self.widgets = widgets
+    public init(entries: [DashboardConfigValue]?, includeCreditLimitInStats: Bool = false) {
+        self.entries = entries
+        widgets = entries.map { $0.compactMap(DashboardWidgetConfig.init(json:)) }
         self.includeCreditLimitInStats = includeCreditLimitInStats
+    }
+
+    public init(widgets: [DashboardWidgetConfig]?, includeCreditLimitInStats: Bool = false) {
+        self.init(entries: widgets?.map(\.json), includeCreditLimitInStats: includeCreditLimitInStats)
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -183,35 +237,18 @@ public struct DashboardUserSettings: Sendable, Hashable, Decodable {
     }
 
     private struct Dashboard: Decodable {
-        let widgets: [DashboardWidgetConfig]?
+        let widgets: [DashboardConfigValue]?
 
         private enum CodingKeys: String, CodingKey {
             case widgets
-        }
-
-        /// Skips malformed entries instead of failing the whole layout.
-        init(from decoder: any Decoder) throws {
-            let container = try decoder.container(keyedBy: CodingKeys.self)
-            guard var list = try? container.nestedUnkeyedContainer(forKey: .widgets) else {
-                widgets = nil
-                return
-            }
-            var items: [DashboardWidgetConfig] = []
-            while !list.isAtEnd {
-                if let item = try? list.decode(DashboardWidgetConfig.self) {
-                    items.append(item)
-                } else {
-                    _ = try? list.decode(DashboardConfigValue.self)
-                }
-            }
-            widgets = items
         }
     }
 
     public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        widgets = (try? container.decodeIfPresent(Dashboard.self, forKey: .dashboard))?.widgets
-        includeCreditLimitInStats = (try? container.decodeIfPresent(Bool.self, forKey: .includeCreditLimitInStats)) ?? false
+        let entries = (try? container.decodeIfPresent(Dashboard.self, forKey: .dashboard))?.widgets
+        let includeCreditLimit = (try? container.decodeIfPresent(Bool.self, forKey: .includeCreditLimitInStats)) ?? false
+        self.init(entries: entries, includeCreditLimitInStats: includeCreditLimit)
     }
 }
 
@@ -219,7 +256,7 @@ public struct DashboardUserSettings: Sendable, Hashable, Decodable {
 /// but replaces arrays wholesale, so the list is always the full desired layout.
 struct DashboardSettingsPatch: Encodable, Sendable {
     struct Dashboard: Encodable, Sendable {
-        let widgets: [DashboardWidgetConfig]
+        let widgets: [DashboardConfigValue]
     }
 
     let dashboard: Dashboard
@@ -394,9 +431,13 @@ extension Endpoints {
         Endpoint(.get, "/user/settings")
     }
 
-    /// `PATCH /user/settings` with the full widget list; returns the merged settings.
-    public static func saveDashboardWidgets(_ widgets: [DashboardWidgetConfig]) -> Endpoint<DashboardUserSettings> {
-        Endpoint(.patch, "/user/settings", body: DashboardSettingsPatch(dashboard: .init(widgets: widgets)))
+    /// `PATCH /user/settings` with the full widget list; returns the merged settings. Entries of
+    /// `saved` this app can't show keep their positions (see `DashboardLayout.merge`).
+    public static func saveDashboardWidgets(
+        _ widgets: [DashboardWidgetConfig],
+        preserving saved: [DashboardConfigValue]? = nil
+    ) -> Endpoint<DashboardUserSettings> {
+        Endpoint(.patch, "/user/settings", body: DashboardSettingsPatch(dashboard: .init(widgets: DashboardLayout.merge(widgets, into: saved))))
     }
 
     /// `GET /transactions/planned-summary`: pending planned transactions per account.

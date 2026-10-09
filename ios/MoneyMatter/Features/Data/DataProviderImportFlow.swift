@@ -13,6 +13,8 @@ struct DataProviderImportFlow: View {
     @Environment(SessionStore.self) private var session
     @State private var model = DataProviderImportModel()
     @State private var alert: ErrorAlert?
+    /// Actions started by `run`, cancelled when the flow is dismissed so job polling stops.
+    @State private var runTasks: [Task<Void, Never>] = []
 
     var body: some View {
         Form {
@@ -41,6 +43,10 @@ struct DataProviderImportFlow: View {
         .errorAlert($alert)
         .task { await reference.loadIfNeeded() }
         .task(id: model.uploadId) { await model.keepLeaseAlive(kind: kind, client: services.client) }
+        .onDisappear {
+            runTasks.forEach { $0.cancel() }
+            runTasks.removeAll()
+        }
     }
 
     private var title: LocalizedStringKey {
@@ -268,14 +274,14 @@ struct DataProviderImportFlow: View {
 
     private func run(_ action: @escaping (APIClient) async throws -> Void) {
         guard let client = services.client else { return }
-        Task {
+        runTasks.append(Task {
             do {
                 try await action(client)
                 if model.isFinished { await reference.refresh() }
             } catch {
                 alert = ErrorAlert(error)
             }
-        }
+        })
     }
 }
 

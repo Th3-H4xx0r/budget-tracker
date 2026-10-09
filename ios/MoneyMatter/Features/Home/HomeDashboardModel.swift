@@ -62,8 +62,8 @@ final class HomeDashboardModel {
     private(set) var netWorth: LoadState<[BalancePoint]> = .idle
     private(set) var tracker: LoadState<[CategorySpendingByType]> = .idle
     private(set) var planned: LoadState<HomePlannedOverview> = .idle
-    /// The layout last loaded from the server, shown while settings load again.
-    private var cachedLayout: [DashboardWidgetConfig]?
+    /// The saved entries last loaded from the server, shown while settings load again.
+    private var cachedEntries: [DashboardConfigValue]?
 
     @ObservationIgnored private let client: APIClient?
     @ObservationIgnored private let defaults: UserDefaults
@@ -73,7 +73,7 @@ final class HomeDashboardModel {
         self.client = client
         self.defaults = defaults
         if let data = defaults.data(forKey: Self.cacheKey) {
-            cachedLayout = try? JSONDecoder().decode([DashboardWidgetConfig].self, from: data)
+            cachedEntries = try? JSONDecoder().decode([DashboardConfigValue].self, from: data)
         }
     }
 
@@ -83,7 +83,7 @@ final class HomeDashboardModel {
         if let loaded = settings.value {
             return DashboardLayout.resolve(saved: loaded.widgets)
         }
-        return DashboardLayout.resolve(saved: cachedLayout)
+        return DashboardLayout.resolve(saved: DashboardUserSettings(entries: cachedEntries).widgets)
     }
 
     var includeCreditLimitInStats: Bool { settings.value?.includeCreditLimitInStats ?? false }
@@ -101,7 +101,7 @@ final class HomeDashboardModel {
             guard let client else { throw APIError(URLError(.notConnectedToInternet)) }
             return try await client.send(Endpoints.dashboardSettings())
         }
-        if let widgets = settings.value?.widgets { cache(widgets) }
+        if let entries = settings.value?.entries { cache(entries) }
     }
 
     /// Loads the data of every shown widget this model owns; hidden widgets are skipped.
@@ -186,8 +186,9 @@ final class HomeDashboardModel {
     /// Saves the full widget list. Throws so the caller can show the error alert.
     func saveLayout(_ widgets: [DashboardWidgetConfig]) async throws {
         guard let client else { throw APIError(URLError(.notConnectedToInternet)) }
-        let saved = try await client.send(Endpoints.saveDashboardWidgets(widgets))
-        apply(saved, fallbackWidgets: widgets)
+        let previous = settings.value?.entries ?? cachedEntries
+        let saved = try await client.send(Endpoints.saveDashboardWidgets(widgets, preserving: previous))
+        apply(saved, fallbackEntries: DashboardLayout.merge(widgets, into: previous))
     }
 
     /// Merges `values` into one widget's config and saves the layout.
@@ -196,15 +197,15 @@ final class HomeDashboardModel {
         try await saveLayout(updated)
     }
 
-    private func apply(_ saved: DashboardUserSettings, fallbackWidgets: [DashboardWidgetConfig]) {
-        let widgets = saved.widgets ?? fallbackWidgets
-        settings = .loaded(DashboardUserSettings(widgets: widgets, includeCreditLimitInStats: saved.includeCreditLimitInStats))
-        cache(widgets)
+    private func apply(_ saved: DashboardUserSettings, fallbackEntries: [DashboardConfigValue]) {
+        let entries = saved.entries ?? fallbackEntries
+        settings = .loaded(DashboardUserSettings(entries: entries, includeCreditLimitInStats: saved.includeCreditLimitInStats))
+        cache(entries)
     }
 
-    private func cache(_ widgets: [DashboardWidgetConfig]) {
-        cachedLayout = widgets
-        if let data = try? JSONEncoder().encode(widgets) {
+    private func cache(_ entries: [DashboardConfigValue]) {
+        cachedEntries = entries
+        if let data = try? JSONEncoder().encode(entries) {
             defaults.set(data, forKey: Self.cacheKey)
         }
     }

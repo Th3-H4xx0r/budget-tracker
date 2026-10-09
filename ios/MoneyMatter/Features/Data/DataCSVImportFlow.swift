@@ -11,6 +11,8 @@ struct DataCSVImportFlow: View {
     @Environment(SessionStore.self) private var session
     @State private var model = DataCSVImportModel()
     @State private var alert: ErrorAlert?
+    /// Actions started by `run`, cancelled when the flow is dismissed so job polling stops.
+    @State private var runTasks: [Task<Void, Never>] = []
 
     private let stepTitles: [LocalizedStringKey] = ["Choose File", "Map Columns", "Map Values", "Review Duplicates", "Import"]
 
@@ -41,6 +43,10 @@ struct DataCSVImportFlow: View {
         .task {
             await reference.loadIfNeeded()
             if model.currencyCode.isEmpty { model.currencyCode = baseCurrency }
+        }
+        .onDisappear {
+            runTasks.forEach { $0.cancel() }
+            runTasks.removeAll()
         }
     }
 
@@ -302,14 +308,14 @@ struct DataCSVImportFlow: View {
 
     private func run(_ action: @escaping (APIClient) async throws -> Void) {
         guard let client = services.client else { return }
-        Task {
+        runTasks.append(Task {
             do {
                 try await action(client)
                 if model.isFinished { await reference.refresh() }
             } catch {
                 alert = ErrorAlert(error)
             }
-        }
+        })
     }
 }
 

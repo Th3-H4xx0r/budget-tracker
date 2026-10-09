@@ -10,6 +10,8 @@ struct DataStatementParserFlow: View {
     @Environment(ReferenceDataStore.self) private var reference
     @State private var model = DataStatementParserModel()
     @State private var alert: ErrorAlert?
+    /// Actions started by `run`, cancelled when the flow is dismissed so job polling stops.
+    @State private var runTasks: [Task<Void, Never>] = []
 
     private let stepTitles: [LocalizedStringKey] = ["Upload & Extract", "Review Transactions", "Review Duplicates", "Import"]
 
@@ -53,6 +55,10 @@ struct DataStatementParserFlow: View {
         }
         .errorAlert($alert)
         .task { await reference.loadIfNeeded() }
+        .onDisappear {
+            runTasks.forEach { $0.cancel() }
+            runTasks.removeAll()
+        }
     }
 
     // MARK: Upload
@@ -260,14 +266,14 @@ struct DataStatementParserFlow: View {
 
     private func run(_ action: @escaping (APIClient) async throws -> Void) {
         guard let client = services.client else { return }
-        Task {
+        runTasks.append(Task {
             do {
                 try await action(client)
                 if model.isFinished { await reference.refreshAccounts() }
             } catch {
                 alert = ErrorAlert(error)
             }
-        }
+        })
     }
 }
 
