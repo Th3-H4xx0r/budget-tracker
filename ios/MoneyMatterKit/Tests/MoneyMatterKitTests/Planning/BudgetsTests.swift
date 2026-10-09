@@ -162,7 +162,8 @@ struct PlanningBudgetsTests {
         #expect(body["categoryIds"] == nil)
 
         let withLimit = try self.body(Endpoints.updatePlanningBudget(id: "b1", PlanningBudgetUpdateRequest(limitAmount: 99.9)))
-        #expect((withLimit["limitAmount"] as? NSNumber)?.decimalValue == Decimal(string: "99.9"))
+        // JSONSerialization reads numbers back as Double, so compare at Double precision.
+        #expect((withLimit["limitAmount"] as? NSNumber)?.doubleValue == 99.9)
     }
 
     @Test("Archive, add, and remove send the right method and body")

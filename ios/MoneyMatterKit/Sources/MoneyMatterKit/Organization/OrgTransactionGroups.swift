@@ -69,11 +69,13 @@ public struct OrgTxGroup: Sendable, Hashable, Identifiable, Decodable {
 
     static func parseAggregateDate(_ raw: String?) -> Date? {
         guard let raw, !raw.isEmpty else { return nil }
-        if let date = APIDateFormat.parseTimestamp(raw) { return date }
+        // Aggregates come back as raw Postgres text ("2026-08-01 10:00:00+00"), so normalize to
+        // ISO-8601 before parsing; a lenient parse of the raw form yields the wrong instant.
         var normalized = raw.replacingOccurrences(of: " ", with: "T")
         if normalized.hasSuffix("+00") { normalized = String(normalized.dropLast(3)) + "Z" }
         if !normalized.hasSuffix("Z"), !normalized.contains("+") { normalized += "Z" }
-        return APIDateFormat.parseTimestamp(normalized)
+        if let date = APIDateFormat.parseTimestamp(normalized) { return date }
+        return try? Date(normalized, strategy: .iso8601)
     }
 }
 
