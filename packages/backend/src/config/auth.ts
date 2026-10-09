@@ -1,8 +1,9 @@
 import { oauthProvider } from '@better-auth/oauth-provider';
 import { passkey } from '@better-auth/passkey';
-import { OAUTH_PROVIDERS_LIST } from '@bt/shared/types';
+import { OAUTH_PROVIDER, OAUTH_PROVIDERS_LIST } from '@bt/shared/types';
 import { EnvVar, isEnvConfigured } from '@common/utils/env';
 import { createSessionHooks } from '@config/auth-hooks/session-hooks';
+import { getOAuthProviderConfig } from '@config/oauth-providers';
 import { shouldUseSecureCookies } from '@config/should-use-secure-cookies';
 import { logger } from '@js/utils/logger';
 import { identifyUser, trackSignup } from '@js/utils/posthog';
@@ -13,7 +14,7 @@ import { createAppUserWithUniqueUsername, seedUserDefaults } from '@services/use
 import { areSignupsOpen } from '@services/user/signups-open.service';
 import bcrypt from 'bcryptjs';
 import { APIError, betterAuth } from 'better-auth';
-import { jwt } from 'better-auth/plugins';
+import { bearer, jwt } from 'better-auth/plugins';
 import { Pool } from 'pg';
 
 // Fail-fast: AUTH_ORIGIN must be set in production. Without it, OAuth error
@@ -50,6 +51,22 @@ const DEV_TRUSTED_ORIGINS =
   process.env.NODE_ENV === 'development'
     ? ['http://localhost:8100', 'https://localhost:8100', 'http://127.0.0.1:8100', 'https://127.0.0.1:8100']
     : [];
+
+/**
+ * Prefix for every better-auth cookie, and for the native OAuth challenge cookie.
+ * Overridable because cookies are keyed by host, not port: parallel git worktrees
+ * all share `localhost`, so a shared prefix means signing into one worktree
+ * overwrites another's session cookie. Each worktree sets a distinct prefix (see
+ * scripts/docker-dev.sh) so their cookies coexist.
+ */
+export const AUTH_COOKIE_PREFIX = process.env.BETTER_AUTH_COOKIE_PREFIX || 'bt_auth';
+
+const AUTH_ORIGIN = process.env.AUTH_ORIGIN || 'https://localhost:8100';
+const AUTH_RP_ID = process.env.AUTH_RP_ID || 'localhost';
+
+// A web assertion's clientDataJSON origin is the frontend origin; a native iOS
+// assertion's is `https://<rpID>`. Both must pass passkey verification.
+const PASSKEY_ORIGINS = Array.from(new Set([AUTH_ORIGIN, `https://${AUTH_RP_ID}`]));
 
 export const auth = betterAuth({
   database: pool,
@@ -155,24 +172,16 @@ export const auth = betterAuth({
 
   // OAuth providers
   socialProviders: {
-    google: {
-      clientId: process.env.GOOGLE_CLIENT_ID || '',
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET || '',
-      enabled:
-        isEnvConfigured(EnvVar.GOOGLE_CLIENT_ID, process.env.GOOGLE_CLIENT_ID) &&
-        isEnvConfigured(EnvVar.GOOGLE_CLIENT_SECRET, process.env.GOOGLE_CLIENT_SECRET),
-    },
-    github: {
-      clientId: process.env.GITHUB_CLIENT_ID || '',
-      clientSecret: process.env.GITHUB_CLIENT_SECRET || '',
-      enabled:
-        isEnvConfigured(EnvVar.GITHUB_CLIENT_ID, process.env.GITHUB_CLIENT_ID) &&
-        isEnvConfigured(EnvVar.GITHUB_CLIENT_SECRET, process.env.GITHUB_CLIENT_SECRET),
-    },
+    google: getOAuthProviderConfig({ provider: OAUTH_PROVIDER.google }),
+    github: getOAuthProviderConfig({ provider: OAUTH_PROVIDER.github }),
   },
 
   // Plugins
   plugins: [
+    // Native clients authenticate with `Authorization: Bearer <signed session token>`,
+    // returned in the `set-auth-token` header on sign-in. requireSignature keeps the
+    // opaque MCP OAuth access tokens sent to /oauth2/* from being read as session tokens.
+    bearer({ requireSignature: true }),
     // jwt() must be loaded because @better-auth/oauth-provider references it
     // internally even when disableJwtPlugin is true (unguarded getJwtPlugin calls).
     jwt({
@@ -211,9 +220,9 @@ export const auth = betterAuth({
       },
     }),
     passkey({
-      rpID: process.env.AUTH_RP_ID || 'localhost',
+      rpID: AUTH_RP_ID,
       rpName: process.env.AUTH_RP_NAME || 'MoneyMatter',
-      origin: process.env.AUTH_ORIGIN || 'https://localhost:8100',
+      origin: PASSKEY_ORIGINS,
       schema: {
         passkey: {
           modelName: 'ba_passkey',
@@ -241,12 +250,7 @@ export const auth = betterAuth({
 
   // Advanced options
   advanced: {
-    // Cookie settings for session. The prefix is overridable because cookies are
-    // keyed by host, not port: parallel git worktrees all share `localhost`, so a
-    // shared prefix means signing into one worktree overwrites another's session
-    // cookie. Each worktree sets a distinct prefix (see scripts/docker-dev.sh) so
-    // their session cookies coexist.
-    cookiePrefix: process.env.BETTER_AUTH_COOKIE_PREFIX || 'bt_auth',
+    cookiePrefix: AUTH_COOKIE_PREFIX,
     // Secure cookies only when the app is actually served over https – a
     // production build served over plain http (self-host trial on a LAN IP)
     // would otherwise have its session cookie silently dropped by the

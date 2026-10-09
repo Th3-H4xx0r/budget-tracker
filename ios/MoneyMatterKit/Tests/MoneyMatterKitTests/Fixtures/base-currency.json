@@ -1,0 +1,12 @@
+{
+  "status": "success",
+  "response": {
+    "id": "0f6e8c1a-1111-4c2a-9d3e-000000000001",
+    "userId": 42,
+    "currencyCode": "EUR",
+    "exchangeRate": null,
+    "liveRateUpdate": true,
+    "isDefaultCurrency": true,
+    "currency": { "code": "EUR", "currency": "Euro", "digits": 2, "number": 978, "isDisabled": false }
+  }
+}

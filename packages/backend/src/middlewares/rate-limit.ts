@@ -150,6 +150,29 @@ export const stripeWebhookRateLimit = createRateLimit({
 });
 
 /**
+ * Native OAuth rate limits (per IP, 30 attempts per 5 minutes each). Both endpoints are
+ * unauthenticated: `start` mints signed challenge cookies and `exchange` checks a one-time
+ * code plus PKCE verifier, so the budget bounds code guessing and cookie minting. A sign-in
+ * makes one call to each, and separate keys keep one step from draining the other.
+ * Fail-open, so a Redis blip can't block sign-in.
+ */
+export const nativeOAuthStartRateLimit = nonDev(
+  createRateLimit({
+    windowSeconds: 5 * 60,
+    maxAttempts: 30,
+    keyGenerator: (req: Request) => `native-oauth-start:ip:${req.ip}`,
+  }),
+);
+
+export const nativeOAuthExchangeRateLimit = nonDev(
+  createRateLimit({
+    windowSeconds: 5 * 60,
+    maxAttempts: 30,
+    keyGenerator: (req: Request) => `native-oauth-exchange:ip:${req.ip}`,
+  }),
+);
+
+/**
  * CSV import rate limit (per user, 30 attempts per 5 minutes). Bounds the cost of repeated
  * 10MB CSV submissions across the whole import flow, not just one step.
  */

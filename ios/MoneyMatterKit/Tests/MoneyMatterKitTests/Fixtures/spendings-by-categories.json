@@ -1,0 +1,8 @@
+{
+  "status": "success",
+  "response": {
+    "c-food": { "name": "Food & Drinks", "color": "#e74c3c", "amount": 320.4 },
+    "c-rent": { "name": "Housing", "color": "#e67e22", "amount": 1200 },
+    "c-fun": { "name": "Fun", "color": "#9b59b6", "amount": 45.99 }
+  }
+}

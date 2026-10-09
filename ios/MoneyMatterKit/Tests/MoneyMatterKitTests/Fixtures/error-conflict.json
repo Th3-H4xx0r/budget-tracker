@@ -1,0 +1,4 @@
+{
+  "status": "error",
+  "response": { "message": "Category has transactions", "code": "CATEGORY_HAS_TRANSACTIONS", "details": { "count": 3 } }
+}

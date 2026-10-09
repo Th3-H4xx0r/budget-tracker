@@ -5,7 +5,7 @@
 interface PasskeyConfig {
   rpID?: string;
   rpName?: string;
-  origin?: string;
+  origin?: string | string[];
 }
 
 /**

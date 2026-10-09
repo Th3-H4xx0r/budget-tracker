@@ -1,0 +1,8 @@
+{
+  "status": "success",
+  "response": [
+    { "code": "USD", "currency": "US Dollar", "digits": 2, "number": 840, "isDisabled": false },
+    { "code": "JPY", "currency": "Yen", "digits": 0, "number": 392, "isDisabled": false },
+    { "code": "VEF", "currency": "Bolivar", "digits": 2, "number": 937, "isDisabled": true }
+  ]
+}

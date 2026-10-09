@@ -54,6 +54,42 @@ import vehiclesRoutes from './routes/vehicles.route';
 import ventureRoutes from './routes/venture.route';
 import webhooksRoutes from './routes/webhooks.route';
 
+const FETCH_METADATA_HEADERS = ['sec-fetch-mode', 'sec-fetch-site', 'sec-fetch-dest'];
+const BEARER_TOKEN_HEADER = 'set-auth-token';
+
+/**
+ * Keeps the bearer plugin's `set-auth-token` header (and its
+ * `Access-Control-Expose-Headers` entry) out of browser responses. Browsers hold
+ * the session in an HttpOnly cookie; a token header readable by page JS would
+ * hand same-origin XSS a portable credential. Browsers send Fetch Metadata
+ * (`sec-fetch-*`) and native URLSession clients don't, so any of those headers
+ * marks a browser caller. Both better-auth's node adapter and its Jest mock copy
+ * response headers through `res.setHeader`, so filtering there covers every
+ * auth route.
+ */
+const hideBearerTokenFromBrowsers = ({ req, res }: { req: Request; res: Response }) => {
+  const isBrowser = FETCH_METADATA_HEADERS.some((name) => req.headers[name] !== undefined);
+  if (!isBrowser) return;
+
+  const setHeader = res.setHeader.bind(res);
+  res.setHeader = ((name: string, value: number | string | readonly string[]) => {
+    const headerName = name.toLowerCase();
+    if (headerName === BEARER_TOKEN_HEADER) return res;
+
+    if (headerName === 'access-control-expose-headers') {
+      const exposed = (Array.isArray(value) ? value.join(',') : String(value))
+        .split(',')
+        .map((header) => header.trim())
+        .filter((header) => header && header.toLowerCase() !== BEARER_TOKEN_HEADER);
+      // An empty list would replace the expose list the CORS middleware already set.
+      if (!exposed.length) return res;
+      return setHeader(name, exposed.join(', '));
+    }
+
+    return setHeader(name, value);
+  }) as typeof res.setHeader;
+};
+
 export function setupRoutes(app: Express) {
   app.get('/health', (_req: Request, res: Response) => {
     res.json({ status: 'ok' });
@@ -166,6 +202,8 @@ export function setupRoutes(app: Express) {
     const supportedLocales = SUPPORTED_LOCALES;
     const headerLang = req.headers['accept-language']?.split(',')[0]?.split('-')[0];
     const locale = headerLang && supportedLocales.includes(headerLang) ? headerLang : 'en';
+
+    hideBearerTokenFromBrowsers({ req, res });
 
     // Wrap the handler in AsyncLocalStorage context to ensure locale is available in hooks
     requestContext.run({ locale }, () => {

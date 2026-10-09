@@ -1,0 +1,28 @@
+{
+  "status": "success",
+  "response": {
+    "id": 42,
+    "username": "pranav",
+    "firstName": "Pranav",
+    "lastName": "Krishna",
+    "middleName": null,
+    "avatar": null,
+    "totalBalance": 0,
+    "defaultCategoryId": "5b0b1f7e-3a63-4d8e-9a62-7d8f1f0b6c11",
+    "authUserId": "ba_8f2c",
+    "role": "common",
+    "createdAt": "2026-01-02T10:15:30.123Z",
+    "plan": "free",
+    "trialEndsAt": null,
+    "email": "pranav@example.com",
+    "isAdmin": false,
+    "entitlements": {
+      "features": ["bank_providers"],
+      "readOnly": false,
+      "seats": 1,
+      "plan": "free",
+      "trialEndsAt": null,
+      "subscriptions": []
+    }
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "challenge": "dGVzdC1jaGFsbGVuZ2UtYnl0ZXM",
+  "timeout": 60000,
+  "rpId": "budget.pkrishna.dev",
+  "allowCredentials": [{ "id": "Y3JlZC0x", "type": "public-key", "transports": ["internal", "hybrid"] }],
+  "userVerification": "preferred"
+}

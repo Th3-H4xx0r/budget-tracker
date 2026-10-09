@@ -12,3 +12,15 @@ export function jwt() {
     init: () => ({}),
   };
 }
+
+/**
+ * Creates a bearer plugin for better-auth. The mocked `betterAuth` looks it up by
+ * id and emulates its behaviour: `set-auth-token` on sign-in, and session
+ * resolution from `Authorization: Bearer <signed token>`.
+ */
+export function bearer(options?: { requireSignature?: boolean }) {
+  return {
+    id: 'bearer',
+    options,
+  };
+}

@@ -1,0 +1,4 @@
+{
+  "status": "error",
+  "response": { "message": "Base currency change in progress", "code": "BASE_CURRENCY_CHANGE_IN_PROGRESS" }
+}

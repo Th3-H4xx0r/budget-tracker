@@ -1,0 +1,23 @@
+{
+  "status": "success",
+  "response": [
+    {
+      "date": "2026-10-01",
+      "accountsBalance": 1000,
+      "portfoliosBalance": 250.25,
+      "venturesBalance": 0,
+      "vehiclesBalance": 0,
+      "loansBalance": -100,
+      "totalBalance": 1150.25
+    },
+    {
+      "date": "2026-10-02",
+      "accountsBalance": 980.5,
+      "portfoliosBalance": 250.25,
+      "venturesBalance": 0,
+      "vehiclesBalance": 0,
+      "loansBalance": -100,
+      "totalBalance": 1130.75
+    }
+  ]
+}

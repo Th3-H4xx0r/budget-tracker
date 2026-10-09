@@ -40,6 +40,9 @@ const GUARD_EXEMPT_ROUTES = new Set<string>([
   'POST /api/v1/notifications/read-all',
   'POST /api/v1/notifications/:id/read',
 
+  // Transaction review status is a label; it never touches amounts or ref amounts.
+  'PUT /api/v1/transactions/review',
+
   // Billing and admin plan grants: Stripe sessions and plan flags, no monetary data.
   'PATCH /api/v1/admin/users/:id/plan',
   'POST /api/v1/billing/checkout',

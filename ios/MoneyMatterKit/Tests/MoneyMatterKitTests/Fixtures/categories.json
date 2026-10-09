@@ -1,0 +1,56 @@
+{
+  "status": "success",
+  "response": [
+    {
+      "id": "c-other",
+      "name": "Other",
+      "color": "#95a5a6",
+      "icon": "more-horizontal-20-filled",
+      "key": "other",
+      "parentId": null,
+      "type": "internal",
+      "userId": 42,
+      "createdAt": "2026-01-01T00:00:00.000Z"
+    },
+    {
+      "id": "c-food",
+      "name": "Food & Drinks",
+      "color": "#e74c3c",
+      "icon": "food-20-filled",
+      "key": "food",
+      "parentId": null,
+      "type": "custom",
+      "userId": 42
+    },
+    {
+      "id": "c-restaurants",
+      "name": "Restaurants",
+      "color": "#e74c3c",
+      "icon": null,
+      "key": null,
+      "parentId": "c-food",
+      "type": "custom",
+      "userId": 42
+    },
+    {
+      "id": "c-cafe",
+      "name": "Cafe",
+      "color": "#e74c3c",
+      "icon": "drink-coffee-20-filled",
+      "key": null,
+      "parentId": "c-restaurants",
+      "type": "custom",
+      "userId": 42
+    },
+    {
+      "id": "c-orphan",
+      "name": "Orphan",
+      "color": "#123456",
+      "icon": null,
+      "key": null,
+      "parentId": "c-missing",
+      "type": "mystery",
+      "userId": 42
+    }
+  ]
+}

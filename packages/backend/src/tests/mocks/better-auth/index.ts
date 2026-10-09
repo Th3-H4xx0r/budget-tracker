@@ -4,9 +4,46 @@
  */
 import { requestContext } from '@common/request-context';
 import { connection } from '@models/index';
+import { createHmac, randomUUID } from 'node:crypto';
 
 // Types and non-ESM exports can come from actual package
 // For now, provide a basic mock that supports our test scenarios
+
+/** Same resolution order and fallback as real better-auth outside production. */
+const MOCK_AUTH_SECRET =
+  process.env.BETTER_AUTH_SECRET || process.env.AUTH_SECRET || 'better-auth-secret-12345678901234567890';
+
+/** better-call's signed-cookie format, which the bearer plugin returns in `set-auth-token`. */
+const signSessionToken = ({ token }: { token: string }) =>
+  `${token}.${createHmac('sha256', MOCK_AUTH_SECRET).update(token).digest('base64')}`;
+
+/**
+ * Mirrors the bearer plugin's before-hook: a `<token>.<signature>` bearer value
+ * with a valid signature resolves to its token. Unsigned values are ignored when
+ * `requireSignature` is set.
+ */
+function tokenFromBearerHeader({
+  authorization,
+  requireSignature,
+}: {
+  authorization: string | null | undefined;
+  requireSignature: boolean;
+}): string | null {
+  if (!authorization || authorization.slice(0, 7).toLowerCase() !== 'bearer ') return null;
+  const value = authorization.slice(7).trim();
+  if (!value) return null;
+  if (!value.includes('.')) return requireSignature ? null : value;
+
+  let decoded = value;
+  try {
+    if (value.includes('%')) decoded = decodeURIComponent(value);
+  } catch {
+    // Real plugin falls back to the raw value too.
+  }
+  const [token, signature] = decoded.split('.');
+  if (!token || !signature) return null;
+  return signSessionToken({ token }) === `${token}.${signature}` ? token : null;
+}
 
 interface BetterAuthConfig {
   database: unknown;
@@ -65,32 +102,63 @@ interface SignInEmailParams {
   asResponse?: boolean;
 }
 
+interface SignInSocialParams {
+  body: {
+    provider: string;
+    callbackURL?: string;
+    errorCallbackURL?: string;
+    disableRedirect?: boolean;
+  };
+  headers?: unknown;
+  returnHeaders?: boolean;
+}
+
 interface AuthInstance {
   handler: (request: Request) => Promise<Response>;
+  $context: Promise<{ secret: string }>;
   api: {
     getSession: (params: { headers: unknown }) => Promise<{ user: unknown; session: unknown } | null>;
     signInEmail: (params: SignInEmailParams) => Promise<Response>;
     setPassword: (params: { body: { newPassword: string }; headers: unknown }) => Promise<{ status: boolean }>;
+    signInSocial: (
+      params: SignInSocialParams,
+    ) => Promise<
+      { url: string; redirect: boolean } | { headers: Headers; response: { url: string; redirect: boolean } }
+    >;
   };
 }
 
+type MockSessionUser = { id: string; email: string; name?: string };
+
 // Session storage for tracking users across signup/session calls
 // Map of session token -> user object
-const sessionStore = new Map<string, { id: string; email: string; name?: string }>();
+const sessionStore = new Map<string, MockSessionUser>();
+// Map of session token -> creation time, read by flows that require a fresh session
+const sessionCreatedAt = new Map<string, Date>();
+
+function storeSession({ token, user }: { token: string; user: MockSessionUser }): void {
+  sessionStore.set(token, user);
+  sessionCreatedAt.set(token, new Date());
+}
+
+function deleteSession({ token }: { token: string }): void {
+  sessionStore.delete(token);
+  sessionCreatedAt.delete(token);
+}
 
 /**
  * Register a session in the mock session store.
  * Useful for tests that create sessions outside the normal auth flow (e.g., demo users).
  */
-export function registerMockSession(sessionToken: string, user: { id: string; email: string; name?: string }): void {
-  sessionStore.set(sessionToken, user);
+export function registerMockSession(sessionToken: string, user: MockSessionUser): void {
+  storeSession({ token: sessionToken, user });
 }
 
 /**
  * Clear a session from the mock session store.
  */
 export function clearMockSession(sessionToken: string): void {
-  sessionStore.delete(sessionToken);
+  deleteSession({ token: sessionToken });
 }
 
 /**
@@ -99,6 +167,12 @@ export function clearMockSession(sessionToken: string): void {
  */
 export function clearAllMockSessions(): void {
   sessionStore.clear();
+  sessionCreatedAt.clear();
+}
+
+/** Moves a session's creation time, for flows that only accept a recently created session. */
+export function backdateMockSession({ sessionToken, createdAt }: { sessionToken: string; createdAt: Date }): void {
+  sessionCreatedAt.set(sessionToken, createdAt);
 }
 
 /**
@@ -112,22 +186,33 @@ function extractSessionToken(cookie: string | undefined): string | null {
 
 /**
  * Resolves the signed-in user from request headers. Accepts a Fetch `Headers` instance
- * (real better-auth shape) or a plain object.
+ * (real better-auth shape) or a plain object. With the bearer plugin configured, a valid
+ * `Authorization: Bearer` token takes precedence over the cookie, as in real better-auth.
  */
-function resolveSession(
-  headers: unknown,
-): { user: { id: string; email: string; name?: string }; token: string } | null {
+function resolveSession({
+  headers,
+  bearerOptions,
+}: {
+  headers: unknown;
+  bearerOptions: { requireSignature: boolean } | null;
+}): { user: MockSessionUser; token: string; createdAt: Date } | null {
   let cookie: string | undefined;
+  let authorization: string | undefined;
   if (headers instanceof Headers) {
-    cookie = headers.get('cookie') ?? headers.get('Cookie') ?? undefined;
+    cookie = headers.get('cookie') ?? undefined;
+    authorization = headers.get('authorization') ?? undefined;
   } else {
-    const headerObj = headers as Record<string, string | undefined>;
+    const headerObj = (headers ?? {}) as Record<string, string | undefined>;
     cookie = headerObj.cookie || headerObj.Cookie;
+    authorization = headerObj.authorization || headerObj.Authorization;
   }
-  const token = extractSessionToken(cookie);
+  const bearerToken = bearerOptions
+    ? tokenFromBearerHeader({ authorization, requireSignature: bearerOptions.requireSignature })
+    : null;
+  const token = bearerToken ?? extractSessionToken(cookie);
   if (!token) return null;
   const user = sessionStore.get(token);
-  return user ? { user, token } : null;
+  return user ? { user, token, createdAt: sessionCreatedAt.get(token) ?? new Date() } : null;
 }
 
 /**
@@ -138,7 +223,29 @@ export function betterAuth(config: BetterAuthConfig): AuthInstance {
   // Store config for later use
   const basePath = config.basePath || '/api/auth';
 
+  const bearerPlugin = (
+    config.plugins as { id?: string; options?: { requireSignature?: boolean } }[] | undefined
+  )?.find((plugin) => plugin?.id === 'bearer');
+  const bearerOptions = bearerPlugin ? { requireSignature: Boolean(bearerPlugin.options?.requireSignature) } : null;
+
+  /**
+   * Response headers for a request that sets a session cookie, plus `set-auth-token` and
+   * its `Access-Control-Expose-Headers` entry like the bearer plugin.
+   */
+  const sessionResponseHeaders = ({ sessionToken }: { sessionToken: string }): Record<string, string> => ({
+    'Content-Type': 'application/json',
+    'Set-Cookie': `bt_auth.session_token=${sessionToken}; Path=/; HttpOnly`,
+    ...(bearerOptions
+      ? {
+          'set-auth-token': signSessionToken({ token: sessionToken }),
+          'Access-Control-Expose-Headers': 'set-auth-token',
+        }
+      : {}),
+  });
+
   return {
+    $context: Promise.resolve({ secret: MOCK_AUTH_SECRET }),
+
     handler: async (request: Request): Promise<Response> => {
       const url = new URL(request.url);
       const path = url.pathname.replace(basePath, '');
@@ -204,7 +311,7 @@ export function betterAuth(config: BetterAuthConfig): AuthInstance {
         }
 
         // Hook succeeded — register the session for subsequent requests.
-        sessionStore.set(sessionToken, newUser);
+        storeSession({ token: sessionToken, user: newUser });
 
         return new Response(
           JSON.stringify({
@@ -213,10 +320,7 @@ export function betterAuth(config: BetterAuthConfig): AuthInstance {
           }),
           {
             status: 200,
-            headers: {
-              'Content-Type': 'application/json',
-              'Set-Cookie': `bt_auth.session_token=${sessionToken}; Path=/; HttpOnly`,
-            },
+            headers: sessionResponseHeaders({ sessionToken }),
           },
         );
       }
@@ -227,7 +331,7 @@ export function betterAuth(config: BetterAuthConfig): AuthInstance {
         const sessionToken = 'test-token';
 
         // Store session for later lookup
-        sessionStore.set(sessionToken, user);
+        storeSession({ token: sessionToken, user });
 
         return new Response(
           JSON.stringify({
@@ -236,29 +340,22 @@ export function betterAuth(config: BetterAuthConfig): AuthInstance {
           }),
           {
             status: 200,
-            headers: {
-              'Content-Type': 'application/json',
-              'Set-Cookie': `bt_auth.session_token=${sessionToken}; Path=/; HttpOnly`,
-            },
+            headers: sessionResponseHeaders({ sessionToken }),
           },
         );
       }
 
       if (path === '/get-session' && request.method === 'GET') {
-        const cookie = request.headers.get('Cookie');
-        const sessionToken = extractSessionToken(cookie || undefined);
+        const session = resolveSession({ headers: request.headers, bearerOptions });
 
-        if (sessionToken) {
-          const user = sessionStore.get(sessionToken);
-          if (user) {
-            return new Response(
-              JSON.stringify({
-                user,
-                session: { id: 'test-session-id', token: sessionToken },
-              }),
-              { status: 200, headers: { 'Content-Type': 'application/json' } },
-            );
-          }
+        if (session) {
+          return new Response(
+            JSON.stringify({
+              user: session.user,
+              session: { id: 'test-session-id', token: session.token },
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          );
         }
         return new Response(JSON.stringify({ session: null, user: null }), {
           status: 200,
@@ -267,6 +364,10 @@ export function betterAuth(config: BetterAuthConfig): AuthInstance {
       }
 
       if (path === '/sign-out' && request.method === 'POST') {
+        // Real sign-out deletes the session row, so its token stops authenticating.
+        const session = resolveSession({ headers: request.headers, bearerOptions });
+        if (session) deleteSession({ token: session.token });
+
         return new Response(JSON.stringify({ success: true }), {
           status: 200,
           headers: {
@@ -285,16 +386,38 @@ export function betterAuth(config: BetterAuthConfig): AuthInstance {
 
     api: {
       getSession: async ({ headers }: { headers: unknown }) => {
-        const session = resolveSession(headers);
+        const session = resolveSession({ headers, bearerOptions });
         if (!session) return null;
         return {
           user: session.user,
-          session: { id: 'test-session-id', token: session.token },
+          session: {
+            id: 'test-session-id',
+            token: session.token,
+            userId: session.user.id,
+            createdAt: session.createdAt,
+          },
         };
       },
 
+      /**
+       * Stands in for a configured provider: returns an authorization URL and the
+       * OAuth state cookie the way real better-auth does with `disableRedirect`.
+       */
+      signInSocial: async ({ body, returnHeaders }: SignInSocialParams) => {
+        const state = randomUUID();
+        const response = {
+          url: `https://oauth.mock/${body.provider}/authorize?state=${state}`,
+          redirect: !body.disableRedirect,
+        };
+        if (!returnHeaders) return response;
+
+        const headers = new Headers();
+        headers.append('set-cookie', `bt_auth.state=${state}; Max-Age=300; Path=/; HttpOnly; SameSite=Lax`);
+        return { headers, response };
+      },
+
       setPassword: async ({ headers }: { body: { newPassword: string }; headers: unknown }) => {
-        const session = resolveSession(headers);
+        const session = resolveSession({ headers, bearerOptions });
         if (!session) {
           throw new APIError('UNAUTHORIZED', { message: 'Unauthorized', code: 'UNAUTHORIZED' });
         }
@@ -326,7 +449,7 @@ export function betterAuth(config: BetterAuthConfig): AuthInstance {
         const user = { id: `auth-user-for-${body.email}`, email: body.email };
 
         // Store session for later lookup
-        sessionStore.set(sessionToken, user);
+        storeSession({ token: sessionToken, user });
 
         const responseData = {
           redirect: false,

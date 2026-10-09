@@ -1,0 +1,7 @@
+{
+  "status": "success",
+  "response": [
+    { "id": "p-1", "name": "Lidl", "logoDomain": "lidl.com", "logoInitials": null, "logoColor": null },
+    { "id": "p-2", "name": "Landlord", "logoDomain": null, "logoInitials": "LL", "logoColor": "#aa3300" }
+  ]
+}

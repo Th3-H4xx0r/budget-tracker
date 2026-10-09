@@ -1,0 +1,16 @@
+{
+  "status": "success",
+  "response": [
+    { "id": "tag-1", "name": "Trip", "color": "#00aa00", "icon": null, "description": null, "remindersCount": 0 },
+    {
+      "id": "tag-2",
+      "name": "Work",
+      "color": "#0000ff",
+      "icon": "briefcase",
+      "description": "Reimbursable",
+      "remindersCount": 2,
+      "userId": 42,
+      "createdAt": "2026-02-02T00:00:00.000Z"
+    }
+  ]
+}

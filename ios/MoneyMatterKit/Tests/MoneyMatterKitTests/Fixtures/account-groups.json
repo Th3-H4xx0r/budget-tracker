@@ -1,0 +1,88 @@
+{
+  "status": "success",
+  "response": [
+    {
+      "id": "g-root",
+      "name": "Everyday",
+      "userId": 42,
+      "parentGroupId": null,
+      "bankDataProviderConnectionId": null,
+      "logoDomain": null,
+      "logoInitials": null,
+      "logoColor": null,
+      "accounts": [
+        {
+          "id": "a1f6e2d4-0000-4000-8000-000000000001",
+          "name": "Checking",
+          "initialBalance": 0,
+          "refInitialBalance": 0,
+          "currentBalance": 10,
+          "refCurrentBalance": 10,
+          "creditLimit": 0,
+          "refCreditLimit": 0,
+          "type": "system",
+          "accountCategory": "general",
+          "currencyCode": "EUR",
+          "userId": 42,
+          "externalId": null,
+          "status": "active",
+          "excludeFromStats": false,
+          "bankDataProviderConnectionId": null,
+          "bankProviderType": null,
+          "logoDomain": null,
+          "logoInitials": null,
+          "logoColor": null
+        }
+      ],
+      "childGroups": [
+        {
+          "id": "g-child",
+          "name": "Cards",
+          "userId": 42,
+          "parentGroupId": "g-root",
+          "bankDataProviderConnectionId": null,
+          "logoDomain": null,
+          "logoInitials": null,
+          "logoColor": null,
+          "accounts": [
+            {
+              "id": "a1f6e2d4-0000-4000-8000-000000000004",
+              "name": "Visa",
+              "initialBalance": 0,
+              "refInitialBalance": 0,
+              "currentBalance": -5,
+              "refCurrentBalance": -5,
+              "creditLimit": 100,
+              "refCreditLimit": 100,
+              "type": "system",
+              "accountCategory": "credit-card",
+              "currencyCode": "EUR",
+              "userId": 42,
+              "externalId": null,
+              "status": "active",
+              "excludeFromStats": false,
+              "bankDataProviderConnectionId": null,
+              "bankProviderType": null,
+              "logoDomain": null,
+              "logoInitials": null,
+              "logoColor": null
+            }
+          ],
+          "childGroups": []
+        }
+      ]
+    },
+    {
+      "id": "g-child",
+      "name": "Cards",
+      "userId": 42,
+      "parentGroupId": "g-root",
+      "bankDataProviderConnectionId": null,
+      "logoDomain": null,
+      "logoInitials": null,
+      "logoColor": null,
+      "accounts": [],
+      "childGroups": []
+    }
+  ]
+}

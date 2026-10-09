@@ -1,0 +1,44 @@
+{
+  "status": "success",
+  "response": [
+    {
+      "id": "p-1",
+      "userId": 42,
+      "name": "Lidl",
+      "normalizedName": "lidl",
+      "defaultCategoryId": "c-food",
+      "categorizationMode": "auto",
+      "logoDomain": "lidl.com",
+      "logoInitials": null,
+      "logoColor": null,
+      "logoSource": "brand",
+      "defaultTagIds": ["tag-1"],
+      "createdAt": "2026-01-01T00:00:00.000Z",
+      "updatedAt": "2026-01-01T00:00:00.000Z",
+      "stats": {
+        "payeeId": "p-1",
+        "transactionCount": 12,
+        "netFlowRef": -340.5,
+        "firstSeenAt": "2026-01-05T00:00:00.000Z",
+        "lastSeenAt": "2026-10-08T00:00:00.000Z",
+        "topCategoryId": "c-food"
+      }
+    },
+    {
+      "id": "p-3",
+      "userId": 42,
+      "name": "New payee",
+      "normalizedName": "new payee",
+      "defaultCategoryId": null,
+      "categorizationMode": "auto",
+      "logoDomain": null,
+      "logoInitials": null,
+      "logoColor": null,
+      "logoSource": null,
+      "defaultTagIds": [],
+      "createdAt": "2026-10-01T00:00:00.000Z",
+      "updatedAt": "2026-10-01T00:00:00.000Z",
+      "stats": null
+    }
+  ]
+}

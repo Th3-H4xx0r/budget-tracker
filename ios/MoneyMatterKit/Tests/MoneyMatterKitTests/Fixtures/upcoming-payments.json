@@ -1,0 +1,33 @@
+{
+  "status": "success",
+  "response": [
+    {
+      "subscriptionId": "sub-1",
+      "subscriptionName": "Netflix",
+      "logoDomain": "netflix.com",
+      "logoInitials": null,
+      "logoColor": null,
+      "expectedAmount": 15.99,
+      "expectedCurrencyCode": "EUR",
+      "transactionType": "expense",
+      "nextPaymentDate": "2026-10-11",
+      "frequency": "monthly",
+      "categoryName": "Entertainment",
+      "categoryColor": "#9b59b6"
+    },
+    {
+      "subscriptionId": "sub-2",
+      "subscriptionName": "Salary",
+      "logoDomain": null,
+      "logoInitials": "AC",
+      "logoColor": "#123456",
+      "expectedAmount": null,
+      "expectedCurrencyCode": null,
+      "transactionType": "income",
+      "nextPaymentDate": null,
+      "frequency": "fortnightly-ish",
+      "categoryName": null,
+      "categoryColor": null
+    }
+  ]
+}

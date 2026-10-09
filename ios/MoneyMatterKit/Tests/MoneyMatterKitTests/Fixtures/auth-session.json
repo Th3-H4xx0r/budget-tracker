@@ -1,0 +1,17 @@
+{
+  "session": {
+    "id": "sess-1",
+    "userId": "ba_8f2c",
+    "token": "raw",
+    "expiresAt": "2026-10-16T08:00:00.000Z",
+    "createdAt": "2026-10-09T08:00:00.000Z"
+  },
+  "user": {
+    "id": "ba_8f2c",
+    "email": "pranav@example.com",
+    "name": "Pranav",
+    "emailVerified": true,
+    "image": null,
+    "createdAt": "2026-01-01T00:00:00.000Z"
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "status": "error",
+  "response": {
+    "message": "Validation failed",
+    "code": "VALIDATION_ERROR",
+    "validationErrors": [
+      { "code": "too_small", "message": "Amount must be positive", "path": ["body", "amount"] },
+      { "code": "invalid_type", "message": "Expected string", "path": ["body", "splits", 0, "categoryId"] }
+    ]
+  }
+}

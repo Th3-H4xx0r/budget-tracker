@@ -552,5 +552,11 @@
     "tooManyAttachments": "A transaction can hold at most {{max}} attachments.",
     "quotaExceeded": "Attachment storage quota exceeded.",
     "noFileUploaded": "No file was uploaded."
+  },
+  "auth": {
+    "nativeOAuth": {
+      "providerNotConfigured": "Sign-in with {{provider}} is not configured on this server",
+      "invalidCode": "This sign-in attempt is invalid or has expired. Please sign in again."
+    }
   }
 }

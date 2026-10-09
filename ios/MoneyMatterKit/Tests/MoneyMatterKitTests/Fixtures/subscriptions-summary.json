@@ -1,0 +1,13 @@
+{
+  "status": "success",
+  "response": {
+    "estimatedMonthlyCost": 45.99,
+    "projectedYearlyCost": 551.88,
+    "expectedMonthlyIncome": 3000,
+    "activeCount": { "expense": 2, "income": 1 },
+    "currencyCode": "EUR",
+    "averageMonthlyIncome": 2950.5,
+    "percentOfIncome": 1.56,
+    "lookbackMonths": 3
+  }
+}
