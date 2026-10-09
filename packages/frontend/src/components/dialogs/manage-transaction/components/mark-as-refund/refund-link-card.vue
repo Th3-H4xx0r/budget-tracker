@@ -3,6 +3,7 @@ import type { FormattedCategory } from '@/common/types';
 import CategoryCircle from '@/components/common/category-circle.vue';
 import { Button } from '@/components/lib/ui/button';
 import { DesktopOnlyTooltip } from '@/components/lib/ui/tooltip';
+import FraudIndicator from '@/components/transactions-list/indicators/fraud-indicator.vue';
 import { formatUIAmount } from '@/js/helpers';
 import { useCategoriesStore } from '@/stores';
 import { TRANSACTION_TYPES, type TransactionModel } from '@bt/shared/types';
@@ -134,6 +135,7 @@ const meterLinkedLabel = computed(() => {
         <template v-if="singleTx">
           <CategoryCircle :category-id="singleTx.categoryId" />
           <span class="min-w-0 truncate text-[13px]">{{ singleTxLabel }}</span>
+          <FraudIndicator compact :transaction="singleTx" />
           <span
             :class="['text-amount ml-auto text-[13px] whitespace-nowrap', amountColorClass(singleTx.transactionType)]"
           >

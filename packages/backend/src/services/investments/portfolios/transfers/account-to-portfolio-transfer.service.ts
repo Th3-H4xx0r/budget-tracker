@@ -1,4 +1,9 @@
-import { PAYMENT_TYPES, TRANSACTION_TRANSFER_NATURE, TRANSACTION_TYPES } from '@bt/shared/types';
+import {
+  PAYMENT_TYPES,
+  TRANSACTION_REVIEW_STATUS,
+  TRANSACTION_TRANSFER_NATURE,
+  TRANSACTION_TYPES,
+} from '@bt/shared/types';
 import { Money } from '@common/types/money';
 import Currencies from '@models/currencies.model';
 import PortfolioTransfers from '@models/investments/portfolio-transfers.model';
@@ -59,6 +64,8 @@ const accountToPortfolioTransferImpl = async ({
     transferNature: TRANSACTION_TRANSFER_NATURE.transfer_to_portfolio,
     time: new Date(date),
     note: description || undefined,
+    // The user created this leg; on a bank-connected account the derived status would queue it.
+    reviewStatus: TRANSACTION_REVIEW_STATUS.not_required,
   });
 
   // Create PortfolioTransfer record linked to the transaction

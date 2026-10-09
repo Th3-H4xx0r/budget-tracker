@@ -208,6 +208,43 @@ export enum TRANSACTION_TRANSFER_NATURE {
 }
 
 /**
+ * `Transactions.reviewStatus`. VARCHAR in the DB (no-DB-enums rule). Synced and imported rows
+ * start `unreviewed`; everything else is `not_required`, so the Reviewed tab only lists rows the
+ * user actually confirmed. "Check later" is not a status: the row stays `unreviewed` with
+ * `reviewDeferredAt` set.
+ */
+export enum TRANSACTION_REVIEW_STATUS {
+  not_required = 'not_required',
+  unreviewed = 'unreviewed',
+  reviewed = 'reviewed',
+  fraud = 'fraud',
+}
+
+export enum TRANSACTION_REVIEW_ACTION {
+  reviewed = 'reviewed',
+  checkLater = 'check_later',
+  fraud = 'fraud',
+  unreviewed = 'unreviewed',
+}
+
+/** Statuses with a review tab. `not_required` rows never enter review. */
+export const TRANSACTION_REVIEW_LIST_STATUSES = [
+  TRANSACTION_REVIEW_STATUS.unreviewed,
+  TRANSACTION_REVIEW_STATUS.reviewed,
+  TRANSACTION_REVIEW_STATUS.fraud,
+] as const;
+
+export type TransactionReviewListStatus = (typeof TRANSACTION_REVIEW_LIST_STATUSES)[number];
+
+/** "Check later" keeps the row `unreviewed`; the deferral lives in `reviewDeferredAt`. */
+export const TRANSACTION_REVIEW_STATUS_BY_ACTION: Record<TRANSACTION_REVIEW_ACTION, TransactionReviewListStatus> = {
+  [TRANSACTION_REVIEW_ACTION.reviewed]: TRANSACTION_REVIEW_STATUS.reviewed,
+  [TRANSACTION_REVIEW_ACTION.checkLater]: TRANSACTION_REVIEW_STATUS.unreviewed,
+  [TRANSACTION_REVIEW_ACTION.fraud]: TRANSACTION_REVIEW_STATUS.fraud,
+  [TRANSACTION_REVIEW_ACTION.unreviewed]: TRANSACTION_REVIEW_STATUS.unreviewed,
+};
+
+/**
  * Loan sub-type on `LoanDetails.loanType` — UI grouping/badges only, no impact
  * on amortization or balance handling. VARCHAR in the DB (no-DB-enums rule).
  */

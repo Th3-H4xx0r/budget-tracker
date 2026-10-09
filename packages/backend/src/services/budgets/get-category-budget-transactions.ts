@@ -1,4 +1,9 @@
-import { BUDGET_TYPES, TRANSACTION_TRANSFER_NATURE, TRANSACTION_TYPES } from '@bt/shared/types';
+import {
+  BUDGET_TYPES,
+  TRANSACTION_REVIEW_STATUS,
+  TRANSACTION_TRANSFER_NATURE,
+  TRANSACTION_TYPES,
+} from '@bt/shared/types';
 import { findOrThrowNotFound } from '@common/utils/find-or-throw-not-found';
 import { t } from '@i18n/index';
 import { ValidationError } from '@js/errors';
@@ -84,7 +89,7 @@ export const getCategoryBudgetTransactions = async ({
           transferNature: TRANSACTION_TRANSFER_NATURE.not_transfer,
           ...dateFilter,
         },
-        attributes: ['id', 'time', 'transactionType', 'note', 'accountId'],
+        attributes: ['id', 'time', 'transactionType', 'note', 'accountId', 'reviewStatus'],
         include: [{ model: Accounts, where: { excludeFromStats: false }, attributes: [] }],
       }),
       {
@@ -119,6 +124,7 @@ export const getCategoryBudgetTransactions = async ({
       note: tx.note,
       categoryId: tx.categoryId,
       accountId: tx.accountId,
+      reviewStatus: tx.reviewStatus,
       effectiveCategory: category
         ? {
             id: category.id,
@@ -146,6 +152,7 @@ export const getCategoryBudgetTransactions = async ({
       note: transaction.note,
       categoryId: split.categoryId,
       accountId: transaction.accountId,
+      reviewStatus: transaction.reviewStatus,
       effectiveCategory: category
         ? {
             id: category.id,
@@ -180,6 +187,7 @@ interface TransactionWithCategory {
   note: string | null;
   categoryId: string | null;
   accountId: string;
+  reviewStatus: TRANSACTION_REVIEW_STATUS;
   /** For split transactions, this is the split's category */
   effectiveCategory?: {
     id: string;

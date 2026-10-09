@@ -6,7 +6,7 @@
  * Deserializers convert API decimal inputs to Money.
  */
 import { PAYMENT_TYPES, TRANSACTION_TRANSFER_NATURE, TRANSACTION_TYPES } from '@bt/shared/types';
-import type { CategorizationMeta, RecordId, TransactionLocation } from '@bt/shared/types';
+import type { CategorizationMeta, RecordId, TRANSACTION_REVIEW_STATUS, TransactionLocation } from '@bt/shared/types';
 import { Money, centsToApiDecimal, centsToApiDecimalOrNull } from '@common/types/money';
 import type Tags from '@models/tags.model';
 import type TransactionGroups from '@models/transaction-groups.model';
@@ -62,6 +62,9 @@ export interface TransactionApiResponse {
   isPlanned: boolean;
   /** Set when a bank transaction merged into this row while it was planned. */
   plannedMerge: { mergedAt: string } | null;
+  reviewStatus: TRANSACTION_REVIEW_STATUS;
+  /** Set by "Check later"; `null` for rows never deferred. */
+  reviewDeferredAt: Date | null;
   payeeId: string | null;
   payeeLocked: boolean;
   /** How this tx's category was assigned (manual / ai / payee_rule / etc.). `null`
@@ -245,6 +248,8 @@ export function serializeTransaction(
     refundLinked: tx.refundLinked,
     isPlanned: tx.isPlanned ?? false,
     plannedMerge: extractPlannedMerge({ externalData: tx.externalData }),
+    reviewStatus: tx.reviewStatus,
+    reviewDeferredAt: tx.reviewDeferredAt ?? null,
     payeeId: tx.payeeId ?? null,
     payeeLocked: tx.payeeLocked ?? false,
     categorizationMeta: tx.categorizationMeta ?? null,

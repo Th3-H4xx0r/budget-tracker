@@ -13,6 +13,7 @@ export * from './stats';
 export * from './categories';
 export * from './currencies';
 export * from './transactions';
+export * from './transaction-review';
 export * from './exchange-rates';
 export * from './account-groups';
 export * from './user';

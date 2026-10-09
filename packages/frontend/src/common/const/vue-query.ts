@@ -186,6 +186,13 @@ export const VUE_QUERY_CACHE_KEYS = Object.freeze({
   // transactionChange prefix so matchCount/lastMatchedAt refresh after a sync or import.
   transactionAutomationsList: [transactionChange, 'transaction-automations-list'] as const,
 
+  // transaction review
+  // transactionChange prefix: syncs and imports add rows to the queue, and edits or
+  // deletes elsewhere can remove them, so every transaction write refreshes these.
+  transactionReviewSummary: [transactionChange, 'transaction-review-summary'] as const,
+  // append the status tab when using
+  transactionReviewList: [transactionChange, 'transaction-review-list'] as const,
+
   // transaction groups
   transactionGroupsList: [transactionChange, 'transaction-groups-list'] as const,
   transactionGroupDetail: [transactionChange, 'transaction-group-detail'] as const,

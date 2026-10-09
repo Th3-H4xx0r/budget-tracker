@@ -19,6 +19,8 @@ interface UseTransactionsDisplayOptions {
   transactions: MaybeRefOrGetter<TransactionModel[]>;
   contentFiltersActive?: MaybeRefOrGetter<boolean>;
   disableGrouping?: MaybeRefOrGetter<boolean>;
+  /** Keep both legs of a transfer: for lists where each leg is its own actionable row */
+  disableTransferDedup?: MaybeRefOrGetter<boolean>;
   maxDisplay?: MaybeRefOrGetter<number | undefined>;
 }
 
@@ -34,6 +36,7 @@ export function useTransactionsDisplay({
   transactions,
   contentFiltersActive,
   disableGrouping,
+  disableTransferDedup,
   maxDisplay,
 }: UseTransactionsDisplayOptions) {
   const displayTransactions = computed<DisplayItem[]>(() => {
@@ -52,8 +55,10 @@ export function useTransactionsDisplay({
         .map((tx) => tx.transferId as string),
     );
 
+    const keepBothLegs = toValue(disableTransferDedup) ?? false;
+
     const deduplicated = txs.filter((tx) => {
-      if (!isTwoLegTransfer(tx.transferNature)) return true;
+      if (keepBothLegs || !isTwoLegTransfer(tx.transferNature)) return true;
       if (tx.transactionType === TRANSACTION_TYPES.expense) return true;
       // Income side: only suppress it when the expense side is also in this list
       // (i.e. we're on the all-transactions view). When viewing a single account

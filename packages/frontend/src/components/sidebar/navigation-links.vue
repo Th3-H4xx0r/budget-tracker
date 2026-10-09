@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import UiButton from '@/components/lib/ui/button/Button.vue';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/lib/ui/collapsible';
+import { useTransactionReviewSummary } from '@/composable/data-queries/transaction-review';
 import { ROUTES_NAMES } from '@/routes';
 import {
   CalendarClockIcon,
@@ -13,6 +14,7 @@ import {
   LayoutDashboardIcon,
   RepeatIcon,
   RocketIcon,
+  ShieldCheckIcon,
   TrendingUpIcon,
   WalletIcon,
   WrenchIcon,
@@ -23,7 +25,7 @@ import { useRoute } from 'vue-router';
 
 import { useSidebarNavCollapse } from './use-nav-collapse';
 
-withDefaults(defineProps<{ bottomNav?: boolean }>(), { bottomNav: false });
+const props = withDefaults(defineProps<{ bottomNav?: boolean }>(), { bottomNav: false });
 
 const navItemBase = 'w-full gap-2 px-3';
 const navItemActive = 'bg-primary/10 text-foreground';
@@ -32,6 +34,17 @@ const navIconActive = 'text-primary-text';
 
 const route = useRoute();
 const { isAccountsOpen, isTransactionsOpen, isPlannedOpen } = useSidebarNavCollapse();
+
+// The bottom bar has no Review entry, so only the full link list needs the count.
+const { unreviewedCount } = useTransactionReviewSummary({ enabled: () => !props.bottomNav });
+const MAX_BADGE_COUNT = 99;
+const reviewBadgeClass =
+  'bg-primary text-primary-foreground rounded-full px-1.5 text-[10px] leading-4 font-semibold tabular-nums';
+const hasUnreviewed = computed(() => (unreviewedCount.value ?? 0) > 0);
+const reviewBadgeLabel = computed(() => {
+  const count = unreviewedCount.value ?? 0;
+  return count > MAX_BADGE_COUNT ? `${MAX_BADGE_COUNT}+` : String(count);
+});
 
 const isAccountsRoute = computed(
   () =>
@@ -59,6 +72,7 @@ watch(
 const isTransactionsRoute = computed(
   () =>
     route.name === ROUTES_NAMES.transactions ||
+    route.name === ROUTES_NAMES.transactionsReview ||
     route.name === ROUTES_NAMES.transactionGroups ||
     route.name === ROUTES_NAMES.optimizations ||
     route.name === ROUTES_NAMES.optimizationsTransfers ||
@@ -200,8 +214,16 @@ watch(
       >
         <CreditCardIcon :class="[navIconBase, isTransactionsRoute && navIconActive]" />
         <span>{{ $t('navigation.transactions') }}</span>
+        <!-- A collapsed group hides the Review link, so its count moves up to the header. -->
+        <span v-if="!isTransactionsOpen && hasUnreviewed" :class="['ml-auto', reviewBadgeClass]">
+          {{ reviewBadgeLabel }}
+        </span>
         <ChevronRightIcon
-          :class="['ml-auto size-4 shrink-0 transition-transform duration-200', { 'rotate-90': isTransactionsOpen }]"
+          :class="[
+            'size-4 shrink-0 transition-transform duration-200',
+            !isTransactionsOpen && hasUnreviewed ? '' : 'ml-auto',
+            { 'rotate-90': isTransactionsOpen },
+          ]"
         />
       </ui-button>
     </CollapsibleTrigger>
@@ -216,6 +238,20 @@ watch(
           >
             <CreditCardIcon :class="[navIconBase, isActive && navIconActive]" />
             <span>{{ $t('navigation.allTransactions') }}</span>
+          </ui-button>
+        </router-link>
+        <router-link v-slot="{ isActive }" :to="{ name: ROUTES_NAMES.transactionsReview }">
+          <ui-button
+            variant="ghost"
+            as="span"
+            :class="['w-full justify-start gap-2 px-3', isActive && navItemActive]"
+            size="sm"
+          >
+            <ShieldCheckIcon :class="[navIconBase, isActive && navIconActive]" />
+            <span>{{ $t('navigation.transactionsReview') }}</span>
+            <span v-if="hasUnreviewed" :class="['ml-auto', reviewBadgeClass]">
+              {{ reviewBadgeLabel }}
+            </span>
           </ui-button>
         </router-link>
         <router-link v-slot="{ isActive }" :to="{ name: ROUTES_NAMES.transactionGroups }">

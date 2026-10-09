@@ -1,5 +1,5 @@
 import { api } from '@/api/_api';
-import { BudgetModel, endpointsTypes } from '@bt/shared/types';
+import { BudgetModel, TRANSACTION_REVIEW_STATUS, endpointsTypes } from '@bt/shared/types';
 
 interface editBudgetParamsParams {
   name?: string;
@@ -74,6 +74,7 @@ export interface CategoryBudgetTransaction {
     color: string;
   };
   effectiveRefAmount?: number;
+  reviewStatus?: TRANSACTION_REVIEW_STATUS;
 }
 
 interface CategoryBudgetTransactionsResponse {

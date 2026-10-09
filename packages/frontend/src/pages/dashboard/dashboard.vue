@@ -3,6 +3,8 @@
     <!-- Recovery method suggestion banner -->
     <RecoveryMethodBanner />
 
+    <ReviewTransactionsCard v-if="!hasNoAccounts" />
+
     <!-- Main period selector - floating on mobile, normal flow on desktop -->
     <div
       v-if="!hasNoAccounts"
@@ -75,6 +77,7 @@ import { useRoute } from 'vue-router';
 import DashboardEditToolbar from './components/dashboard-edit-toolbar.vue';
 import DashboardGrid from './components/dashboard-grid.vue';
 import PeriodSelector from './components/period-selector.vue';
+import ReviewTransactionsCard from './components/review-transactions-card.vue';
 import { type Period } from './types';
 
 const { isSafariMobile, isPWA } = useSafariDetection();

@@ -241,5 +241,63 @@
       "confirmPlanSuccess": "Plan recorded — balance updated",
       "confirmPlanError": "Failed to record the plan"
     }
+  },
+  "transactionReview": {
+    "card": {
+      "title": "{count} transaction to review | {count} transactions to review",
+      "subtitle": "Check recent bank transactions for anything you don't recognize",
+      "reviewButton": "Review",
+      "fraudLink": "{count} marked as fraud | {count} marked as fraud",
+      "loadFailed": "Couldn't load review status"
+    },
+    "stack": {
+      "title": "Review transactions",
+      "description": "Confirm each transaction or flag the ones you don't recognize.",
+      "progress": "{n} of {total}",
+      "undo": "Undo",
+      "allCaughtUp": "All caught up",
+      "savedForLater": "{count} saved for later | {count} saved for later"
+    },
+    "actions": {
+      "looksGood": "Looks good",
+      "checkLater": "Check later",
+      "fraud": "Fraud",
+      "markAsFraud": "Mark as fraud",
+      "moveToUnreviewed": "Move to unreviewed",
+      "notFraud": "Not fraud"
+    },
+    "page": {
+      "title": "Transaction review",
+      "startReview": "Start review"
+    },
+    "tabs": {
+      "unreviewed": "Unreviewed",
+      "reviewed": "Reviewed",
+      "fraud": "Fraud"
+    },
+    "empty": {
+      "unreviewed": {
+        "title": "You're all caught up",
+        "description": "New bank-synced and imported transactions will show up here for review."
+      },
+      "reviewed": {
+        "title": "Nothing reviewed yet",
+        "description": "Transactions you mark as Looks good will appear here."
+      },
+      "fraud": {
+        "title": "No fraud reported",
+        "description": "Transactions you mark as fraud will appear here."
+      }
+    },
+    "loadFailed": "Couldn't load transactions to review.",
+    "toasts": {
+      "markedReviewed": "Marked as reviewed",
+      "markedFraud": "Marked as fraud",
+      "movedToUnreviewed": "Moved to unreviewed",
+      "updateFailed": "Couldn't update the review status. Please try again.",
+      "actionFailed": "Couldn't save your review. The transaction is back in the queue.",
+      "undoFailed": "Couldn't undo. Please try again.",
+      "loadMoreFailed": "Couldn't load more transactions to review. Trying again on your next action."
+    }
   }
 }

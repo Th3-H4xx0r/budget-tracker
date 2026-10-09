@@ -1,4 +1,4 @@
-import { BUDGET_TYPES, BudgetModel, endpointsTypes } from '@bt/shared/types';
+import { BUDGET_TYPES, BudgetModel, TRANSACTION_REVIEW_STATUS, endpointsTypes } from '@bt/shared/types';
 import addTransactionsToBudget from '@controllers/budgets/add-transaction-to-budget';
 import removeTransactionsFromBudget from '@controllers/budgets/remove-transaction-from-budget';
 import * as getBudgetService from '@root/services/budget.service';
@@ -194,6 +194,7 @@ interface CategoryBudgetTransactionsResponse {
     note: string | null;
     categoryId: string | null;
     accountId: string;
+    reviewStatus: TRANSACTION_REVIEW_STATUS;
     effectiveCategory?: {
       id: string;
       name: string;

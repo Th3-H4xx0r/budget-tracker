@@ -30,6 +30,7 @@
         </label>
 
         <PlannedIndicator compact hide-confirmed :transaction="tx" />
+        <FraudIndicator compact :transaction="tx" />
       </div>
     </td>
 
@@ -185,6 +186,7 @@ import { Checkbox } from '@/components/lib/ui/checkbox';
 import { ScrollArea } from '@/components/lib/ui/scroll-area';
 import { DesktopOnlyTooltip } from '@/components/lib/ui/tooltip';
 import AttachmentIndicator from '@/components/transactions-list/indicators/attachment-indicator.vue';
+import FraudIndicator from '@/components/transactions-list/indicators/fraud-indicator.vue';
 import PlannedIndicator from '@/components/transactions-list/indicators/planned-indicator.vue';
 import RefundIndicator from '@/components/transactions-list/indicators/refund-indicator.vue';
 import SplitIndicator from '@/components/transactions-list/indicators/split-indicator.vue';

@@ -15,6 +15,7 @@ import Button from '@/components/lib/ui/button/Button.vue';
 import Card from '@/components/lib/ui/card/Card.vue';
 import PillTabs from '@/components/lib/ui/pill-tabs/pill-tabs.vue';
 import { useNotificationCenter } from '@/components/notification-center';
+import FraudIndicator from '@/components/transactions-list/indicators/fraud-indicator.vue';
 import { useFormatCurrency } from '@/composable';
 import { useBudgetAccess } from '@/composable/use-budget-access';
 import { ApiErrorResponseError } from '@/js/errors';
@@ -452,6 +453,7 @@ const totalBreakdownAmount = computed(() => categoryBreakdown.value.reduce((sum,
                       <span v-else class="text-muted-foreground truncate text-sm">
                         {{ $t('pages.budgetDetails.uncategorized') }}
                       </span>
+                      <FraudIndicator :transaction="tx" />
                     </div>
                     <div class="text-muted-foreground flex items-center gap-2 text-xs">
                       <span>{{ formatTransactionDate(tx.time) }}</span>

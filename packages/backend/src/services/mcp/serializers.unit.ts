@@ -1,4 +1,9 @@
-import { ACCOUNT_STATUSES, TRANSACTION_TRANSFER_NATURE, TRANSACTION_TYPES } from '@bt/shared/types';
+import {
+  ACCOUNT_STATUSES,
+  TRANSACTION_REVIEW_STATUS,
+  TRANSACTION_TRANSFER_NATURE,
+  TRANSACTION_TYPES,
+} from '@bt/shared/types';
 import { describe, expect, it } from '@jest/globals';
 import type { AccountApiResponse } from '@root/serializers/accounts.serializer';
 import type { TransactionApiResponse } from '@root/serializers/transactions.serializer';
@@ -63,6 +68,8 @@ const fullTransaction: TransactionApiResponse = {
   refundLinked: false,
   isPlanned: false,
   plannedMerge: null,
+  reviewStatus: TRANSACTION_REVIEW_STATUS.unreviewed,
+  reviewDeferredAt: null,
   payeeId: null,
   payeeLocked: false,
   categorizationMeta: null,

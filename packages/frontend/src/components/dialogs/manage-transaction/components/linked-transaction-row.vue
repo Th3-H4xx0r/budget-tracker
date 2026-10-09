@@ -2,6 +2,7 @@
 import CategoryCircle from '@/components/common/category-circle.vue';
 import { Button } from '@/components/lib/ui/button';
 import { DesktopOnlyTooltip } from '@/components/lib/ui/tooltip';
+import FraudIndicator from '@/components/transactions-list/indicators/fraud-indicator.vue';
 import { formatUIAmount } from '@/js/helpers';
 import { useCategoriesStore } from '@/stores';
 import { TRANSACTION_TYPES, type TransactionModel } from '@bt/shared/types';
@@ -52,6 +53,7 @@ const label = computed(() => {
     </div>
 
     <span class="flex shrink-0 items-center gap-2">
+      <FraudIndicator compact :transaction="transaction" />
       <span
         :class="
           transaction.transactionType === TRANSACTION_TYPES.income ? 'text-app-income-color' : 'text-app-expense-color'

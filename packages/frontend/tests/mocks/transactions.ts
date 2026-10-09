@@ -1,6 +1,7 @@
 import {
   ACCOUNT_TYPES,
   PAYMENT_TYPES,
+  TRANSACTION_REVIEW_STATUS,
   TRANSACTION_TRANSFER_NATURE,
   TRANSACTION_TYPES,
   TransactionModel,
@@ -48,6 +49,8 @@ const buildCommonTxBody = (overrides: Partial<TransactionModel> = {}): Transacti
     location: null,
     refundLinked: false,
     isPlanned: false,
+    reviewStatus: TRANSACTION_REVIEW_STATUS.not_required,
+    reviewDeferredAt: null,
     creatorSnapshot: null,
     createdAt: new Date(),
     updatedAt: new Date(),

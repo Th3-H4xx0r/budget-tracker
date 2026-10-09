@@ -20,6 +20,9 @@ import getRefund from '@controllers/transactions.controller/refunds/get-refund';
 import getRefundRecommendations from '@controllers/transactions.controller/refunds/get-refund-recommendations';
 import getRefunds from '@controllers/transactions.controller/refunds/get-refunds';
 import getRefundsForTransactionById from '@controllers/transactions.controller/refunds/get-refunds-for-transaction-by-id';
+import getReviewSummary from '@controllers/transactions.controller/review/get-review-summary';
+import getReviewTransactions from '@controllers/transactions.controller/review/get-review-transactions';
+import updateReviewStatus from '@controllers/transactions.controller/review/update-review-status';
 import deleteSplit from '@controllers/transactions.controller/splits/delete-split';
 import bulkScanTransferRecommendations from '@controllers/transactions.controller/transfer-linking/bulk-scan-transfer-recommendations';
 import dismissTransferSuggestion from '@controllers/transactions.controller/transfer-linking/dismiss-transfer-suggestion';
@@ -51,6 +54,15 @@ router.get(
   validateEndpoint(getPlannedSummary.schema),
   getPlannedSummary.handler,
 );
+router.get('/review/summary', authenticateSession, validateEndpoint(getReviewSummary.schema), getReviewSummary.handler);
+router.get(
+  '/review',
+  authenticateSession,
+  validateEndpoint(getReviewTransactions.schema),
+  getReviewTransactions.handler,
+);
+// No base-currency lock: review status is a label, and the recalculation never writes it.
+router.put('/review', authenticateSession, validateEndpoint(updateReviewStatus.schema), updateReviewStatus.handler);
 router.get(
   '/transfer-recommendations',
   authenticateSession,

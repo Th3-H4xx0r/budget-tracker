@@ -27,6 +27,7 @@ import {
   SUBSCRIPTION_MATCH_SOURCE,
   SUBSCRIPTION_TYPES,
   SubscriptionPeriodStatus,
+  TRANSACTION_REVIEW_STATUS,
   TRANSACTION_TRANSFER_NATURE,
   TRANSACTION_TYPES,
   TagReminderFrequency,
@@ -319,6 +320,9 @@ export interface TransactionModel {
   /** Serializer-derived, list reads only. */
   hasAttachments?: boolean;
   isPlanned: boolean;
+  reviewStatus: TRANSACTION_REVIEW_STATUS;
+  /** Set by "Check later"; orders deferred rows behind fresh ones in the review queue. */
+  reviewDeferredAt: Date | null;
   /** Serializer-derived: set when a bank transaction merged into this row while it was planned. */
   plannedMerge?: { mergedAt: string } | null;
   /** Metadata about how this transaction was categorized */

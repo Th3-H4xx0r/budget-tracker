@@ -238,6 +238,12 @@ const routes: RouteRecordRaw[] = [
         meta: { i18nChunks: ['pages/transactions'] as I18nChunkName[] },
       },
       {
+        path: '/transactions/review',
+        name: ROUTES_NAMES.transactionsReview,
+        component: () => import('@/pages/transactions-review/index.vue'),
+        meta: { i18nChunks: ['pages/transactions'] as I18nChunkName[] },
+      },
+      {
         path: '/transaction-groups',
         name: ROUTES_NAMES.transactionGroups,
         component: () => import('@/pages/transaction-groups/index.vue'),

@@ -8,6 +8,7 @@ import {
   PAYMENT_TYPES,
   RecordId,
   SORT_DIRECTIONS,
+  TRANSACTION_REVIEW_STATUS,
   TRANSACTION_SORT_FIELD,
   TRANSACTION_TRANSFER_NATURE,
   TRANSACTION_TYPES,
@@ -55,6 +56,7 @@ import {
 } from '@models/transactions-query/where-builders';
 import Users from '@models/users.model';
 import { updateAccountBalanceForChangedTx } from '@services/accounts/update-balance-for-changed-tx';
+import { subDays } from 'date-fns';
 import {
   Op,
   FindAttributeOptions,
@@ -83,7 +85,7 @@ import {
   HasMany,
 } from 'sequelize-typescript';
 
-const prepareTXInclude = ({ includeSplits }: { includeSplits?: boolean }) => {
+export const prepareTXInclude = ({ includeSplits }: { includeSplits?: boolean }) => {
   const include: Includeable[] = [];
 
   if (includeSplits) {
@@ -96,6 +98,17 @@ const prepareTXInclude = ({ includeSplits }: { includeSplits?: boolean }) => {
 
   return include;
 };
+
+/** The tag fields a transaction row displays. `tagIds` narrows the loaded tags to that set. */
+export const tagsDisplayInclude = ({ tagIds, required }: { tagIds?: string[]; required: boolean }): Includeable => ({
+  model: Tags,
+  through: {
+    attributes: [],
+    ...(tagIds?.length ? { where: { tagId: { [Op.in]: tagIds } } } : {}),
+  },
+  attributes: ['id', 'name', 'color', 'icon'],
+  required,
+});
 
 export interface TransactionsAttributes {
   id: string;
@@ -140,6 +153,8 @@ export interface TransactionsAttributes {
   originalCurrencyCode: string | null;
   refundLinked: boolean;
   isPlanned: boolean;
+  reviewStatus: TRANSACTION_REVIEW_STATUS;
+  reviewDeferredAt: Date | null;
   categorizationMeta: CategorizationMeta | null;
   payeeId: string | null;
   payeeLocked: boolean;
@@ -319,6 +334,21 @@ export default class Transactions extends Model {
     defaultValue: false,
   })
   declare isPlanned: boolean;
+
+  // A label only: no balance, statistics, budget or matching path reads it. Set once by
+  // `createTransaction`; afterwards only the review endpoints change it. `defaultValue` is
+  // required for the same backup-restore reason as `isPlanned`.
+  @Column({
+    type: DataType.STRING(20),
+    allowNull: false,
+    defaultValue: TRANSACTION_REVIEW_STATUS.not_required,
+    validate: { isIn: [Object.values(TRANSACTION_REVIEW_STATUS)] },
+  })
+  declare reviewStatus: TRANSACTION_REVIEW_STATUS;
+
+  // Set by "Check later": deferred rows queue behind never-deferred ones, earliest deferral first.
+  @Column({ type: DataType.DATE, allowNull: true, defaultValue: null })
+  declare reviewDeferredAt: Date | null;
 
   // Metadata about how this transaction was categorized (manual, ai, mcc_rule, user_rule, subscription_rule, payee_rule)
   @Column({
@@ -810,6 +840,9 @@ function buildExcludeRefundTxsCondition({ keepRefundsForTxId }: { keepRefundsFor
 
 const HAS_ATTACHMENTS_SQL = `EXISTS (SELECT 1 FROM "TransactionAttachments" ta WHERE ta."transactionId" = "Transactions"."id")`;
 
+/** Adds a `hasAttachments` boolean to every row. Costs an EXISTS subquery per row. */
+export const hasAttachmentsAttribute: ProjectionAlias = [literal(HAS_ATTACHMENTS_SQL), 'hasAttachments'];
+
 export const findWithFilters = async ({
   planned,
   access,
@@ -1165,15 +1198,7 @@ export const findWithFilters = async ({
     }
 
     // Add tags include for display (with filtering if tagIds provided)
-    queryInclude.push({
-      model: Tags,
-      through: {
-        attributes: [],
-        ...(tagIds?.length ? { where: { tagId: { [Op.in]: tagIds } } } : {}),
-      },
-      attributes: ['id', 'name', 'color', 'icon'],
-      required: !!tagIds?.length && !hasBlankTag,
-    });
+    queryInclude.push(tagsDisplayInclude({ tagIds, required: !!tagIds?.length && !hasBlankTag }));
   }
 
   // Add note search condition if provided
@@ -1239,7 +1264,6 @@ export const findWithFilters = async ({
   }
   const { limit, offset } = completenessToPagination({ completeness });
 
-  const hasAttachmentsAttribute: ProjectionAlias = [literal(HAS_ATTACHMENTS_SQL), 'hasAttachments'];
   const resolvedAttributes: FindAttributeOptions | undefined = !includeHasAttachments
     ? attributes
     : attributes
@@ -1353,13 +1377,60 @@ type CreateTxOptionalParams = Partial<
     | 'isPlanned'
     | 'originalAmount'
     | 'originalCurrencyCode'
+    | 'reviewStatus'
   >
 >;
 
 export type CreateTransactionPayload = CreateTxRequiredParams & CreateTxOptionalParams;
 
-export const createTransaction = async ({ userId, ...rest }: CreateTransactionPayload) => {
-  const response = await Transactions.create({ userId, ...rest });
+/** How far back a new synced or imported row still enters review. The migration that added
+ *  `reviewStatus` backfilled the same window. */
+const REVIEW_WINDOW_DAYS = 30;
+
+/**
+ * Recent bank data the user did not type enters the review queue: rows synced from a provider
+ * account and rows an importer stamped with `importDetails`, dated within the review window.
+ * Older history, manual rows, planned rows (the user created the plan, so a later bank merge
+ * keeps this status) and every other path stay `not_required`.
+ */
+const resolveInitialReviewStatus = ({
+  accountType,
+  externalData,
+  isPlanned,
+  time,
+}: Pick<
+  CreateTransactionPayload,
+  'accountType' | 'externalData' | 'isPlanned' | 'time'
+>): TRANSACTION_REVIEW_STATUS => {
+  if (isPlanned) return TRANSACTION_REVIEW_STATUS.not_required;
+
+  const isSynced = accountType !== ACCOUNT_TYPES.system;
+  const isImported = Boolean(externalData?.importDetails);
+  const isRecent = !time || time >= subDays(new Date(), REVIEW_WINDOW_DAYS);
+
+  return (isSynced || isImported) && isRecent
+    ? TRANSACTION_REVIEW_STATUS.unreviewed
+    : TRANSACTION_REVIEW_STATUS.not_required;
+};
+
+/**
+ * `reviewStatus` overrides the derived status. Callers that write a user-initiated row with a
+ * provider account's type (portfolio transfers) pass `not_required`, since the user, not the
+ * bank, created it.
+ */
+export const createTransaction = async ({ userId, reviewStatus, ...rest }: CreateTransactionPayload) => {
+  const response = await Transactions.create({
+    userId,
+    ...rest,
+    reviewStatus:
+      reviewStatus ??
+      resolveInitialReviewStatus({
+        accountType: rest.accountType,
+        externalData: rest.externalData,
+        isPlanned: rest.isPlanned,
+        time: rest.time,
+      }),
+  });
 
   return getTransactionById({
     id: response.get('id'),

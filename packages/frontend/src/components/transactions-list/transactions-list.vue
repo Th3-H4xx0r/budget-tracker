@@ -42,6 +42,8 @@ const props = withDefaults(
     contentFiltersActive?: boolean;
     /** For scoped lists (e.g. a single payee) where a group row would misrepresent the set and hide per-row actions */
     disableGrouping?: boolean;
+    /** For lists where each transfer leg is its own actionable row (e.g. the review queue) */
+    disableTransferDedup?: boolean;
     selectionScopeKey?: string;
   }>(),
   {
@@ -53,6 +55,7 @@ const props = withDefaults(
     enableBulkEdit: false,
     contentFiltersActive: false,
     disableGrouping: false,
+    disableTransferDedup: false,
   },
 );
 const emits = defineEmits(['fetch-next-page']);
@@ -67,6 +70,7 @@ const { displayTransactions } = useTransactionsDisplay({
   transactions: () => props.transactions,
   contentFiltersActive: () => props.contentFiltersActive,
   disableGrouping: () => props.disableGrouping,
+  disableTransferDedup: () => props.disableTransferDedup,
   maxDisplay: () => props.maxDisplay,
 });
 

@@ -40,6 +40,7 @@ export const ROUTES_NAMES = Object.freeze({
   venturePlatformsList: `${ROUTER_LAYOUTS.dashboard}.venture.platforms`,
   ventureDealDetail: `${ROUTER_LAYOUTS.dashboard}.venture.deal-detail`,
   transactions: `${ROUTER_LAYOUTS.dashboard}.transactions`,
+  transactionsReview: `${ROUTER_LAYOUTS.dashboard}.transactions.review`,
   transactionGroups: `${ROUTER_LAYOUTS.dashboard}.transaction-groups`,
   optimizations: `${ROUTER_LAYOUTS.dashboard}.optimizations`,
   optimizationsTransfers: `${ROUTER_LAYOUTS.dashboard}.optimizations.transfers`,

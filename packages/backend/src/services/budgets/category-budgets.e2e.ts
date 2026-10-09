@@ -1,4 +1,9 @@
-import { BUDGET_TYPES, TRANSACTION_TYPES } from '@bt/shared/types';
+import {
+  BUDGET_TYPES,
+  TRANSACTION_REVIEW_ACTION,
+  TRANSACTION_REVIEW_STATUS,
+  TRANSACTION_TYPES,
+} from '@bt/shared/types';
 import { NONEXISTENT_ID } from '@common/lib/record-id-helpers';
 import { describe, expect, it } from '@jest/globals';
 import { ERROR_CODES } from '@js/errors';
@@ -901,6 +906,40 @@ describe('Category-Based Budgets', () => {
       expect(result.transactions).toHaveLength(1);
       expect(result.transactions[0]!.effectiveCategory?.id).toBe(category.id);
       expect(result.transactions[0]!.effectiveCategory?.name).toBe('Food');
+    });
+
+    it('returns each transaction with its review status', async () => {
+      const category = await helpers.addCustomCategory({ name: 'Food', color: '#FF0000', raw: true });
+      const budget = await helpers.createCustomBudget({
+        name: 'Food Budget',
+        type: BUDGET_TYPES.category,
+        categoryIds: [category.id],
+        raw: true,
+      });
+      const account = await helpers.createAccount({ raw: true });
+
+      const createExpense = ({ amount }: { amount: number }) =>
+        helpers.createTransaction({
+          payload: helpers.buildTransactionPayload({
+            accountId: account.id,
+            amount,
+            transactionType: TRANSACTION_TYPES.expense,
+            categoryId: category.id,
+          }),
+          raw: true,
+        });
+      const [flagged] = await createExpense({ amount: 100 });
+      const [untouched] = await createExpense({ amount: 200 });
+      await helpers.updateReviewStatus({
+        payload: { transactionIds: [flagged.id], action: TRANSACTION_REVIEW_ACTION.fraud },
+        raw: true,
+      });
+
+      const result = await helpers.getCategoryBudgetTransactions({ id: budget.id, raw: true });
+      const statusById = new Map(result.transactions.map((tx) => [tx.id, tx.reviewStatus]));
+
+      expect(statusById.get(flagged.id)).toBe(TRANSACTION_REVIEW_STATUS.fraud);
+      expect(statusById.get(untouched.id)).toBe(TRANSACTION_REVIEW_STATUS.not_required);
     });
 
     it('excludes transactions not matching budget categories', async () => {

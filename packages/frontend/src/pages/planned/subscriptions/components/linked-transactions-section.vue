@@ -7,6 +7,7 @@ import ResponsiveTooltip from '@/components/common/responsive-tooltip.vue';
 import Button from '@/components/lib/ui/button/Button.vue';
 import { DesktopOnlyTooltip } from '@/components/lib/ui/tooltip';
 import { useNotificationCenter } from '@/components/notification-center';
+import FraudIndicator from '@/components/transactions-list/indicators/fraud-indicator.vue';
 import { useInvalidateSubscriptionQueries } from '@/composable/data-queries/subscriptions';
 import { useFormatCurrency } from '@/composable/formatters';
 import { SUBSCRIPTION_MATCH_SOURCE, TRANSACTION_TYPES } from '@bt/shared/types';
@@ -365,6 +366,7 @@ const getMatchSourceDotClass = ({ source }: { source: string }): string =>
               :class="getMatchSourceDotClass({ source: tx.SubscriptionTransactions.matchSource })"
             />
             <span class="flex-1 truncate text-[13px] @lg/linked:text-sm">{{ tx.note }}</span>
+            <FraudIndicator :transaction="tx" />
             <span
               class="text-amount shrink-0 text-xs @lg/linked:text-sm"
               :class="
