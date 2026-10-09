@@ -68,14 +68,86 @@ struct APIClientTests {
         #expect(request.jsonBody?["currencyCode"] as? String == "EUR")
     }
 
-    @Test("Sign-in without a set-auth-token header fails clearly")
+    @Test("Sign-in without a set-auth-token header means the server is outdated")
     func missingTokenHeader() async {
         let server = URLProtocolStub.register { _ in .json(#"{"redirect":false,"token":"raw"}"#) }
         let client = APIClient.stubbed(server: server)
 
-        await #expect(throws: APIError.self) {
+        await #expect(throws: APIError.serverOutdated) {
             _ = try await client.signIn(email: "a@b.c", password: "x")
         }
+    }
+
+    @Test("Passkey sign-in without a set-auth-token header means the server is outdated")
+    func passkeyMissingTokenHeader() async {
+        let server = URLProtocolStub.register { request in
+            if request.url.path().hasSuffix("generate-authenticate-options") {
+                return .fixture("passkey-options")
+            }
+            return .json(#"{"session":{"id":"s"},"user":{"id":"u"}}"#)
+        }
+        let client = APIClient.stubbed(server: server)
+
+        await #expect(throws: APIError.serverOutdated) {
+            _ = try await client.signInWithPasskey { _ in
+                PasskeyAssertion(
+                    credentialID: Data("cred-1".utf8),
+                    clientDataJSON: Data("{}".utf8),
+                    authenticatorData: Data([1, 2, 3]),
+                    signature: Data([4, 5, 6]),
+                    userHandle: nil
+                )
+            }
+        }
+    }
+
+    @Test("The app-support probe passes on a 401 and sends no token")
+    func appSupportOnCurrentServer() async throws {
+        let calls = Mutex(0)
+        let server = URLProtocolStub.register { _ in
+            .json(#"{"status":"error","response":{"message":"Unauthorized","code":"UNAUTHENTICATED"}}"#, status: 401)
+        }
+        let client = APIClient.stubbed(server: server, token: "signed.saved") { _ in
+            calls.withLock { $0 += 1 }
+        }
+
+        try await client.checkAppSupport()
+
+        let request = try #require(URLProtocolStub.requests(for: server).first)
+        #expect(request.url.path() == "/api/v1/transactions/review/summary")
+        #expect(request.header("Authorization") == nil)
+        #expect(calls.withLock { $0 } == 0)
+    }
+
+    @Test("The app-support probe maps an Express HTML 404 to .serverOutdated")
+    func appSupportOnOutdatedServer() async {
+        let server = URLProtocolStub.register { _ in
+            StubResponse(
+                statusCode: 404,
+                headers: ["Content-Type": "text/html; charset=utf-8"],
+                body: Data("<pre>Cannot GET /api/v1/transactions/review/summary</pre>".utf8)
+            )
+        }
+        let client = APIClient.stubbed(server: server)
+
+        await #expect(throws: APIError.serverOutdated) {
+            try await client.checkAppSupport()
+        }
+    }
+
+    @Test("The app-support probe keeps network errors as network errors")
+    func appSupportNetworkError() async {
+        let server = URLProtocolStub.register { _ in throw URLError(.cannotFindHost) }
+        let client = APIClient.stubbed(server: server)
+
+        let error = await #expect(throws: APIError.self) {
+            try await client.checkAppSupport()
+        }
+        guard case .network(let urlError) = error else {
+            Issue.record("Expected a network error")
+            return
+        }
+        #expect(urlError.code == .cannotFindHost)
     }
 
     @Test("Sign-up returns verificationRequired when the body token is null")

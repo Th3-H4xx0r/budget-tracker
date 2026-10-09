@@ -93,6 +93,18 @@ public struct APIClient: Sendable {
         )
     }
 
+    /// The same client without a bearer token, so a probe can't affect the stored session.
+    func withoutToken() -> APIClient {
+        APIClient(
+            server: server,
+            tokenProvider: nil,
+            session: session,
+            acceptLanguage: acceptLanguage,
+            onUnauthenticated: nil,
+            ceremonyConfiguration: ceremonyConfiguration
+        )
+    }
+
     public func finishAndInvalidate() {
         session.finishTasksAndInvalidate()
     }

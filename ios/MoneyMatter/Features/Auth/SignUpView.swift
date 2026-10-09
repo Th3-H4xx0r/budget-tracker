@@ -16,6 +16,11 @@ struct SignUpView: View {
         case password
     }
 
+    /// The form carries its own large title, so the bar title shows only for the message states.
+    private var showsForm: Bool {
+        session.signupsOpen != false && !model.needsEmailVerification
+    }
+
     var body: some View {
         Group {
             if session.signupsOpen == false {
@@ -24,6 +29,7 @@ struct SignUpView: View {
                     systemImage: "person.crop.circle.badge.xmark",
                     description: Text("This server isn't accepting new accounts. Ask the person who runs it for access.")
                 )
+                .background { AuthBackground() }
             } else if model.needsEmailVerification {
                 ContentUnavailableView {
                     Label("Check Your Email", systemImage: "envelope.badge")
@@ -32,69 +38,81 @@ struct SignUpView: View {
                 } actions: {
                     Button("Back to Sign In") { dismiss() }
                         .buttonStyle(.glassProminent)
+                        .controlSize(.large)
                 }
+                .background { AuthBackground() }
             } else {
                 form
             }
         }
-        .background(Color(.systemGroupedBackground))
-        .navigationTitle("Create Account")
+        .navigationTitle(showsForm ? Text(verbatim: "") : Text("Create Account"))
         .navigationBarTitleDisplayMode(.inline)
     }
 
     private var form: some View {
-        ScrollView {
-            VStack(spacing: 24) {
-                AuthHeader(
-                    title: "Create Your Account",
-                    subtitle: Text("Your budget, accounts, and transactions are stored on \(session.server?.host ?? "your server")."),
-                    systemImage: "person.crop.circle.badge.plus"
-                )
+        AuthScreen {
+            AuthHeader(
+                title: Text("Create Your Account"),
+                subtitle: Text("Your budget, accounts, and transactions are stored on \(session.server?.host ?? "your server")."),
+                systemImage: "person.fill.badge.plus"
+            )
 
-                VStack(spacing: 12) {
-                    AuthFieldGroup {
-                        TextField("Name", text: $model.name)
-                            .textContentType(.name)
-                            .submitLabel(.next)
-                            .focused($focusedField, equals: .name)
-                            .onSubmit { focusedField = .email }
-                        TextField("Email", text: $model.email)
-                            .textContentType(.username)
-                            .keyboardType(.emailAddress)
-                            .textInputAutocapitalization(.never)
-                            .autocorrectionDisabled()
-                            .submitLabel(.next)
-                            .focused($focusedField, equals: .email)
-                            .onSubmit { focusedField = .password }
-                        SecureField("Password", text: $model.password)
-                            .textContentType(.newPassword)
-                            .submitLabel(.go)
-                            .focused($focusedField, equals: .password)
-                            .onSubmit { Task { await model.signUp(session: session) } }
+            VStack(spacing: 16) {
+                VStack(spacing: 10) {
+                    AuthFieldCard {
+                        AuthFieldRow(systemImage: "person", isActive: focusedField == .name) {
+                            TextField("Name", text: $model.name, prompt: Text("Name"))
+                                .textContentType(.name)
+                                .submitLabel(.next)
+                                .focused($focusedField, equals: .name)
+                                .onSubmit { focusedField = .email }
+                        }
+                        AuthFieldRow(systemImage: "envelope", isActive: focusedField == .email) {
+                            TextField("Email", text: $model.email, prompt: Text("Email"))
+                                .textContentType(.username)
+                                .keyboardType(.emailAddress)
+                                .textInputAutocapitalization(.never)
+                                .autocorrectionDisabled()
+                                .submitLabel(.next)
+                                .focused($focusedField, equals: .email)
+                                .onSubmit { focusedField = .password }
+                        }
+                        AuthFieldRow(systemImage: "lock", isActive: focusedField == .password) {
+                            PasswordField(title: "Password", text: $model.password, focus: $focusedField, focusValue: .password)
+                                .textContentType(.newPassword)
+                                .submitLabel(.go)
+                                .onSubmit { Task { await model.signUp(session: session) } }
+                        }
                     }
 
-                    if let message = model.errorMessage {
-                        FormMessage(text: message)
-                    } else {
-                        FormMessage(
-                            text: String(localized: "Use at least \(SignUpViewModel.minimumPasswordLength) characters for your password."),
-                            isError: model.isPasswordTooShort
-                        )
-                    }
-
-                    Button {
-                        Task { await model.signUp(session: session) }
-                    } label: {
-                        ProgressButtonLabel(title: "Create Account", isWorking: model.isWorking)
-                    }
-                    .buttonStyle(.glassProminent)
-                    .controlSize(.large)
-                    .disabled(!model.canSubmit)
+                    PasswordStrengthHint(
+                        password: model.password,
+                        minimumLength: SignUpViewModel.minimumPasswordLength,
+                        isTooShort: model.isPasswordTooShort
+                    )
+                    .padding(.horizontal, 4)
                 }
+
+                if let message = model.errorMessage {
+                    AuthBanner(message: message)
+                }
+
+                Button {
+                    Task { await model.signUp(session: session) }
+                } label: {
+                    ProgressButtonLabel(title: "Create Account", isWorking: model.isWorking)
+                }
+                .buttonStyle(.glassProminent)
+                .controlSize(.large)
+                .disabled(!model.canSubmit)
             }
-            .authColumn()
+            .animation(.snappy, value: model.errorMessage)
+
+            AuthFooterLink(prompt: "Already have an account?", action: "Sign in") {
+                dismiss()
+            }
+            .disabled(model.isWorking)
         }
-        .scrollDismissesKeyboard(.interactively)
         .sensoryFeedback(.error, trigger: model.errorMessage) { _, new in new != nil }
     }
 }

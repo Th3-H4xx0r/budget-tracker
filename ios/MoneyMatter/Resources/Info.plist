@@ -7,9 +7,5 @@
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
-	<key>NSCameraUsageDescription</key>
-	<string>MoneyMatter uses the camera to photograph receipts and attach them to transactions.</string>
-	<key>NSPhotoLibraryAddUsageDescription</key>
-	<string>MoneyMatter saves exported files and attachments you choose to keep.</string>
 </dict>
 </plist>

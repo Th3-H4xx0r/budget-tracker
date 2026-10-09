@@ -31,8 +31,6 @@
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Resources/Info.plist,
-				"Resources/MoneyMatter-Debug.entitlements",
-				Resources/MoneyMatter.entitlements,
 			);
 			target = 7A0000000000000000000008 /* MoneyMatter */;
 		};
@@ -357,12 +355,14 @@
 				CODE_SIGN_ENTITLEMENTS = "MoneyMatter/Resources/MoneyMatter-Debug.entitlements";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = VY5CNF8734;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = MoneyMatter/Resources/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = MoneyMatter;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.finance";
+				INFOPLIST_KEY_NSCameraUsageDescription = "MoneyMatter uses the camera to photograph receipts and attach them to transactions.";
+				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "MoneyMatter saves exported files and attachments you choose to keep.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -392,12 +392,14 @@
 				CODE_SIGN_ENTITLEMENTS = MoneyMatter/Resources/MoneyMatter.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = VY5CNF8734;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = MoneyMatter/Resources/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = MoneyMatter;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.finance";
+				INFOPLIST_KEY_NSCameraUsageDescription = "MoneyMatter uses the camera to photograph receipts and attach them to transactions.";
+				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "MoneyMatter saves exported files and attachments you choose to keep.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;

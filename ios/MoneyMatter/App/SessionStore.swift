@@ -119,15 +119,18 @@ final class SessionStore {
 
     // MARK: Server
 
-    /// Validates the address by calling `GET /auth/signups-open`, then saves it.
-    /// Throws `ServerURLError` for a malformed address, `APIError` if the server doesn't answer.
+    /// Validates the address by calling `GET /auth/signups-open` and checking the server is new
+    /// enough for the app, then saves it. Throws `ServerURLError` for a malformed address,
+    /// `APIError.serverOutdated` for an older server, `APIError` if the server doesn't answer.
     func connect(toServer address: String) async throws {
         let server = try ServerEndpoint(validating: address)
         let previous = connection.endpoint
         connection.connect(to: server)
         do {
             guard let api = connection.sessionAPI else { throw SignInFailure.noServer }
-            signupsOpen = try await api.signupsOpen()
+            let open = try await api.signupsOpen()
+            try await api.checkAppSupport()
+            signupsOpen = open
         } catch {
             connection.connect(to: previous)
             throw error

@@ -5,6 +5,8 @@ import MoneyMatterKit
 protocol AuthServicing: Sendable {
     /// `GET /auth/signups-open`; also used to check that a server address is a MoneyMatter server.
     func signupsOpen() async throws -> Bool
+    /// Throws `APIError.serverOutdated` when the server predates the routes the app needs.
+    func checkAppSupport() async throws
     /// `nil` when the stored token is no longer valid.
     func currentSession() async throws -> AuthSession?
     func signIn(email: String, password: String) async throws -> String

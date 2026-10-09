@@ -11,6 +11,10 @@ extension LiveAPI: AuthServicing {
         try await client.send(Endpoints.signupsOpen())
     }
 
+    func checkAppSupport() async throws {
+        try await client.checkAppSupport()
+    }
+
     func currentSession() async throws -> AuthSession? {
         try await client.send(Endpoints.session())
     }

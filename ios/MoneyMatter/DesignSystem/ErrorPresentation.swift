@@ -13,6 +13,7 @@ enum ErrorMessage {
         case .unauthenticated: String(localized: "Signed Out")
         case .server: String(localized: "Something Went Wrong")
         case .decoding: String(localized: "Unexpected Response")
+        case .serverOutdated: String(localized: "Server Needs Updating")
         }
     }
 
@@ -34,6 +35,8 @@ enum ErrorMessage {
             message ?? String(localized: "The server couldn't complete the request. Try again later.")
         case .decoding:
             String(localized: "The server sent a response the app can't read. Make sure the app and server are up to date.")
+        case .serverOutdated:
+            String(localized: "This server is running an older version of MoneyMatter that doesn't support the iOS app yet. Update the server, then try again.")
         }
     }
 

@@ -7,6 +7,7 @@ struct StubError: Error, Equatable {}
 /// A scripted session API. Each result defaults to success; tests override what they need.
 final class StubSessionAPI: AuthServicing, UserServicing {
     var signupsOpenResult: Result<Bool, APIError> = .success(true)
+    var appSupportResult: Result<Void, APIError> = .success(())
     var sessionResult: Result<AuthSession?, APIError> = .success(StubSessionAPI.validSession)
     var signInResult: Result<String, APIError> = .success("signed.email")
     var signUpResult: Result<SignUpResult, APIError> = .success(.signedIn(token: "signed.signup"))
@@ -31,6 +32,7 @@ final class StubSessionAPI: AuthServicing, UserServicing {
     }()
 
     func signupsOpen() async throws -> Bool { try signupsOpenResult.get() }
+    func checkAppSupport() async throws { try appSupportResult.get() }
     func currentSession() async throws -> AuthSession? { try sessionResult.get() }
 
     func signIn(email: String, password: String) async throws -> String {

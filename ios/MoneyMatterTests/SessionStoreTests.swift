@@ -136,6 +136,22 @@ struct SessionStoreTests {
         #expect(harness.connection.endpoint == nil)
     }
 
+    @Test("An older server without the app's routes isn't saved and explains it needs updating")
+    func connectToOutdatedServer() async {
+        let harness = SessionHarness()
+        await harness.store.restore()
+        harness.api.appSupportResult = .failure(.serverOutdated)
+
+        await #expect(throws: APIError.serverOutdated) {
+            try await harness.store.connect(toServer: "budget.example.com")
+        }
+        #expect(harness.store.state == .needsServer)
+        #expect(harness.servers.server == nil)
+        #expect(harness.connection.endpoint == nil)
+        #expect(ServerView.message(for: APIError.serverOutdated) == ErrorMessage.message(for: .serverOutdated))
+        #expect(ErrorMessage.message(for: .serverOutdated).contains("older version of MoneyMatter"))
+    }
+
     @Test("Changing the server revokes the token and forgets the server")
     func changeServer() async {
         let harness = SessionHarness(server: server, token: "signed.saved")
@@ -175,6 +191,21 @@ struct SessionStoreTests {
         }
         #expect(harness.store.state == .signedOut)
         #expect(harness.token() == nil)
+    }
+
+    @Test("Sign-in on a server without the bearer plugin says the server needs updating")
+    func emailSignInOnOutdatedServer() async {
+        let harness = SessionHarness(server: server)
+        await harness.store.restore()
+        harness.api.signInResult = .failure(.serverOutdated)
+
+        let error = await #expect(throws: APIError.serverOutdated) {
+            try await harness.store.signIn(email: "pranav@example.com", password: "hunter22")
+        }
+        #expect(harness.store.state == .signedOut)
+        #expect(harness.token() == nil)
+        let message = error.flatMap { SignInViewModel.message(for: $0, method: .email) }
+        #expect(message == ErrorMessage.message(for: .serverOutdated))
     }
 
     @Test("If loading the account fails after sign-in, the new token is discarded")

@@ -12,11 +12,13 @@ enum DebugLaunch {
     static func seedSession(serverStore: any ServerStoring, tokenStore: any TokenStoring) {
         guard
             let address = environment["MM_DEBUG_SERVER"],
-            let token = environment["MM_DEBUG_TOKEN"],
             let server = try? ServerEndpoint(validating: address)
         else { return }
         serverStore.saveServer(server)
-        try? tokenStore.saveToken(token, for: server)
+        // Without a token, launch lands on Sign In for that server.
+        if let token = environment["MM_DEBUG_TOKEN"] {
+            try? tokenStore.saveToken(token, for: server)
+        }
     }
 
     static func applyInitialScreen(to router: AppRouter) {

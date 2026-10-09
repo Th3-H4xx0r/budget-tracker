@@ -11,16 +11,15 @@ struct ServerView: View {
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(spacing: 24) {
-                    AuthHeader(
-                        title: "Connect to Your Server",
-                        subtitle: Text("Enter the address of the MoneyMatter server that holds your budget."),
-                        systemImage: "server.rack"
-                    )
+            AuthScreen {
+                AuthHeader(
+                    title: Text(verbatim: "MoneyMatter"),
+                    subtitle: Text("Enter the address of the MoneyMatter server that holds your budget.")
+                )
 
-                    VStack(alignment: .leading, spacing: 8) {
-                        AuthFieldGroup {
+                VStack(spacing: 16) {
+                    AuthFieldCard {
+                        AuthFieldRow(systemImage: "link", isActive: isFieldFocused) {
                             TextField("Server Address", text: $address, prompt: Text(verbatim: "budget.example.com"))
                                 .textContentType(.URL)
                                 .keyboardType(.URL)
@@ -30,29 +29,33 @@ struct ServerView: View {
                                 .focused($isFieldFocused)
                                 .onSubmit { Task { await connect() } }
                         }
-                        if let errorMessage {
-                            FormMessage(text: errorMessage)
-                        } else {
-                            FormMessage(
-                                text: String(localized: "Use https:// for servers on the internet. http:// works only for localhost and .local addresses."),
-                                isError: false
-                            )
-                        }
+                    }
+
+                    if let errorMessage {
+                        AuthBanner(message: errorMessage)
                     }
 
                     Button {
                         Task { await connect() }
                     } label: {
-                        ProgressButtonLabel(title: "Continue", isWorking: isConnecting)
+                        ProgressButtonLabel(title: "Connect", isWorking: isConnecting)
                     }
                     .buttonStyle(.glassProminent)
                     .controlSize(.large)
                     .disabled(isConnecting || address.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
-                .authColumn()
+                .animation(.snappy, value: errorMessage)
+
+                VStack(spacing: 6) {
+                    Text("MoneyMatter is self-hosted, so your data stays on a server you or your household runs.")
+                    Text("Use https:// for servers on the internet. http:// works only for localhost and .local addresses.")
+                }
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .accessibilityElement(children: .combine)
             }
-            .scrollDismissesKeyboard(.interactively)
-            .background(Color(.systemGroupedBackground))
+            .toolbarVisibility(.hidden, for: .navigationBar)
             .sensoryFeedback(.error, trigger: errorMessage) { _, new in new != nil }
         }
     }

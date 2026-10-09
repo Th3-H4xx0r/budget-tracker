@@ -34,9 +34,23 @@ extension APIClient {
         return try Self.bearerToken(from: response)
     }
 
+    /// Checks that the server has the routes the app needs. A current server answers an
+    /// unauthenticated `GET /transactions/review/summary` with 401; an older one with 404.
+    /// Throws `APIError.serverOutdated` on 404 and any other failure as is.
+    public func checkAppSupport() async throws {
+        do {
+            _ = try await withoutToken().send(Endpoints.reviewSummary())
+        } catch APIError.unauthenticated {
+            return
+        } catch APIError.notFound {
+            throw APIError.serverOutdated
+        }
+    }
+
+    /// A successful sign-in without `set-auth-token` means the server lacks the bearer plugin.
     static func bearerToken<Value>(from response: APIResponse<Value>) throws -> String {
         guard let token = response.header(AuthHeaders.setAuthToken), !token.isEmpty else {
-            throw APIError.decoding("The server didn't return a session token. It may not support native sign-in.")
+            throw APIError.serverOutdated
         }
         return token
     }

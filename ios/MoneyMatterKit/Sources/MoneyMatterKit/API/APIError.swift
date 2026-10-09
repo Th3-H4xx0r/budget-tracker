@@ -56,6 +56,8 @@ public enum APIError: Error, Sendable, Equatable {
     case network(URLError)
     /// The body didn't match the expected shape.
     case decoding(String)
+    /// The server predates the routes the app needs (native sign-in, the review queue).
+    case serverOutdated
 
     /// The server's own (already localized) message, when it sent one.
     public var serverMessage: String? {
@@ -67,7 +69,7 @@ public enum APIError: Error, Sendable, Equatable {
             message
         case .server(_, _, let message):
             message
-        case .network, .decoding:
+        case .network, .decoding, .serverOutdated:
             nil
         }
     }
