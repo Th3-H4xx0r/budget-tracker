@@ -2,7 +2,7 @@ import Foundation
 import MoneyMatterKit
 
 /// The span Home's spending cards cover. Each case resolves to an inclusive day range capped
-/// at today, a chart bucket size, and the matching earlier range the hero compares against.
+/// at today and the matching earlier range the hero compares against.
 enum HomePeriod: Hashable {
     case month(year: Int, month: Int)
     case ytd
@@ -60,12 +60,6 @@ enum HomePeriod: Hashable {
         case .lastYear: .lastYear
         case .year: nil
         }
-    }
-
-    /// Weekly bars for a month, monthly bars for anything longer.
-    var granularity: CashFlowGranularity {
-        if case .month = self { return .weekly }
-        return .monthly
     }
 
     func range(today: CalendarDate) -> DayRange {

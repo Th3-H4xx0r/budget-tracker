@@ -19,7 +19,7 @@ struct HomePeriodPicker: View {
     let select: (HomePeriod) -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: DS.Space.s) {
+        VStack(alignment: .leading, spacing: DS.Space.xs) {
             Picker("Period", selection: Binding(
                 get: { period.kind },
                 set: { kind in
@@ -31,6 +31,7 @@ struct HomePeriodPicker: View {
                 }
             }
             .pickerStyle(.segmented)
+            .controlSize(.small)
 
             HStack(spacing: 0) {
                 stepButton(delta: -1)
@@ -52,12 +53,12 @@ struct HomePeriodPicker: View {
             if let target { select(target) }
         } label: {
             Image(systemName: delta < 0 ? "chevron.left" : "chevron.right")
-                .font(.title3.weight(.semibold))
-                .frame(width: 44, height: 44)
+                .font(.body.weight(.semibold))
+                .frame(width: 44, height: 36)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .foregroundStyle(target == nil ? Color.secondary.opacity(0.4) : Color.accentColor)
+        .foregroundStyle(target == nil ? Color(uiColor: .quaternaryLabel) : Color(uiColor: .secondaryLabel))
         .disabled(target == nil)
         .opacity(isStepping ? 1 : 0)
         .accessibilityHidden(!isStepping)
@@ -106,13 +107,14 @@ struct HomePeriodPicker: View {
                 }
             } label: {
                 Text(verbatim: period.title(today: today))
-                    .font(.title3.weight(.semibold))
+                    .font(.headline)
                     .monospacedDigit()
-                    .foregroundStyle(.primary)
+                    .foregroundStyle(Color(uiColor: .label))
                     .contentTransition(.numericText())
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
             }
+            .tint(Color(uiColor: .label))
             .accessibilityHint(Text("Choose a month or year"))
     }
 
@@ -209,13 +211,13 @@ struct HomeReviewCard: View {
 
 // MARK: - Spending hero
 
-/// The Home hero: the period's spending, and its change against the earlier period. More
-/// spending reads red with an up arrow, less reads green with a down arrow. A scrubbed bar
-/// replaces the value with that bar's spending and the change line with its date.
+/// The Home hero: the period's spending, and its change against the earlier period. Only
+/// the arrow and the change are coloured: red for more spending, green for less; the
+/// comparison stays secondary. A scrubbed chart point replaces the value with its amount
+/// and the change line with its label.
 struct SpendingHero: View {
     let state: LoadState<SpendingTotals>
-    let selected: SpendingBucket?
-    let granularity: CashFlowGranularity
+    let selection: HomeChartSelection?
     let comparisonLabel: String
     let currencyCode: String
     let digits: Int?
@@ -234,15 +236,18 @@ struct SpendingHero: View {
     }
 
     private func content(_ totals: SpendingTotals) -> some View {
-        let shown = selected?.amount ?? totals.current
+        let shown = selection?.amount ?? totals.current
         return HeroValueHeader(
             MoneyFormat.string(shown, currencyCode: currencyCode, digits: digits),
             numericValue: shown.doubleValue,
-            valueAnimation: selected == nil ? .snappy : nil
+            valueAnimation: selection == nil ? .snappy : nil
         ) {
-            if let selected {
-                Text(verbatim: selected.label(granularity: granularity))
+            if let selection {
+                Text(verbatim: selection.label)
                     .font(.subheadline)
+                    .monospacedDigit()
+                    .foregroundStyle(Color(uiColor: .secondaryLabel))
+                    .lineLimit(1)
             } else {
                 changeLine(totals)
             }
@@ -251,24 +256,27 @@ struct SpendingHero: View {
 
     private func changeLine(_ totals: SpendingTotals) -> some View {
         let delta = totals.change
-        let color: Color = delta > 0 ? DS.Palette.danger : delta < 0 ? DS.Palette.success : .secondary
+        let color: Color = delta > 0 ? DS.Palette.danger : delta < 0 ? DS.Palette.success : Color(uiColor: .secondaryLabel)
         let symbol: String? = delta > 0 ? "arrow.up.right" : delta < 0 ? "arrow.down.right" : nil
         let text = changeText(delta: delta, previous: totals.previous)
         return HStack(spacing: DS.Space.xs) {
-            if let symbol {
-                Image(systemName: symbol)
-                    .accessibilityHidden(true)
+            HStack(spacing: DS.Space.xxs) {
+                if let symbol {
+                    Image(systemName: symbol)
+                        .accessibilityHidden(true)
+                }
+                Text(verbatim: text)
+                    .monospacedDigit()
+                    .contentTransition(.numericText())
             }
-            Text(verbatim: text)
-                .monospacedDigit()
-                .contentTransition(.numericText())
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(color)
             Text(verbatim: comparisonLabel)
-                .fontWeight(.regular)
-                .foregroundStyle(.secondary)
+                .font(.subheadline)
+                .foregroundStyle(Color(uiColor: .secondaryLabel))
         }
-        .font(.subheadline.weight(.semibold))
-        .foregroundStyle(color)
         .lineLimit(1)
+        .minimumScaleFactor(0.8)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text(verbatim: [
             delta > 0 ? String(localized: "Spending up") : delta < 0 ? String(localized: "Spending down") : "",
@@ -286,101 +294,6 @@ struct SpendingHero: View {
     }
 }
 
-extension SpendingBucket {
-    /// "Week of Oct 6" for a weekly bar, "October 2026" for a monthly one.
-    func label(granularity: CashFlowGranularity) -> String {
-        let date = start.startDate()
-        if granularity == .weekly {
-            return String(localized: "Week of \(date.formatted(.dateTime.month(.abbreviated).day()))")
-        }
-        return date.formatted(.dateTime.month(.wide).year())
-    }
-}
-
-// MARK: - Spending chart
-
-/// One accent bar per week or month of the period. Scrubbing selects a bar, which the hero
-/// shows; the other bars dim.
-struct SpendingChartCard: View {
-    let state: LoadState<[SpendingBucket]>
-    let granularity: CashFlowGranularity
-    @Binding var selectedID: String?
-    let currencyCode: String
-    let retry: () async -> Void
-
-    var body: some View {
-        DSCard(String(localized: "Spending over time")) {
-            switch state {
-            case .failed(let error):
-                ErrorRow(ErrorMessage.message(for: error), retry: retry)
-            case .loaded(let buckets) where buckets.allSatisfy({ $0.amount == 0 }):
-                Text("No spending in this period.")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, minHeight: 120)
-            case .loaded(let buckets):
-                chart(buckets)
-            case .idle, .loading:
-                chart(Self.placeholder)
-                    .redactedWhileLoading(true)
-            }
-        }
-    }
-
-    private func chart(_ buckets: [SpendingBucket]) -> some View {
-        Chart(buckets) { bucket in
-            BarMark(
-                x: .value("Period", bucket.id),
-                y: .value("Spent", bucket.amount.doubleValue)
-            )
-            .cornerRadius(4)
-            .foregroundStyle(DS.Palette.accent.opacity(selectedID == nil || selectedID == bucket.id ? 1 : 0.35))
-            .accessibilityLabel(Text(verbatim: bucket.label(granularity: granularity)))
-            .accessibilityValue(Text(verbatim: MoneyFormat.string(bucket.amount, currencyCode: currencyCode)))
-        }
-        .chartXSelection(value: $selectedID)
-        .chartXAxis {
-            AxisMarks { value in
-                AxisValueLabel {
-                    if let id = value.as(String.self) {
-                        Text(verbatim: axisLabel(id: id, count: buckets.count))
-                    }
-                }
-                .font(.caption2)
-            }
-        }
-        .chartYAxis {
-            AxisMarks(position: .trailing, values: .automatic(desiredCount: 3)) { value in
-                AxisGridLine()
-                    .foregroundStyle(Color.secondary.opacity(0.2))
-                AxisValueLabel {
-                    if let amount = value.as(Double.self) {
-                        Text(verbatim: amount.formatted(.currency(code: currencyCode).notation(.compactName).precision(.fractionLength(0))))
-                            .monospacedDigit()
-                    }
-                }
-                .font(.caption2)
-            }
-        }
-        .frame(height: 180)
-        .sensoryFeedback(.selection, trigger: selectedID) { _, new in new != nil }
-    }
-
-    /// "Oct 6" under a weekly bar; a month name under a monthly one, one letter when crowded.
-    private func axisLabel(id: String, count: Int) -> String {
-        guard let date = CalendarDate(string: id)?.startDate() else { return "" }
-        if granularity == .weekly {
-            return date.formatted(.dateTime.month(.abbreviated).day())
-        }
-        return date.formatted(.dateTime.month(count > 6 ? .narrow : .abbreviated))
-    }
-
-    private static let placeholder: [SpendingBucket] = {
-        let first = MonthPeriod(containing: .now).firstDay
-        return (0..<5).map { SpendingBucket(start: first.adding(days: $0 * 7), amount: Decimal(200 + $0 * 60)) }
-    }()
-}
-
 // MARK: - Spending by category
 
 struct SpendingSlice: Identifiable {
@@ -390,8 +303,8 @@ struct SpendingSlice: Identifiable {
     let color: Color
 }
 
-/// A violet donut of the period's top five categories plus "Other", with each one's amount
-/// and share listed below.
+/// A slim violet donut of the period's top five categories plus "Other", the total in its
+/// centre, and each one's share and amount listed below.
 struct CategorySpendingCard: View {
     let state: LoadState<SpendingBreakdown>
     let currencyCode: String
@@ -419,6 +332,8 @@ struct CategorySpendingCard: View {
         }
     }
 
+    private static let donutSize: CGFloat = 170
+
     private func content(_ breakdown: SpendingBreakdown) -> some View {
         let slices = slices(for: breakdown)
         let total = breakdown.total
@@ -426,10 +341,10 @@ struct CategorySpendingCard: View {
             Chart(slices) { slice in
                 SectorMark(
                     angle: .value("Amount", slice.amount.doubleValue),
-                    innerRadius: .ratio(0.64),
+                    innerRadius: .ratio(0.72),
                     angularInset: 1.5
                 )
-                .cornerRadius(4)
+                .cornerRadius(3)
                 .foregroundStyle(slice.color)
             }
             .chartLegend(.hidden)
@@ -442,37 +357,40 @@ struct CategorySpendingCard: View {
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                             AmountText(total, currencyCode: currencyCode, digits: digits)
-                                .font(.title3.weight(.semibold))
+                                .font(.title3.bold())
                                 .monospacedDigit()
                                 .minimumScaleFactor(0.5)
                                 .lineLimit(1)
                         }
-                        .frame(width: frame.width * 0.55)
+                        .frame(width: frame.width * 0.6)
                         .position(x: frame.midX, y: frame.midY)
                     }
                 }
             }
-            .frame(height: 200)
+            .frame(width: Self.donutSize, height: Self.donutSize)
+            .frame(maxWidth: .infinity)
             .accessibilityChartDescriptor(SpendingChartDescriptor(slices: slices, currencyCode: currencyCode))
 
-            VStack(spacing: DS.Space.m) {
+            Grid(alignment: .leading, horizontalSpacing: DS.Space.s, verticalSpacing: DS.Space.m) {
                 ForEach(slices) { slice in
-                    HStack(spacing: DS.Space.s) {
+                    GridRow {
                         Circle()
                             .fill(slice.color)
-                            .frame(width: 10, height: 10)
+                            .frame(width: 8, height: 8)
                             .accessibilityHidden(true)
                         Text(verbatim: slice.name)
                             .font(.subheadline)
                             .lineLimit(1)
-                        Spacer(minLength: DS.Space.s)
+                            .frame(maxWidth: .infinity, alignment: .leading)
                         Text(verbatim: share(of: slice.amount, total: total))
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                             .monospacedDigit()
+                            .gridColumnAlignment(.trailing)
                         AmountText(slice.amount, currencyCode: currencyCode, digits: digits)
                             .font(.subheadline.weight(.medium))
                             .monospacedDigit()
+                            .gridColumnAlignment(.trailing)
                     }
                     .accessibilityElement(children: .combine)
                 }
@@ -487,16 +405,20 @@ struct CategorySpendingCard: View {
 
     private func slices(for breakdown: SpendingBreakdown) -> [SpendingSlice] {
         let top = breakdown.topCategories
+        let hasOther = breakdown.otherAmount > 0
+        let count = top.count + (hasOther ? 1 : 0)
         var slices = top.enumerated().map { rank, category in
             SpendingSlice(
                 id: category.id,
                 name: category.name,
                 amount: category.amount,
-                color: DonutPalette.color(rank: rank, count: top.count, scheme: colorScheme)
+                color: DonutPalette.color(rank: rank, count: count, scheme: colorScheme)
             )
         }
-        if breakdown.otherAmount > 0 {
-            slices.append(SpendingSlice(id: "other", name: String(localized: "Other"), amount: breakdown.otherAmount, color: Color(.systemGray4)))
+        if hasOther {
+            // The tail takes the palette's faintest violet, softened further so it reads as muted.
+            let muted = DonutPalette.color(rank: count - 1, count: count, scheme: colorScheme).opacity(0.55)
+            slices.append(SpendingSlice(id: "other", name: String(localized: "Other"), amount: breakdown.otherAmount, color: muted))
         }
         return slices
     }

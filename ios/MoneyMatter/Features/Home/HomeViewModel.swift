@@ -11,7 +11,27 @@ struct SpendingTotals: Equatable {
     var change: Decimal { current - previous }
 }
 
-/// One bar of the spending chart: a week or a month of expenses.
+/// The running total at the end of one day of a month, for the Month view's line chart.
+struct DailySpendingPoint: Identifiable, Equatable {
+    /// 1-based day of the month.
+    let day: Int
+    let date: Date
+    let amount: Decimal
+
+    var id: Int { day }
+}
+
+/// The selected month's cumulative spending and the month before it, laid on the same
+/// day axis so the earlier line reads as a pace to compare against.
+struct DailySpending: Equatable {
+    let current: [DailySpendingPoint]
+    let previous: [DailySpendingPoint]
+    /// Days in the selected month, the chart's x extent.
+    let dayCount: Int
+    let monthStart: Date
+}
+
+/// One bar of the spending chart: a month of expenses.
 struct SpendingBucket: Identifiable, Equatable {
     let start: CalendarDate
     let amount: Decimal
@@ -43,6 +63,7 @@ final class HomeViewModel {
     private(set) var reviewSummary: LoadState<ReviewSummary> = .idle
     private(set) var totals: LoadState<SpendingTotals> = .idle
     private(set) var buckets: LoadState<[SpendingBucket]> = .idle
+    private(set) var daily: LoadState<DailySpending> = .idle
     private(set) var spending: LoadState<SpendingBreakdown> = .idle
     private(set) var periodTransactions: LoadState<[Transaction]> = .idle
     private(set) var upcoming: LoadState<[SubscriptionListItem]> = .idle
@@ -101,6 +122,7 @@ final class HomeViewModel {
         period = newPeriod
         totals = .loading
         buckets = .loading
+        daily = .loading
         spending = .loading
         periodTransactions = .loading
         await loadPeriodCards()
@@ -108,7 +130,7 @@ final class HomeViewModel {
 
     func loadPeriodCards() async {
         async let totalsLoad: Void = loadTotals()
-        async let bucketsLoad: Void = loadBuckets()
+        async let bucketsLoad: Void = loadChart()
         async let spendingLoad: Void = loadSpending()
         async let transactionsLoad: Void = loadTransactions()
         _ = await (totalsLoad, bucketsLoad, spendingLoad, transactionsLoad)
@@ -132,15 +154,84 @@ final class HomeViewModel {
         }
     }
 
+    /// The chart's data: daily running totals for a month, monthly bars for anything longer.
+    func loadChart() async {
+        if case let .month(year, month) = period {
+            await loadDaily(year: year, month: month)
+        } else {
+            await loadBuckets()
+        }
+    }
+
     func loadBuckets() async {
         let range = period.range(today: CalendarDate(date: .now))
-        let granularity = period.granularity
+        let granularity = CashFlowGranularity.monthly
         await load(into: \.buckets) { [client] in
             guard let client else { throw APIError(URLError(.notConnectedToInternet)) }
             let report = try await client.send(Endpoints.cashFlow(from: range.from, to: range.to, granularity: granularity))
             return report.periods.map { SpendingBucket(start: $0.periodStart, amount: abs($0.expenses)) }
         }
     }
+
+    /// Pages `GET /transactions` for the month's real expenses and the previous month's, and
+    /// buckets each `refAmount` into its local day.
+    func loadDaily(year: Int, month: Int) async {
+        let today = CalendarDate(date: .now)
+        let current = BudgetMonth(year: year, month: month)
+        let previous = month == 1 ? BudgetMonth(year: year - 1, month: 12) : BudgetMonth(year: year, month: month - 1)
+        let calendar = Calendar.autoupdatingCurrent
+        let dayCount = current.dayCount(calendar: calendar)
+        let isCurrentMonth = today.year == year && today.month == month
+        let throughDay = isCurrentMonth ? today.day : dayCount
+        await load(into: \.daily) { [client] in
+            guard let client else { throw APIError(URLError(.notConnectedToInternet)) }
+            async let currentRows = Self.fetchExpenses(client: client, month: current, calendar: calendar)
+            async let previousRows = Self.fetchExpenses(client: client, month: previous, calendar: calendar)
+            let currentTotals = try await MonthlySpendingSnapshot.dailyCumulative(
+                of: currentRows, month: current, throughDay: throughDay, calendar: calendar
+            )
+            let previousTotals = try await MonthlySpendingSnapshot.dailyCumulative(
+                of: previousRows, month: previous, throughDay: previous.dayCount(calendar: calendar), calendar: calendar
+            )
+            let start = current.startDate(calendar: calendar)
+            func points(_ totals: [Decimal]) -> [DailySpendingPoint] {
+                totals.prefix(dayCount).enumerated().map { index, amount in
+                    DailySpendingPoint(
+                        day: index + 1,
+                        date: calendar.date(byAdding: .day, value: index, to: start) ?? start,
+                        amount: amount
+                    )
+                }
+            }
+            return DailySpending(
+                current: points(currentTotals),
+                previous: points(previousTotals),
+                dayCount: dayCount,
+                monthStart: start
+            )
+        }
+    }
+
+    /// Every real expense in `month` up to now, a page at a time.
+    private static func fetchExpenses(client: APIClient, month: BudgetMonth, calendar: Calendar) async throws -> [Transaction] {
+        let from = month.startDate(calendar: calendar)
+        let nextMonth = calendar.date(byAdding: .month, value: 1, to: from) ?? from
+        let to = min(nextMonth.addingTimeInterval(-1), .now)
+        guard to > from else { return [] }
+        var all: [Transaction] = []
+        var offset = 0
+        for _ in 0..<maxExpensePages {
+            let query = MonthlySpendingLoader.expenseQuery(from: from, to: to, offset: offset)
+            let page = try await client.send(Endpoints.transactions(query))
+            all.append(contentsOf: page)
+            guard page.count >= MonthlySpendingLoader.pageSize else { break }
+            offset += page.count
+        }
+        return all
+    }
+
+    /// Stops paging after this many pages so a misbehaving server can't loop forever.
+    private static let maxExpensePages = 40
 
     func loadSpending() async {
         let range = period.range(today: CalendarDate(date: .now))

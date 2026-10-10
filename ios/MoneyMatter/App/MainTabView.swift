@@ -1,8 +1,8 @@
 import MoneyMatterKit
 import SwiftUI
 
-/// The signed-in shell: five tabs (symbols drawn filled), the review and quick-add
-/// accessory above the tab bar, the Settings sheet, the new-transaction sheet, and the
+/// The signed-in shell: five tabs (symbols drawn filled), the review accessory above the
+/// tab bar while anything is unreviewed (Home's header carries `+` otherwise), the Settings sheet, the new-transaction sheet, and the
 /// review stack cover. Each tab's root view lives in `Features/<Tab>/` and owns its
 /// `NavigationStack`.
 struct MainTabView: View {
@@ -34,7 +34,7 @@ struct MainTabView: View {
             }
         }
         .tabBarMinimizeBehavior(.onScrollDown)
-        .tabViewBottomAccessory {
+        .reviewAccessory(isEnabled: unreviewedCount > 0) {
             ReviewAccessoryView(
                 unreviewedCount: unreviewedCount,
                 onReview: { router.presentReviewStack(expectedTotal: unreviewedCount) },
@@ -99,6 +99,19 @@ struct MainTabView: View {
     private func loadUnreviewedCount() async {
         if let summary = try? await services.review.reviewSummary() {
             unreviewedCount = summary.unreviewedCount
+        }
+    }
+}
+
+extension View {
+    /// The tab bar's bottom accessory, shown only while `isEnabled`. iOS 26.0 has no way to
+    /// hide it, so there it always shows, with "Add transaction" for an empty queue.
+    @ViewBuilder
+    func reviewAccessory(isEnabled: Bool, @ViewBuilder content: () -> some View) -> some View {
+        if #available(iOS 26.1, *) {
+            tabViewBottomAccessory(isEnabled: isEnabled, content: content)
+        } else {
+            tabViewBottomAccessory(content: content)
         }
     }
 }

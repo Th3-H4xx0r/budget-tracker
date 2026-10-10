@@ -1,24 +1,22 @@
 import MoneyMatterKit
 import SwiftUI
 
-/// The top of Home for the monthly budget: a big red banner when over budget, then a
-/// compact spent-of-budget row with a thin progress bar. Without a budget, a subtle
-/// "Set a monthly budget" row. Every part opens the budget settings.
-struct HomeBudgetSection: View {
+/// The monthly budget under the hero: a slim progress bar with what's left, or a small
+/// "Set a monthly budget" link when none is set. Both open the budget settings. The
+/// over-budget banner sits separately, at the top of Home.
+struct HomeBudgetLine: View {
     let model: MonthlyBudgetModel
     let openSettings: () -> Void
 
     var body: some View {
         if let snapshot = model.snapshot, snapshot.hasBudget {
-            if snapshot.isOverBudget {
-                OverBudgetBanner(snapshot: snapshot, action: openSettings)
-            }
-            BudgetProgressRow(snapshot: snapshot, action: openSettings)
+            BudgetProgressLine(snapshot: snapshot, action: openSettings)
         } else if model.hasLoaded {
-            InlineActionRow(String(localized: "Set a monthly budget"), systemImage: "gauge.with.dots.needle.67percent", action: openSettings)
-                .padding(.vertical, DS.Space.m)
-                .padding(.horizontal, DS.Space.l)
-                .background(DS.Surface.panel, in: .rect(cornerRadius: DS.Radius.control, style: .continuous))
+            Button("Set a monthly budget", action: openSettings)
+                .font(.footnote.weight(.semibold))
+                .buttonStyle(.borderless)
+                .tint(DS.Palette.accent)
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 }
@@ -72,8 +70,9 @@ struct OverBudgetBanner: View {
     }
 }
 
-/// "Monthly budget · $320 of $400" over a thin bar in the accent, red once over budget.
-struct BudgetProgressRow: View {
+/// A 4 pt bar in the accent (red once over) over one `.footnote` line: "$1,051 left of
+/// $4,000 · 22 days to go", or "Over by $988".
+struct BudgetProgressLine: View {
     let snapshot: MonthlySpendingSnapshot
     let action: () -> Void
 
@@ -85,40 +84,46 @@ struct BudgetProgressRow: View {
         snapshot.isOverBudget ? DS.Palette.danger : DS.Palette.accent
     }
 
-    private var detail: String {
-        if snapshot.isOverBudget {
-            String(localized: "\(money(snapshot.overBy ?? 0)) over")
-        } else {
-            String(localized: "\(money(snapshot.remaining ?? 0)) left")
+    private var daysToGo: String {
+        let today = Calendar.autoupdatingCurrent.component(.day, from: .now)
+        let days = max(snapshot.month.dayCount() - today, 0)
+        switch days {
+        case 0: return String(localized: "last day")
+        case 1: return String(localized: "1 day to go")
+        default: return String(localized: "\(days) days to go")
         }
     }
 
+    private var detail: String {
+        if snapshot.isOverBudget {
+            return String(localized: "Over by \(money(snapshot.overBy ?? 0))")
+        }
+        let left = String(localized: "\(money(snapshot.remaining ?? 0)) left of \(money(snapshot.budget ?? 0))")
+        return "\(left) \u{00B7} \(daysToGo)"
+    }
+
     var body: some View {
-        let spent = money(snapshot.spent)
-        let budget = money(snapshot.budget ?? 0)
+        let fraction = min(max(snapshot.fraction ?? 0, 0), 1)
         Button(action: action) {
             VStack(alignment: .leading, spacing: DS.Space.s) {
-                HStack(alignment: .firstTextBaseline, spacing: DS.Space.s) {
-                    Text("Monthly budget")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                    Spacer(minLength: 0)
-                    Text("\(spent) of \(budget)")
-                        .font(.subheadline.weight(.semibold))
-                        .monospacedDigit()
-                }
-                ProgressView(value: min(max(snapshot.fraction ?? 0, 0), 1))
-                    .progressViewStyle(.linear)
-                    .tint(tint)
+                Capsule()
+                    .fill(Color(uiColor: .tertiarySystemFill))
+                    .frame(height: 4)
+                    .overlay(alignment: .leading) {
+                        GeometryReader { geometry in
+                            Capsule()
+                                .fill(tint)
+                                .frame(width: geometry.size.width * fraction)
+                        }
+                    }
                     .accessibilityHidden(true)
                 Text(verbatim: detail)
-                    .font(.caption.weight(.medium))
+                    .font(.footnote.weight(snapshot.isOverBudget ? .semibold : .regular))
                     .monospacedDigit()
-                    .foregroundStyle(snapshot.isOverBudget ? AnyShapeStyle(DS.Palette.danger) : AnyShapeStyle(.secondary))
+                    .foregroundStyle(snapshot.isOverBudget ? DS.Palette.danger : Color(uiColor: .secondaryLabel))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
             }
-            .padding(.vertical, DS.Space.m)
-            .padding(.horizontal, DS.Space.l)
-            .background(DS.Surface.panel, in: .rect(cornerRadius: DS.Radius.control, style: .continuous))
             .contentShape(.rect)
         }
         .buttonStyle(.plain)
