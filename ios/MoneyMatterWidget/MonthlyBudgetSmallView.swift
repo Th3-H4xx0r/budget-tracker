@@ -23,7 +23,6 @@ struct MonthlyBudgetSmallView: View {
             BudgetSmallContent(snapshot: snapshot, now: entry.date)
         } else {
             VStack(alignment: .leading, spacing: 8) {
-                BudgetAppMark()
                 Spacer(minLength: 0)
                 Text("Open MoneyMatter to see this month's spending")
                     .font(.footnote.weight(.medium))
@@ -49,37 +48,34 @@ private struct BudgetSmallContent: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(alignment: .top, spacing: 4) {
-                VStack(alignment: .leading, spacing: 0) {
-                    Text(BudgetWidgetFormat.amount(snapshot.spent, snapshot))
-                        .font(.title.bold())
-                        .monospacedDigit()
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.6)
-                        .widgetAccentable()
-                    Text("Spent this month")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.8)
-                }
-                Spacer(minLength: 0)
-                BudgetAppMark()
+            VStack(alignment: .leading, spacing: 1) {
+                Text(BudgetWidgetFormat.amount(snapshot.spent, snapshot))
+                    .font(.title2.bold())
+                    .monospacedDigit()
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)
+                    .widgetAccentable()
+                Text("Spent this month")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
             }
 
             if snapshot.hasBudget {
                 statusLine
-                    .font(.subheadline.weight(.semibold))
+                    .font(.caption.weight(.semibold))
                     .monospacedDigit()
                     .foregroundStyle(emphasis)
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
-                    .padding(.top, 6)
+                    .padding(.top, 4)
                     .widgetAccentable()
 
                 BudgetSpendingChart(snapshot: snapshot, lineColor: emphasis)
                     .frame(maxHeight: .infinity)
-                    .padding(.vertical, 4)
+                    .padding(.top, 8)
+                    .padding(.bottom, 6)
             } else {
                 Spacer(minLength: 4)
                 Text("Set a monthly budget in MoneyMatter")
@@ -91,8 +87,8 @@ private struct BudgetSmallContent: View {
             }
 
             BudgetWidgetFormat.freshness(snapshot.updatedAt, now: now)
-                .font(.caption2)
-                .foregroundStyle(.secondary)
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(.tertiary)
                 .lineLimit(1)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -162,20 +158,5 @@ private struct BudgetSpendingChart: View {
 
     private static func double(_ value: Decimal) -> Double {
         NSDecimalNumber(decimal: value).doubleValue
-    }
-}
-
-/// The app mark: a white pie glyph on an accent tile, as on the sign-in screen.
-struct BudgetAppMark: View {
-    var size: CGFloat = 22
-
-    var body: some View {
-        Image(systemName: "chart.pie.fill")
-            .font(.system(size: size * 0.5, weight: .semibold))
-            .foregroundStyle(.white)
-            .frame(width: size, height: size)
-            .background(Color.accentColor, in: .rect(cornerRadius: size * 0.3, style: .continuous))
-            .widgetAccentable()
-            .accessibilityHidden(true)
     }
 }
