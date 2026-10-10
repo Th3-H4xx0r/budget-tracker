@@ -1,8 +1,9 @@
 import MoneyMatterKit
 import SwiftUI
 
-/// One recurring payment (web: subscription details): basics, schedule, automation, matching
-/// rules, the current period's pay and skip actions, payment history, and linked transactions.
+/// One recurring payment (web: subscription details), Stocks style: a hero with the amount,
+/// status and the current period's pay and skip actions, a details grid, then reminders,
+/// automation, matching rules, payment history and linked transactions.
 struct RecurringPaymentDetailScreen: View {
     let subscriptionID: String
     /// Refreshes the list behind this screen after a change.
@@ -123,68 +124,18 @@ struct RecurringPaymentDetailScreen: View {
 
     private func detailList(_ detail: RecurringSubscriptionDetail) -> some View {
         List {
-            Section {
-                header(detail)
-            }
+            heroSection(detail)
             if let period = detail.currentPeriod, detail.isActive {
-                currentPeriodSection(detail, period: period)
-            }
-            Section("Basics") {
-                LabeledContent("Amount") {
-                    if let amount = detail.expectedAmount, let currency = detail.expectedCurrencyCode {
-                        AmountText(amount, currencyCode: currency, style: detail.transactionType == .income ? .income : .neutral)
-                    } else {
-                        Text("Varies")
+                Section {
+                    InlineActionRow(String(localized: "Skip this payment"), systemImage: "forward") {
+                        Task { await perform { try await $0.send(Endpoints.skipRecurringPeriod(id: detail.id, periodId: period.id)) } }
                     }
                 }
-                LabeledContent("Type") { Text(detail.type.recurringLabel) }
-                LabeledContent("Direction") {
-                    Text(detail.transactionType == .income ? "Income" : "Expense")
-                }
             }
-            Section("Schedule") {
-                LabeledContent("Frequency") { Text(detail.frequency.recurringLabel) }
-                if let start = detail.startDate {
-                    LabeledContent("Started", value: start.recurringFormatted)
-                }
-                if let next = detail.dueDate ?? detail.nextExpectedDate {
-                    LabeledContent("Next Payment", value: next.recurringFormatted)
-                }
-                if let end = detail.endDate {
-                    LabeledContent("Ends", value: end.recurringFormatted)
-                }
-                if let max = detail.maxOccurrences {
-                    LabeledContent("Payments") {
-                        Text("\(detail.paidPeriodsCount) of \(max) paid")
-                    }
-                }
-                LabeledContent("Reminders") {
-                    if detail.remindBefore.isEmpty {
-                        Text("Off")
-                    } else {
-                        VStack(alignment: .trailing, spacing: 2) {
-                            ForEach(detail.remindBefore, id: \.self) { preset in
-                                Text(preset.label)
-                            }
-                        }
-                    }
-                }
-                LabeledContent("Email Reminders") { Text(detail.notifyEmail ? "On" : "Off") }
-            }
-            Section("Automation") {
-                LabeledContent("Mode") { Text(detail.automationMode.label) }
-                if detail.automationMode == .record {
-                    if let account = detail.account {
-                        LabeledContent("Records To", value: account.name)
-                    } else {
-                        Text("Pick an account to record payments automatically.")
-                            .foregroundStyle(.orange)
-                    }
-                }
-                ForEach(Array(detail.matchingRules.rules.enumerated()), id: \.offset) { _, rule in
-                    ruleRow(rule)
-                }
-            }
+            detailsSection(detail)
+            remindersSection(detail)
+            automationSection(detail)
+            matchingRulesSection(detail)
             Section("Organize") {
                 LabeledContent("Account", value: detail.account?.name ?? String(localized: "None"))
                 LabeledContent("Category", value: detail.category?.name ?? String(localized: "None"))
@@ -196,70 +147,192 @@ struct RecurringPaymentDetailScreen: View {
             periodsSection(detail)
             transactionsSection(detail)
         }
+        .listStyle(.insetGrouped)
+        .textCase(nil)
     }
 
-    private func header(_ detail: RecurringSubscriptionDetail) -> some View {
-        HStack(spacing: 14) {
-            RecurringLogoBadge(name: detail.name, initials: detail.logoInitials, colorHex: detail.logoColor ?? detail.category?.color, size: 52)
-            VStack(alignment: .leading, spacing: 4) {
-                Text(detail.name)
-                    .font(.title3.weight(.semibold))
-                HStack(spacing: 6) {
-                    Label { Text(detail.type.recurringLabel) } icon: { Image(systemName: detail.type.recurringSymbol) }
-                    if detail.isCompleted {
-                        Text("Completed").foregroundStyle(.green)
-                    } else if !detail.isActive {
-                        Text("Paused").foregroundStyle(.orange)
-                    }
-                }
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-            }
-            Spacer()
-            if let amount = detail.expectedAmount, let currency = detail.expectedCurrencyCode {
-                AmountText(amount, currencyCode: currency, style: detail.transactionType == .income ? .income : .neutral)
-                    .font(.title3.weight(.semibold))
-            }
-        }
-        .padding(.vertical, 4)
-    }
+    // MARK: - Hero
 
-    private func currentPeriodSection(_ detail: RecurringSubscriptionDetail, period: RecurringPeriod) -> some View {
-        Section {
-            HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    if let due = period.dueDate {
-                        Text(due.recurringFormatted)
-                            .font(.headline)
-                        RecurringDueText(dueDate: due, today: today)
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                    }
+    /// Stocks-style hero on the bare canvas: the logo and "Type · Frequency" eyebrow, the
+    /// amount at hero size, the status badge and next date, then the primary action. The
+    /// name stays in the navigation title only.
+    private func heroSection(_ detail: RecurringSubscriptionDetail) -> some View {
+        let isIncome = detail.transactionType == .income
+        let next = detail.dueDate ?? detail.nextExpectedDate
+        let status = heroStatus(detail)
+        return Section {
+            VStack(alignment: .leading, spacing: DS.Space.l) {
+                HStack(spacing: DS.Space.m) {
+                    RecurringLogoBadge(
+                        name: detail.name,
+                        initials: detail.logoInitials,
+                        colorHex: detail.logoColor ?? detail.category?.color,
+                        size: 56
+                    )
+                    Text("\(Text(detail.type.recurringLabel)) · \(Text(detail.frequency.recurringLabel))")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
                 }
-                Spacer()
-                Text(period.status.recurringLabel)
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(period.status.recurringColor)
+                HeroValueHeader(heroValue(detail), numericValue: detail.expectedAmount.map { NSDecimalNumber(decimal: $0).doubleValue }) {
+                    VStack(alignment: .leading, spacing: DS.Space.s) {
+                        if let status {
+                            StatusBadge(label: status.label, color: status.color)
+                        }
+                        if let next {
+                            Text("Next payment \(next.recurringFormatted)")
+                        }
+                    }
+                    .padding(.top, DS.Space.xs)
+                }
+                .foregroundStyle(isIncome ? DS.Palette.up : Color.primary)
             }
-            HStack {
+            .padding(.vertical, DS.Space.xs)
+            .listRowSeparator(.hidden)
+
+            if let period = detail.currentPeriod, detail.isActive {
                 Button {
                     startPay(detail, period: period)
                 } label: {
-                    Label("Mark Paid", systemImage: "checkmark.circle")
+                    Label("Mark as paid", systemImage: "checkmark.circle.fill")
+                        .font(.headline)
                         .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(.borderedProminent)
-                Button {
-                    Task { await perform { try await $0.send(Endpoints.skipRecurringPeriod(id: detail.id, periodId: period.id)) } }
-                } label: {
-                    Text("Skip")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.bordered)
+                .dsProminentButton()
+                .controlSize(.large)
+                .listRowInsets(EdgeInsets(top: DS.Space.s, leading: 0, bottom: DS.Space.xs, trailing: 0))
+                .listRowSeparator(.hidden)
             }
-            .buttonBorderShape(.capsule)
-        } header: {
-            Text("Current Payment")
+        }
+        .listRowBackground(Color.clear)
+        .listRowInsets(EdgeInsets(top: DS.Space.s, leading: DS.Space.xs, bottom: DS.Space.s, trailing: DS.Space.xs))
+    }
+
+    /// The amount as the hero shows it: unsigned (green when income), or "Varies".
+    private func heroValue(_ detail: RecurringSubscriptionDetail) -> String {
+        guard let amount = detail.expectedAmount, let currency = detail.expectedCurrencyCode else {
+            return String(localized: "Varies")
+        }
+        let shown = detail.transactionType == .income ? abs(amount) : amount
+        return MoneyFormat.string(shown, currencyCode: currency, digits: referenceData.digits(for: currency))
+    }
+
+    /// The payment's state in one badge: completed or paused first, then how far the current
+    /// period's due date is (orange within a week, red once overdue), else "Paid" when the
+    /// latest period is settled.
+    private func heroStatus(_ detail: RecurringSubscriptionDetail) -> (label: String, color: Color)? {
+        if detail.isCompleted {
+            return (String(localized: "Completed"), DS.Palette.success)
+        }
+        if !detail.isActive {
+            return (String(localized: "Paused"), .gray)
+        }
+        if let period = detail.currentPeriod {
+            guard let due = period.dueDate else {
+                return (period.status.badgeLabel, period.status.badgeColor)
+            }
+            let days = RecurringGrouping.days(until: due, today: today)
+            return switch days {
+            case ..<0: (String(localized: "\(-days) days overdue"), DS.Palette.danger)
+            case 0: (String(localized: "Due today"), DS.Palette.warning)
+            case 1: (String(localized: "Due tomorrow"), DS.Palette.warning)
+            case 2...7: (String(localized: "Due in \(days) days"), DS.Palette.warning)
+            default: (String(localized: "Due in \(days) days"), DS.Palette.accent)
+            }
+        }
+        let latest = detail.periods.max { ($0.dueDate ?? today) < ($1.dueDate ?? today) }
+        if latest?.status == .paid {
+            return (String(localized: "Paid"), DS.Palette.success)
+        }
+        return nil
+    }
+
+    // MARK: - Sections
+
+    private func detailsSection(_ detail: RecurringSubscriptionDetail) -> some View {
+        Section("Details") {
+            StatGrid {
+                StatCell(label: String(localized: "Amount")) {
+                    if let amount = detail.expectedAmount, let currency = detail.expectedCurrencyCode {
+                        AmountText(
+                            amount,
+                            currencyCode: currency,
+                            digits: referenceData.digits(for: currency),
+                            style: detail.transactionType == .income ? .income : .neutral
+                        )
+                    } else {
+                        Text("Varies")
+                    }
+                }
+                StatCell(label: String(localized: "Type")) { Text(detail.type.recurringLabel) }
+                StatCell(label: String(localized: "Direction")) {
+                    Text(detail.transactionType == .income ? "Income" : "Expense")
+                }
+                StatCell(label: String(localized: "Frequency")) { Text(detail.frequency.recurringLabel) }
+                if let start = detail.startDate {
+                    StatCell(label: String(localized: "Started"), value: start.recurringFormatted)
+                }
+                if let next = detail.dueDate ?? detail.nextExpectedDate {
+                    StatCell(label: String(localized: "Next payment"), value: next.recurringFormatted)
+                }
+                if let end = detail.endDate {
+                    StatCell(label: String(localized: "Ends"), value: end.recurringFormatted)
+                }
+                if let max = detail.maxOccurrences {
+                    StatCell(label: String(localized: "Payments")) {
+                        Text("\(detail.paidPeriodsCount) of \(max) paid")
+                    }
+                }
+            }
+            .padding(.vertical, DS.Space.s)
+        }
+    }
+
+    private func remindersSection(_ detail: RecurringSubscriptionDetail) -> some View {
+        Section("Reminders") {
+            LabeledContent("Notifications") {
+                if detail.remindBefore.isEmpty {
+                    Text("Off")
+                } else {
+                    VStack(alignment: .trailing, spacing: DS.Space.xxs) {
+                        ForEach(detail.remindBefore, id: \.self) { preset in
+                            Text(preset.label)
+                        }
+                    }
+                }
+            }
+            LabeledContent("Email") { Text(detail.notifyEmail ? "On" : "Off") }
+        }
+    }
+
+    private func automationSection(_ detail: RecurringSubscriptionDetail) -> some View {
+        Section("Automation") {
+            LabeledContent("Mode") { Text(detail.automationMode.label) }
+            if detail.automationMode == .record {
+                if let account = detail.account {
+                    LabeledContent("Records to", value: account.name)
+                } else {
+                    Label {
+                        Text("Pick an account to record payments automatically.")
+                    } icon: {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                    }
+                    .font(.subheadline)
+                    .foregroundStyle(DS.Palette.warning)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func matchingRulesSection(_ detail: RecurringSubscriptionDetail) -> some View {
+        let rules = detail.matchingRules.rules.filter { if case .unknown = $0 { false } else { true } }
+        if !rules.isEmpty {
+            Section("Matching rules") {
+                ForEach(Array(rules.enumerated()), id: \.offset) { _, rule in
+                    ruleRow(rule)
+                }
+            }
         }
     }
 
@@ -267,11 +340,11 @@ struct RecurringPaymentDetailScreen: View {
     private func ruleRow(_ rule: RecurringMatchingRule) -> some View {
         switch rule {
         case .note(let keywords):
-            LabeledContent("Note Contains", value: keywords.joined(separator: ", "))
+            LabeledContent("Note contains", value: keywords.joined(separator: ", "))
         case .amount(let min, let max, let currencyCode):
-            LabeledContent("Amount Between") {
+            LabeledContent("Amount between") {
                 let code = currencyCode ?? state.value?.expectedCurrencyCode ?? ""
-                HStack(spacing: 4) {
+                HStack(spacing: DS.Space.xs) {
                     AmountText(min, currencyCode: code)
                     Text(verbatim: "–")
                     AmountText(max, currencyCode: code)
@@ -290,7 +363,7 @@ struct RecurringPaymentDetailScreen: View {
     private func periodsSection(_ detail: RecurringSubscriptionDetail) -> some View {
         let periods = detail.periods.sorted { ($0.dueDate ?? today) > ($1.dueDate ?? today) }
         if !periods.isEmpty {
-            Section("Payment History") {
+            Section("Payment history") {
                 ForEach(periods) { period in
                     periodRow(detail, period: period)
                 }
@@ -298,29 +371,19 @@ struct RecurringPaymentDetailScreen: View {
         }
     }
 
+    /// One period: its due date, when it was paid, and its status badge. A period with a
+    /// transaction opens it.
     private func periodRow(_ detail: RecurringSubscriptionDetail, period: RecurringPeriod) -> some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(period.dueDate?.recurringFormatted ?? "")
-                if let paidAt = period.paidAt {
-                    Text("Paid \(paidAt.formatted(date: .abbreviated, time: .omitted))")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            Spacer()
+        Group {
             if let transactionID = period.transactionId {
                 NavigationLink {
                     TransactionDetailScreen(transactionID: transactionID)
                 } label: {
-                    Image(systemName: "doc.text")
+                    periodEntity(period)
                 }
-                .accessibilityLabel(Text("Open transaction"))
-                .fixedSize()
+            } else {
+                periodEntity(period)
             }
-            Text(period.status.recurringLabel)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(period.status.recurringColor)
         }
         .swipeActions(edge: .trailing) {
             if period.isOpen {
@@ -368,6 +431,15 @@ struct RecurringPaymentDetailScreen: View {
         }
     }
 
+    private func periodEntity(_ period: RecurringPeriod) -> some View {
+        EntityRow(
+            period.dueDate?.recurringFormatted ?? "",
+            subtitle: period.paidAt.map { String(localized: "Paid \($0.formatted(date: .abbreviated, time: .omitted))") }
+        ) {
+            StatusBadge(label: period.status.badgeLabel, color: period.status.badgeColor)
+        }
+    }
+
     private func transactionsSection(_ detail: RecurringSubscriptionDetail) -> some View {
         Section {
             let linked = detail.activeTransactions
@@ -397,7 +469,7 @@ struct RecurringPaymentDetailScreen: View {
             }
         } header: {
             HStack {
-                Text("Linked Transactions")
+                Text("Linked transactions")
                 Spacer()
                 Button {
                     isLinkPickerPresented = true
@@ -467,6 +539,28 @@ struct RecurringPaymentDetailScreen: View {
             dismiss()
         } catch {
             alert = ErrorAlert(error)
+        }
+    }
+}
+
+private extension SubscriptionPeriodStatus {
+    /// The status as `StatusBadge` text.
+    var badgeLabel: String {
+        switch self {
+        case .upcoming: String(localized: "Upcoming")
+        case .paid: String(localized: "Paid")
+        case .overdue: String(localized: "Overdue")
+        case .skipped: String(localized: "Skipped")
+        case .unknown: String(localized: "Unknown")
+        }
+    }
+
+    var badgeColor: Color {
+        switch self {
+        case .paid: DS.Palette.success
+        case .overdue: DS.Palette.danger
+        case .skipped: .gray
+        case .upcoming, .unknown: DS.Palette.warning
         }
     }
 }
