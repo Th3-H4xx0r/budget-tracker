@@ -46,6 +46,9 @@ struct PlanningScreen: View {
             }
         }
         .navigationTitle("Planning")
+        // Inline: a large title lives inside each segment's scroll view, so it would sit under
+        // the pinned picker and slide on pull-to-refresh while the picker stays put.
+        .navigationBarTitleDisplayMode(.inline)
         .safeAreaBar(edge: .top) {
             Picker("Section", selection: $segment) {
                 ForEach(PlanningSegment.allCases) { segment in
@@ -54,7 +57,8 @@ struct PlanningScreen: View {
             }
             .pickerStyle(.segmented)
             .padding(.horizontal)
-            .padding(.bottom, 8)
+            .padding(.top, 8)
+            .padding(.bottom, 12)
         }
     }
 }

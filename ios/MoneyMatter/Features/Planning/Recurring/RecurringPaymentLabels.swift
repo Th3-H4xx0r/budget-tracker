@@ -146,17 +146,20 @@ struct RecurringDueText: View {
     let today: CalendarDate
 
     var body: some View {
+        Self.text(dueDate: dueDate, today: today)
+    }
+
+    /// A `Text` so callers can interpolate it into one wrapping line with other text.
+    static func text(dueDate: CalendarDate, today: CalendarDate) -> Text {
         let days = RecurringGrouping.days(until: dueDate, today: today)
-        Group {
-            if days < 0 {
-                Text("\(-days) days overdue").foregroundStyle(.red)
-            } else if days == 0 {
-                Text("Due today").foregroundStyle(.orange)
-            } else if days == 1 {
-                Text("Due tomorrow")
-            } else {
-                Text("Due in \(days) days")
-            }
+        if days < 0 {
+            return Text("\(-days) days overdue").foregroundStyle(.red)
+        } else if days == 0 {
+            return Text("Due today").foregroundStyle(.orange)
+        } else if days == 1 {
+            return Text("Due tomorrow")
+        } else {
+            return Text("Due in \(days) days")
         }
     }
 }

@@ -372,18 +372,20 @@ private struct RecurringListRow: View {
                 Text(item.name)
                     .font(.body.weight(.medium))
                     .lineLimit(1)
-                HStack(spacing: 4) {
-                    Text(item.frequency.recurringLabel)
+                // One Text so the line wraps as a whole instead of squeezing the frequency
+                // into a narrow column next to the due label.
+                Group {
                     if let due = item.nextDueDate, item.isActive {
-                        Text(verbatim: "·")
-                        RecurringDueText(dueDate: due, today: today)
+                        Text("\(Text(item.frequency.recurringLabel)) · \(RecurringDueText.text(dueDate: due, today: today))")
                     } else if !item.isActive {
-                        Text(verbatim: "·")
-                        Text("Paused")
+                        Text("\(Text(item.frequency.recurringLabel)) · \(Text("Paused"))")
+                    } else {
+                        Text(item.frequency.recurringLabel)
                     }
                 }
                 .font(.caption)
                 .foregroundStyle(.secondary)
+                .lineLimit(2)
                 if let max = item.maxOccurrences {
                     ProgressView(value: Double(min(item.paidPeriodsCount ?? 0, max)), total: Double(max)) {
                         Text("\(item.paidPeriodsCount ?? 0) of \(max) paid")
