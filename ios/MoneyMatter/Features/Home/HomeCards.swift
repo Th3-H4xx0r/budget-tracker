@@ -32,7 +32,65 @@ struct HomePeriodPicker: View {
             }
             .pickerStyle(.segmented)
 
-            Menu {
+            HStack(spacing: 0) {
+                stepButton(delta: -1)
+                Spacer(minLength: 0)
+                periodMenu
+                Spacer(minLength: 0)
+                stepButton(delta: 1)
+            }
+            .sensoryFeedback(.selection, trigger: period)
+        }
+    }
+
+    /// Previous / next arrow. Months step by one month and years by one year; YTD and 1Y have
+    /// nothing to step through, so their arrows are hidden but keep their space to centre the title.
+    private func stepButton(delta: Int) -> some View {
+        let target = stepped(by: delta)
+        let isStepping = period.kind == .month || period.kind == .lastYear || period.kind == nil
+        return Button {
+            if let target { select(target) }
+        } label: {
+            Image(systemName: delta < 0 ? "chevron.left" : "chevron.right")
+                .font(.title3.weight(.semibold))
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(target == nil ? Color.secondary.opacity(0.4) : Color.accentColor)
+        .disabled(target == nil)
+        .opacity(isStepping ? 1 : 0)
+        .accessibilityHidden(!isStepping)
+        .accessibilityLabel(Text(delta < 0 ? "Previous" : "Next"))
+    }
+
+    /// The neighbouring period, or nil when stepping would reach the future or past the oldest year.
+    private func stepped(by delta: Int) -> HomePeriod? {
+        switch period {
+        case let .month(year, month):
+            var newMonth = month + delta
+            var newYear = year
+            if newMonth < 1 { newMonth = 12; newYear -= 1 } else if newMonth > 12 { newMonth = 1; newYear += 1 }
+            if newYear > today.year || (newYear == today.year && newMonth > today.month) { return nil }
+            return .month(year: newYear, month: newMonth)
+        case .lastYear:
+            return steppedYear(from: today.year - 1, by: delta)
+        case let .year(year):
+            return steppedYear(from: year, by: delta)
+        case .ytd, .last12Months:
+            return nil
+        }
+    }
+
+    private func steppedYear(from year: Int, by delta: Int) -> HomePeriod? {
+        let target = year + delta
+        guard target < today.year, target >= today.year - Self.yearCount else { return nil }
+        return .calendarYear(target, today: today)
+    }
+
+    /// The centred title; tapping it jumps straight to any recent month or earlier year.
+    private var periodMenu: some View {
+        Menu {
                 Section("Month") {
                     ForEach(recentMonths, id: \.self) { month in
                         option(
@@ -47,18 +105,15 @@ struct HomePeriodPicker: View {
                     }
                 }
             } label: {
-                HStack(spacing: DS.Space.xs) {
-                    Text(verbatim: period.title(today: today))
-                        .monospacedDigit()
-                        .contentTransition(.numericText())
-                    Image(systemName: "chevron.up.chevron.down")
-                        .font(.caption2.weight(.semibold))
-                        .accessibilityHidden(true)
-                }
-                .font(.subheadline.weight(.semibold))
+                Text(verbatim: period.title(today: today))
+                    .font(.title3.weight(.semibold))
+                    .monospacedDigit()
+                    .foregroundStyle(.primary)
+                    .contentTransition(.numericText())
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
             }
             .accessibilityHint(Text("Choose a month or year"))
-        }
     }
 
     private func option(_ value: HomePeriod, title: String) -> some View {
