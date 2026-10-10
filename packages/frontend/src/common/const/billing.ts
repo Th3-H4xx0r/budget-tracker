@@ -26,7 +26,7 @@ export const liveSubscription = ({
   entitlements?.subscriptions.find((s) => !isTerminalSubscription(s) && isFuture(new Date(s.currentPeriodEndsAt))) ??
   null;
 
-export type AnalyticsPlan = Plan | 'trial' | 'read_only' | 'legacy';
+type AnalyticsPlan = Plan | 'trial' | 'read_only' | 'legacy';
 
 /** One label per user for the PostHog `plan` person property. Mirrors the backend entitlement order. */
 export const analyticsPlan = ({ entitlements }: { entitlements: Entitlements }): AnalyticsPlan => {

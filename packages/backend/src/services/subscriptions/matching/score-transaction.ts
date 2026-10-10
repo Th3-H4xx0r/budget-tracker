@@ -12,7 +12,7 @@ import { evaluateRule, isGatingRule } from './legacy-rules';
 import { buildMerchantKey, tokenSimilarity } from './merchant-key';
 import type { FxConvert, MatchScore, MatchTier, ScorableTransaction, SubscriptionProfile } from './types';
 
-export const SIGNAL_WEIGHTS = {
+const SIGNAL_WEIGHTS = {
   merchant: 0.4,
   keyword: 0.1,
   date: 0.25,

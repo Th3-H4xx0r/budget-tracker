@@ -395,6 +395,7 @@ The work happens in new folder `services/subscriptions/discovery/`. `detect-cand
    - The user must undo and redo that migration locally. Note this in the PR.
    - In `getPlanDetails`, for each subscription S, take the auto-added entries with `subscriptionId = S`. Remove the projected occurrence of S nearest each entry's date, within W (§2.1 windows), and emit the entry as `source: 'recurring_actual'` with `subscriptionId` and `name`. Projected occurrences that aren't removed stay as `source: 'recurring'`. Entries without a subscription stay `source: 'manual'`. Totals therefore count each payment once.
 3. **A single idempotent sync service** (fixes P3 and P4). It lives in new `services/future-budgets/sync-plan-entries.ts` and replaces `auto-add-synced-transaction.ts`; delete the old file and update its e2e:
+
    ```ts
    syncPlanEntriesForTransactions({ userId, transactionIds }): Promise<void>
    ```
@@ -407,6 +408,7 @@ The work happens in new folder `services/subscriptions/discovery/`. `detect-cand
      - Every link-state change in §2.1 and §2.2: matching auto-link, the link endpoint, the unlink endpoints, mark-paid LINK and CREATE, and `resolve-candidate.ts`.
      - The update-transaction service, after commit, when amount, time, category, note or type changes.
    - Delete is handled by the FK cascade.
+
 4. **Backfill on toggle.** In `updatePlan` (`future-budgets.ts:~186`), when `autoAddSyncedTransactions` flips false to true, call `backfillPlanEntries({ userId, planId })`. It selects the user's real transactions with `time` in `[startDate, endDate]` and syncs them, capped at 5,000. When it flips true to false, leave the entries in place (they are now user data). The web copy at `packages/frontend/src/pages/planned/future-budgets/details.vue:348-352` changes to "Automatically add real transactions in this window, including ones matched to recurring payments", via i18n.
 5. **Web and iOS plan views**: render `recurring_actual` with a "Paid" state next to projected recurring rows (web `details.vue`; iOS `MoneyMatterKit/Planning/PlannedBudgets.swift` occurrence `source` decoding plus its view).
 

@@ -26,22 +26,6 @@ export function normalizeNote({ note }: { note: string }): string {
   return normalized;
 }
 
-/**
- * Build a grouping key for a transaction based on its normalized note,
- * accountId, and currencyCode.
- */
-export function buildGroupingKey({
-  normalizedNote,
-  accountId,
-  currencyCode,
-}: {
-  normalizedNote: string;
-  accountId: string;
-  currencyCode: string;
-}): string {
-  return `${normalizedNote}||${accountId}||${currencyCode}`;
-}
-
 export interface TransactionForGrouping {
   id: string;
   amount: number;
@@ -49,69 +33,6 @@ export interface TransactionForGrouping {
   time: Date;
   accountId: string;
   currencyCode: string;
-}
-
-export interface TransactionGroup {
-  normalizedNote: string;
-  accountId: string;
-  currencyCode: string;
-  transactions: TransactionForGrouping[];
-  rawNotes: string[];
-}
-
-/**
- * Group transactions by their signature (normalizedNote + accountId + currencyCode).
- * Only returns groups with at least `minOccurrences` transactions.
- */
-export function groupTransactionsBySignature({
-  transactions,
-  minOccurrences = 3,
-}: {
-  transactions: TransactionForGrouping[];
-  minOccurrences?: number;
-}): TransactionGroup[] {
-  const groups = new Map<string, TransactionGroup>();
-
-  for (const tx of transactions) {
-    const normalizedNote = normalizeNote({ note: tx.note || '' });
-    if (!normalizedNote) continue;
-
-    const key = buildGroupingKey({
-      normalizedNote,
-      accountId: tx.accountId,
-      currencyCode: tx.currencyCode,
-    });
-
-    if (!groups.has(key)) {
-      groups.set(key, {
-        normalizedNote,
-        accountId: tx.accountId,
-        currencyCode: tx.currencyCode,
-        transactions: [],
-        rawNotes: [],
-      });
-    }
-
-    const group = groups.get(key)!;
-    group.transactions.push(tx);
-    group.rawNotes.push(tx.note || '');
-  }
-
-  return Array.from(groups.values()).filter((g) => g.transactions.length >= minOccurrences);
-}
-
-/**
- * Compute the coefficient of variation (stdev / mean) for an array of numbers.
- * Returns 0 if fewer than 2 values or if mean is 0.
- */
-export function computeCV({ values }: { values: number[] }): number {
-  if (values.length < 2) return 0;
-
-  const mean = values.reduce((sum, v) => sum + v, 0) / values.length;
-  if (mean === 0) return 0;
-
-  const variance = values.reduce((sum, v) => sum + (v - mean) ** 2, 0) / values.length;
-  return Math.sqrt(variance) / Math.abs(mean);
 }
 
 /**
@@ -150,23 +71,6 @@ export function splitByAmountBuckets({
 }
 
 /**
- * Compute intervals (in days) between sorted dates.
- */
-export function computeIntervals({ dates }: { dates: Date[] }): number[] {
-  if (dates.length < 2) return [];
-
-  const sorted = dates.toSorted((a, b) => a.getTime() - b.getTime());
-  const intervals: number[] = [];
-
-  for (let i = 1; i < sorted.length; i++) {
-    const diffMs = sorted[i]!.getTime() - sorted[i - 1]!.getTime();
-    intervals.push(diffMs / (1000 * 60 * 60 * 24));
-  }
-
-  return intervals;
-}
-
-/**
  * Compute the median of a sorted or unsorted array of numbers.
  */
 export function computeMedian({ values }: { values: number[] }): number {
@@ -191,26 +95,6 @@ export function mapIntervalToFrequency({ medianDays }: { medianDays: number }): 
   if (medianDays <= 120) return SUBSCRIPTION_FREQUENCIES.quarterly;
   if (medianDays <= 270) return SUBSCRIPTION_FREQUENCIES.semiAnnual;
   return SUBSCRIPTION_FREQUENCIES.annual;
-}
-
-/**
- * Compute a confidence score for a candidate group.
- *
- * confidenceScore = 0.4 * occurrenceScore + 0.6 * regularityScore
- * where:
- *   occurrenceScore = min(1.0, occurrenceCount / 12)
- *   regularityScore = max(0.0, 1.0 - intervalCV)
- */
-export function computeConfidenceScore({
-  occurrenceCount,
-  intervalCV,
-}: {
-  occurrenceCount: number;
-  intervalCV: number;
-}): number {
-  const occurrenceScore = Math.min(1.0, occurrenceCount / 12);
-  const regularityScore = Math.max(0.0, 1.0 - intervalCV);
-  return 0.4 * occurrenceScore + 0.6 * regularityScore;
 }
 
 /**

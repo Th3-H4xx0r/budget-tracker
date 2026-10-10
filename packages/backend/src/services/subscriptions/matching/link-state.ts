@@ -11,7 +11,7 @@ import type { FxConvert } from './types';
 export const pairKey = ({ subscriptionId, transactionId }: { subscriptionId: string; transactionId: string }) =>
   `${subscriptionId}:${transactionId}`;
 
-export interface LinkState {
+interface LinkState {
   /** transactionId → subscriptionId of its active link. */
   activeLinks: Map<string, string>;
   /** Pairs the user rejected: dismissed suggestions and links unlinked from that subscription. */

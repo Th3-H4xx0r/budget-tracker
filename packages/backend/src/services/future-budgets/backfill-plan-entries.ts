@@ -10,7 +10,7 @@ import { syncPlanEntriesForTransactions } from './sync-plan-entries';
 /** Bounds the one-off scan when a long plan window spans a large transaction history. */
 const BACKFILL_TRANSACTIONS_LIMIT = 5000;
 
-export interface BackfillPlanEntriesParams {
+interface BackfillPlanEntriesParams {
   userId: number;
   planId: RecordId;
 }

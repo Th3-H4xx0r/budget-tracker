@@ -8,7 +8,7 @@ import type { ScorableTransaction, SubscriptionProfile } from './types';
 
 const MIN_ILIKE_TOKEN_LENGTH = 3;
 const AMOUNT_BAND = 0.5;
-export const CANDIDATE_LIMIT = 2000;
+const CANDIDATE_LIMIT = 2000;
 
 /** Excludes transactions with an active link to any subscription. */
 export const notActivelyLinkedWhere = (): WhereOptions =>

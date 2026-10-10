@@ -4,7 +4,7 @@ import { withTransaction } from '@services/common/with-transaction';
 
 import { backfillPlanEntries } from './backfill-plan-entries';
 
-export interface UpdatePlanParams {
+interface UpdatePlanParams {
   userId: number;
   plan: FutureBudgetPlans;
   changes: Record<string, unknown>;

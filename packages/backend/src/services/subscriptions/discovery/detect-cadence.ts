@@ -4,7 +4,7 @@ import type { CadenceFit } from './types';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-export const NOMINAL_PERIOD_DAYS: Record<SUBSCRIPTION_FREQUENCIES, number> = {
+const NOMINAL_PERIOD_DAYS: Record<SUBSCRIPTION_FREQUENCIES, number> = {
   [SUBSCRIPTION_FREQUENCIES.weekly]: 7,
   [SUBSCRIPTION_FREQUENCIES.biweekly]: 14,
   [SUBSCRIPTION_FREQUENCIES.monthly]: 30.44,
@@ -22,7 +22,7 @@ export const PERIOD_MONTHS: Partial<Record<SUBSCRIPTION_FREQUENCIES, number>> = 
 };
 
 /** Up to quarterly a pattern needs 3 occurrences; semi-annual and annual charges need 2. */
-export const minOccurrencesFor = ({ frequency }: { frequency: SUBSCRIPTION_FREQUENCIES }): number =>
+const minOccurrencesFor = ({ frequency }: { frequency: SUBSCRIPTION_FREQUENCIES }): number =>
   NOMINAL_PERIOD_DAYS[frequency] > NOMINAL_PERIOD_DAYS[SUBSCRIPTION_FREQUENCIES.quarterly] ? 2 : 3;
 
 const DAY_OF_MONTH_SPREAD_BONUS_MAX_DAYS = 5;

@@ -9,8 +9,8 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 // Matches the SubscriptionCandidates.suggestedName column width.
 const MAX_SUGGESTED_NAME_LENGTH = 200;
 
-export const ACCEPT_MIN_CONFIDENCE = 0.55;
-export const AMBIGUOUS_MIN_CONFIDENCE = 0.35;
+const ACCEPT_MIN_CONFIDENCE = 0.55;
+const AMBIGUOUS_MIN_CONFIDENCE = 0.35;
 const REGULAR_MIN_FIT = 0.7;
 const VARIABLE_AMOUNT_MIN_FIT = 0.8;
 /** A two-occurrence pattern has no second interval to confirm it, so its one interval must be tight. */

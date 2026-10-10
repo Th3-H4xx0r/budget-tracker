@@ -56,7 +56,7 @@ export interface AiClusterVerdict {
   reason: string | null;
 }
 
-export interface AiReviewResult {
+interface AiReviewResult {
   status: DetectionAiStatus;
   /** Verdicts keyed by cluster fingerprint. */
   verdicts: Map<string, AiClusterVerdict>;

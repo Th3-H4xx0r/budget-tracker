@@ -7,7 +7,7 @@ import { findTransactions } from '@models/transactions-query';
 import Transactions from '@models/transactions.model';
 import { withTransaction } from '@services/common/with-transaction';
 
-export interface SyncPlanEntriesForTransactionsParams {
+interface SyncPlanEntriesForTransactionsParams {
   userId: number;
   transactionIds: RecordId[];
 }

@@ -22,7 +22,7 @@ const DEFAULT_OCCURRENCE_WINDOW_DAYS = 6;
 /** Recent payments a variable-amount recurring payment's projected amount is derived from. */
 const LEARNED_AMOUNT_SAMPLE_SIZE = 3;
 
-export interface RecurringPlanOccurrence {
+interface RecurringPlanOccurrence {
   source: 'recurring' | 'recurring_actual';
   subscriptionId: RecordId;
   name: string;

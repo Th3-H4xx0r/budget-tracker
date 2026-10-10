@@ -28,7 +28,7 @@ interface TransactionsSorting {
 
 const DATE_FILTER_KEYS = new Set<string>(['start', 'end']);
 
-export interface StoredFiltersState {
+interface StoredFiltersState {
   filters: Partial<FiltersStruct>;
   sorting?: TransactionsSorting;
 }

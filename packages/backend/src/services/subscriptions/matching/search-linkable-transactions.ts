@@ -20,13 +20,13 @@ import { createFxConverter, loadLinkState, pairKey } from './link-state';
 import { scoreTransaction } from './score-transaction';
 import { loadSubscriptionProfiles } from './subscription-profile';
 
-export const DEFAULT_LINKABLE_LIMIT = 30;
+const DEFAULT_LINKABLE_LIMIT = 30;
 /** Rows scored when sorting by relevance, which has to rank before paging. */
 const RELEVANCE_SCAN_LIMIT = 500;
 const MIN_SEARCH_LENGTH = 2;
 const AMOUNT_SEARCH_PATTERN = /^-?\d+(?:[.,]\d{1,2})?$/;
 
-export type LinkableTransactionApiItem = LinkableTransactionItem<TransactionApiResponse>;
+type LinkableTransactionApiItem = LinkableTransactionItem<TransactionApiResponse>;
 
 interface SearchLinkableTransactionsParams {
   userId: number;

@@ -5,7 +5,7 @@ import type { ReviewDecision } from './use-review-session';
 /** Where the keydown landed: a text field, a focusable control, or anything else. */
 export type ReviewShortcutTarget = 'editable' | 'interactive' | 'other';
 
-export type ReviewShortcut =
+type ReviewShortcut =
   | { kind: 'act'; action: ReviewDecision }
   | { kind: 'undo' }
   /** Only cancel the browser default; nothing else happens. */

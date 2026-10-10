@@ -21,7 +21,7 @@ const BACKFILL_DAYS_FORWARD = 7;
  * against every active profile, so a transaction that fits another payment better is not taken.
  * Auto-links become links (and paid open periods); suggestions become pending rows.
  */
-export const backfillSubscriptionMatches = withTransaction(
+const backfillSubscriptionMatches = withTransaction(
   async ({ userId, subscriptionId }: { userId: number; subscriptionId: RecordId }): Promise<{ linked: number }> => {
     const [target] = await loadSubscriptionProfiles({ userId, subscriptionIds: [subscriptionId] });
     if (!target || !target.subscription.isActive) return { linked: 0 };

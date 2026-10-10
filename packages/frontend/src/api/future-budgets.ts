@@ -8,7 +8,7 @@ export type FutureBudgetFrequency =
   | 'semi_annual'
   | 'annual'
   | 'custom';
-export type FutureBudgetPlan = {
+type FutureBudgetPlan = {
   id: string;
   name: string;
   type: 'manual' | 'category';
@@ -24,11 +24,11 @@ export type FutureBudgetPlan = {
   dismissedSalaryProfileRevision: number | null;
   autoAddSyncedTransactions: boolean;
 };
-export type CreateFutureBudgetPlan = Omit<
+type CreateFutureBudgetPlan = Omit<
   FutureBudgetPlan,
   'id' | 'status' | 'salaryProfileRevision' | 'dismissedSalaryProfileRevision' | 'autoAddSyncedTransactions'
 > & { categoryIds?: string[] };
-export type SalarySettings = {
+type SalarySettings = {
   salaryAmount: number;
   salaryFrequency: FutureBudgetFrequency;
   salaryIntervalDays: number | null;
@@ -36,7 +36,7 @@ export type SalarySettings = {
   salaryCategoryId: string | null;
   revision: number;
 };
-export type FutureEntry = {
+type FutureEntry = {
   id: string;
   transactionType: 'income' | 'expense';
   amount: number;
@@ -56,7 +56,7 @@ export type FutureEntry = {
  *   projected occurrence it paid, so each payment is counted once.
  */
 export type FutureOccurrenceSource = 'salary' | 'recurring' | 'recurring_actual' | 'manual';
-export type FutureOccurrence = Omit<FutureEntry, 'subscriptionId'> & {
+type FutureOccurrence = Omit<FutureEntry, 'subscriptionId'> & {
   source: FutureOccurrenceSource;
   name?: string;
   subscriptionId?: string | null;

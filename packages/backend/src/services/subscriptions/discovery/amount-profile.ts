@@ -8,7 +8,7 @@ const STABLE_MAX_VARIABILITY = 0.15;
 const STEP_PAIR_MAX_DIFF = 0.03;
 const STEP_MIN_SHIFT = 0.1;
 
-export const classifyVariability = ({ variability }: { variability: number }): AmountVariabilityClass => {
+const classifyVariability = ({ variability }: { variability: number }): AmountVariabilityClass => {
   if (variability <= FIXED_MAX_VARIABILITY) return 'fixed';
   if (variability <= STABLE_MAX_VARIABILITY) return 'stable';
   return 'variable';

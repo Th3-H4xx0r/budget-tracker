@@ -5,7 +5,7 @@ import Fuse, { type IFuseOptions } from 'fuse.js';
  * Card-network, terminal and legal-form words that bank descriptors wrap around the merchant name.
  * `migrations/20261010000000-smart-recurring-matching.ts` holds a frozen copy for its backfill.
  */
-export const MERCHANT_NOISE_TOKENS: ReadonlySet<string> = new Set([
+const MERCHANT_NOISE_TOKENS: ReadonlySet<string> = new Set([
   'pos',
   'purchase',
   'card',
@@ -39,7 +39,7 @@ const FUZZY_MIN_PATTERN_LENGTH = 4;
 /** Fuse's bitap search only handles patterns up to 32 characters. */
 const FUZZY_MAX_PATTERN_LENGTH = 32;
 
-export interface MerchantKey {
+interface MerchantKey {
   /** First three surviving tokens joined by a space; '' when nothing survives. */
   key: string;
   /** All surviving tokens, deduplicated, in descriptor order. */

@@ -26,9 +26,9 @@ import { loadSubscriptionProfiles } from './subscription-profile';
 
 const SUGGESTION_DAYS_BACK = 400;
 const SUGGESTION_DAYS_FORWARD = 7;
-export const DEFAULT_SUGGESTIONS_LIMIT = 50;
+const DEFAULT_SUGGESTIONS_LIMIT = 50;
 
-export type SubscriptionSuggestionItem = SubscriptionSuggestion<TransactionApiResponse>;
+type SubscriptionSuggestionItem = SubscriptionSuggestion<TransactionApiResponse>;
 
 /**
  * Ranked suggestions for one recurring payment, computed live (prefilter + scorer, no writes) and
