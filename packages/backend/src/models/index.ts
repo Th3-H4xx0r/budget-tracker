@@ -42,6 +42,7 @@ import ResourceSharesModel from './resource-shares.model';
 import ShareInvitationsModel from './share-invitations.model';
 import SignupLedgerModel from './signup-ledger.model';
 import SubscriptionCandidatesModel from './subscription-candidates.model';
+import SubscriptionMatchSuggestionsModel from './subscription-match-suggestions.model';
 import SubscriptionPeriodNotificationsModel from './subscription-period-notifications.model';
 import SubscriptionPeriodsModel from './subscription-periods.model';
 import SubscriptionTagsModel from './subscription-tags.model';
@@ -139,6 +140,7 @@ const models = [
   SubscriptionTransactionsModel,
   SubscriptionTagsModel,
   SubscriptionCandidatesModel,
+  SubscriptionMatchSuggestionsModel,
   PayeesModel,
   PayeeAliasesModel,
   BrandLogosModel,

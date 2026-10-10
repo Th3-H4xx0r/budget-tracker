@@ -1,12 +1,14 @@
 import {
   SUBSCRIPTION_LINK_STATUS,
   SUBSCRIPTION_PERIOD_STATUSES,
+  SUBSCRIPTION_SUGGESTION_STATUS,
   type SubscriptionPeriodStatus,
 } from '@bt/shared/types';
 import { centsToApiDecimalOrNull } from '@common/types/money';
 import { findOrThrowNotFound } from '@common/utils/find-or-throw-not-found';
 import Accounts from '@models/accounts.model';
 import Categories from '@models/categories.model';
+import SubscriptionMatchSuggestions from '@models/subscription-match-suggestions.model';
 import SubscriptionPeriods from '@models/subscription-periods.model';
 import SubscriptionTransactions from '@models/subscription-transactions.model';
 import Subscriptions from '@models/subscriptions.model';
@@ -70,6 +72,8 @@ interface SubscriptionBase extends Pick<
   tagIds: string[];
   account: SubscriptionAccount | null;
   category: SubscriptionCategory | null;
+  /** Pending (not dismissed) match suggestions awaiting the user's review. */
+  pendingSuggestionsCount: number;
 }
 
 /**
@@ -121,7 +125,10 @@ interface SubscriptionLinkedTransaction extends Omit<
   commissionRate: number;
   refCommissionRate: number;
   cashbackAmount: number;
-  SubscriptionTransactions: Pick<SubscriptionTransactions, 'matchSource' | 'matchedAt' | 'status'>;
+  SubscriptionTransactions: Pick<
+    SubscriptionTransactions,
+    'matchSource' | 'matchedAt' | 'status' | 'matchScore' | 'matchReasons'
+  >;
 }
 
 interface SubscriptionPeriodItem {
@@ -141,6 +148,28 @@ interface SubscriptionDetail extends SubscriptionBase {
   transactions: SubscriptionLinkedTransaction[];
   nextExpectedDate: string | null;
   periods: SubscriptionPeriodItem[];
+}
+
+/** Pending suggestion counts keyed by subscription id. Aggregate-only, so raw rows are safe. */
+async function loadPendingSuggestionCounts({
+  userId,
+  subscriptionIds,
+}: {
+  userId: number;
+  subscriptionIds: string[];
+}): Promise<Map<string, number>> {
+  const rows = (await SubscriptionMatchSuggestions.findAll({
+    where: {
+      userId,
+      subscriptionId: { [Op.in]: subscriptionIds },
+      status: SUBSCRIPTION_SUGGESTION_STATUS.pending,
+    },
+    attributes: ['subscriptionId', [fn('COUNT', col('transactionId')), 'count']],
+    group: ['subscriptionId'],
+    raw: true,
+  })) as unknown as Array<{ subscriptionId: string; count: string | number }>;
+
+  return new Map(rows.map((row) => [row.subscriptionId, Number(row.count)]));
 }
 
 export const getSubscriptions = async ({
@@ -188,7 +217,7 @@ export const getSubscriptions = async ({
   await backfillLogosForUnresolved({ subscriptions });
 
   const mapped = subscriptions.map((s) => {
-    const plain = s.toJSON() as unknown as Omit<SubscriptionBase, 'tagIds'> & {
+    const plain = s.toJSON() as unknown as Omit<SubscriptionBase, 'tagIds' | 'pendingSuggestionsCount'> & {
       linkedTransactionsCount: number | string | null;
     };
     return {
@@ -266,12 +295,14 @@ export const getSubscriptions = async ({
   }
 
   const tagIdsBySubscriptionId = await loadSubscriptionTagIds({ subscriptionIds });
+  const pendingSuggestionsBySubscriptionId = await loadPendingSuggestionCounts({ userId, subscriptionIds });
 
   const items: SubscriptionListItem[] = mapped.map((item) => {
     const currentPeriod = earliestBySubscriptionId.get(item.id) ?? null;
     return {
       ...item,
       tagIds: tagIdsBySubscriptionId.get(item.id) ?? [],
+      pendingSuggestionsCount: pendingSuggestionsBySubscriptionId.get(item.id) ?? 0,
       currentPeriod,
       paidPeriodsCount: paidCountBySubscriptionId.get(item.id) ?? 0,
       nextDueDate: computeEffectiveNextDueDate({
@@ -305,7 +336,7 @@ export const getSubscriptionById = async ({
           planned: 'include',
           required: false,
           through: {
-            attributes: ['matchSource', 'matchedAt', 'status'],
+            attributes: ['matchSource', 'matchedAt', 'status', 'matchScore', 'matchReasons'],
             where: { status: SUBSCRIPTION_LINK_STATUS.active },
           },
         }),
@@ -323,10 +354,13 @@ export const getSubscriptionById = async ({
 
   // toJSON() is untyped; describe the loaded shape (Money fields still boxed,
   // join-table metadata nested under SubscriptionTransactions) so the rest is typed.
-  const raw = subscription.toJSON() as unknown as Omit<SubscriptionBase, 'tagIds'> & {
+  const raw = subscription.toJSON() as unknown as Omit<SubscriptionBase, 'tagIds' | 'pendingSuggestionsCount'> & {
     transactions?: Array<
       TransactionsAttributes & {
-        SubscriptionTransactions: Pick<SubscriptionTransactions, 'matchSource' | 'matchedAt' | 'status'>;
+        SubscriptionTransactions: Pick<
+          SubscriptionTransactions,
+          'matchSource' | 'matchedAt' | 'status' | 'matchScore' | 'matchReasons'
+        >;
       }
     >;
     periods?: SubscriptionPeriodItem[];
@@ -351,6 +385,7 @@ export const getSubscriptionById = async ({
     ...raw,
     expectedAmount: centsToApiDecimalOrNull(raw.expectedAmount),
     tagIds: await getSubscriptionTagIds({ subscriptionId: id }),
+    pendingSuggestionsCount: (await loadPendingSuggestionCounts({ userId, subscriptionIds: [id] })).get(id) ?? 0,
     transactions,
     nextExpectedDate,
     periods: raw.periods ?? [],

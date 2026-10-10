@@ -5,9 +5,12 @@ import { ConflictError, NotFoundError, ValidationError } from '@js/errors';
 import SubscriptionTransactions from '@models/subscription-transactions.model';
 import { findTransactions, updateTransactions } from '@models/transactions-query';
 import { withTransaction } from '@services/common/with-transaction';
+import { syncPlanEntriesForTransactions } from '@services/future-budgets/sync-plan-entries';
 import { Op } from 'sequelize';
 
 import { findSubscriptionOrThrow } from './helpers';
+import { clearSuggestionsForLinkedTransactions } from './matching/apply-decisions';
+import { markNearestOpenPeriodPaidByLink } from './matching/mark-period-by-link';
 import { stampSubscriptionPayeeAndTags } from './stamp-payee-and-tags';
 
 interface LinkTransactionsParams {
@@ -114,6 +117,15 @@ export const linkTransactionsToSubscription = withTransaction(
     }
 
     await stampSubscriptionPayeeAndTags({ subscription, transactionIds });
+
+    // An explicit link overrides a past dismissal and settles the tx's pending suggestions elsewhere.
+    await clearSuggestionsForLinkedTransactions({ subscriptionId, transactionIds });
+
+    for (const tx of [...txs].sort((a, b) => a.time.getTime() - b.time.getTime())) {
+      await markNearestOpenPeriodPaidByLink({ subscription, transaction: tx });
+    }
+
+    await syncPlanEntriesForTransactions({ userId, transactionIds });
 
     return { linked: transactionIds.length };
   },

@@ -1,4 +1,10 @@
-import { SUBSCRIPTION_CANDIDATE_STATUS, SUBSCRIPTION_FREQUENCIES, RecordId } from '@bt/shared/types';
+import {
+  SUBSCRIPTION_CANDIDATE_STATUS,
+  SUBSCRIPTION_DETECTION_SOURCE,
+  SUBSCRIPTION_FREQUENCIES,
+  RecordId,
+  TRANSACTION_TYPES,
+} from '@bt/shared/types';
 import { IdColumn } from '@common/types/id-column';
 import { Table, Column, Model, ForeignKey, BelongsTo, DataType } from 'sequelize-typescript';
 
@@ -111,6 +117,53 @@ export default class SubscriptionCandidates extends Model {
     allowNull: true,
   })
   resolvedAt!: Date | null;
+
+  /** Dedupe key: `payee:<payeeId>` or the `buildMerchantKey` key of the cluster. */
+  @Column({
+    type: DataType.STRING(200),
+    allowNull: true,
+  })
+  merchantKey!: string | null;
+
+  @Column({
+    type: DataType.STRING(50),
+    allowNull: false,
+    defaultValue: TRANSACTION_TYPES.expense,
+  })
+  transactionType!: TRANSACTION_TYPES;
+
+  /** MAD / median of the cluster amounts. */
+  @Column({
+    type: DataType.REAL,
+    allowNull: true,
+  })
+  amountVariability!: number | null;
+
+  @Column({
+    type: DataType.STRING(20),
+    allowNull: false,
+    defaultValue: SUBSCRIPTION_DETECTION_SOURCE.heuristic,
+  })
+  detectionSource!: SUBSCRIPTION_DETECTION_SOURCE;
+
+  @Column({
+    type: DataType.TEXT,
+    allowNull: true,
+  })
+  aiReason!: string | null;
+
+  /** sha256(merchantKey + sorted tx ids) of the cluster last sent to AI review; unchanged clusters aren't re-sent. */
+  @Column({
+    type: DataType.STRING(64),
+    allowNull: true,
+  })
+  aiFingerprint!: string | null;
+
+  @Column({
+    type: DataType.DATEONLY,
+    allowNull: true,
+  })
+  nextExpectedDate!: string | null;
 
   @BelongsTo(() => Users)
   user!: Users;

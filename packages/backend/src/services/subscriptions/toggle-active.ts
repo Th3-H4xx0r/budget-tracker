@@ -3,6 +3,7 @@ import { withTransaction } from '@services/common/with-transaction';
 
 import { reconcileInstallmentCompletion } from './ensure-next-period';
 import { findSubscriptionOrThrow } from './helpers';
+import { backfillSubscriptionMatchesAfterCommit } from './matching/backfill-subscription';
 
 export const toggleSubscriptionActive = withTransaction(
   async ({ id, userId, isActive }: { id: string; userId: number; isActive: boolean }) => {
@@ -17,6 +18,10 @@ export const toggleSubscriptionActive = withTransaction(
     // the next period. Besides revertPeriod, this is the only path that reopens one.
     if (isActive && subscription.type === SUBSCRIPTION_TYPES.installment) {
       await reconcileInstallmentCompletion({ subscription });
+    }
+
+    if (isActive) {
+      await backfillSubscriptionMatchesAfterCommit({ userId, subscriptionId: subscription.id });
     }
 
     return subscription.toJSON();

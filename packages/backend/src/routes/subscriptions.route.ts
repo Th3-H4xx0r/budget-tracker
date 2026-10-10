@@ -3,16 +3,19 @@ import createSubscription from '@controllers/subscriptions/create-subscription';
 import deleteSubscription from '@controllers/subscriptions/delete-subscription';
 import detectCandidates from '@controllers/subscriptions/detect-candidates';
 import dismissCandidate from '@controllers/subscriptions/dismiss-candidate';
+import dismissSuggestions from '@controllers/subscriptions/dismiss-suggestions';
 import getCandidates from '@controllers/subscriptions/get-candidates';
 import getPayPreview from '@controllers/subscriptions/get-pay-preview';
 import getPeriods from '@controllers/subscriptions/get-periods';
 import { getSubscriptionById, getSubscriptions } from '@controllers/subscriptions/get-subscriptions';
 import getSubscriptionsSummary from '@controllers/subscriptions/get-subscriptions-summary';
+import getSuggestions from '@controllers/subscriptions/get-suggestions';
 import getUpcomingPayments from '@controllers/subscriptions/get-upcoming-payments';
 import linkTransactions from '@controllers/subscriptions/link-transactions';
 import markPeriodPaid from '@controllers/subscriptions/mark-period-paid';
 import resetLogo from '@controllers/subscriptions/reset-logo';
 import revertPeriod from '@controllers/subscriptions/revert-period';
+import searchLinkableTransactions from '@controllers/subscriptions/search-linkable-transactions';
 import skipPeriod from '@controllers/subscriptions/skip-period';
 import suggestMatches from '@controllers/subscriptions/suggest-matches';
 import toggleActive from '@controllers/subscriptions/toggle-active';
@@ -56,6 +59,21 @@ router.post(
   checkBaseCurrencyLock,
   validateEndpoint(dismissCandidate.schema),
   dismissCandidate.handler,
+);
+// Smart-matching routes (registered before /:id)
+router.get('/:id/suggestions', authenticateSession, validateEndpoint(getSuggestions.schema), getSuggestions.handler);
+router.post(
+  '/:id/suggestions/dismiss',
+  authenticateSession,
+  checkBaseCurrencyLock,
+  validateEndpoint(dismissSuggestions.schema),
+  dismissSuggestions.handler,
+);
+router.get(
+  '/:id/linkable-transactions',
+  authenticateSession,
+  validateEndpoint(searchLinkableTransactions.schema),
+  searchLinkableTransactions.handler,
 );
 router.get('/:id', authenticateSession, validateEndpoint(getSubscriptionById.schema), getSubscriptionById.handler);
 

@@ -20,6 +20,9 @@ import type {
 import type { getSubscriptionsSummary as apiGetSubscriptionsSummary } from '@services/subscriptions/get-subscriptions-summary';
 import type { linkTransactionsToSubscription as apiLinkTransactions } from '@services/subscriptions/link-transactions';
 import type { markPeriodPaid as apiMarkPeriodPaid } from '@services/subscriptions/mark-period-paid';
+import type { dismissSubscriptionSuggestions as apiDismissSuggestions } from '@services/subscriptions/matching/dismiss-suggestions';
+import type { getSubscriptionSuggestions as apiGetSuggestions } from '@services/subscriptions/matching/get-suggestions';
+import type { searchLinkableTransactions as apiSearchLinkable } from '@services/subscriptions/matching/search-linkable-transactions';
 import type { resolveCandidate as apiResolveCandidate } from '@services/subscriptions/resolve-candidate';
 import type { revertPeriod as apiRevertPeriod } from '@services/subscriptions/revert-period';
 import type { skipPeriod as apiSkipPeriod } from '@services/subscriptions/skip-period';
@@ -226,6 +229,80 @@ export async function getSuggestedMatches<R extends boolean | undefined = undefi
   return makeRequest<Awaited<ReturnType<typeof apiSuggestMatches>>, R>({
     method: 'get',
     url: `/subscriptions/${id}/suggest-matches`,
+    raw,
+  });
+}
+
+export async function getSubscriptionSuggestions<R extends boolean | undefined = undefined>({
+  id,
+  limit,
+  raw,
+}: {
+  id: string;
+  limit?: number;
+  raw?: R;
+}) {
+  return makeRequest<Awaited<ReturnType<typeof apiGetSuggestions>>, R>({
+    method: 'get',
+    url: `/subscriptions/${id}/suggestions`,
+    payload: limit !== undefined ? { limit: String(limit) } : undefined,
+    raw,
+  });
+}
+
+export async function searchLinkableTransactions<R extends boolean | undefined = undefined>({
+  id,
+  search,
+  from,
+  to,
+  accountIds,
+  sort,
+  limit,
+  offset,
+  raw,
+}: {
+  id: string;
+  search?: string;
+  /** YYYY-MM-DD */
+  from?: string;
+  /** YYYY-MM-DD */
+  to?: string;
+  accountIds?: string[];
+  sort?: 'date' | 'relevance';
+  limit?: number;
+  offset?: number;
+  raw?: R;
+}) {
+  const query: Record<string, string> = {};
+  if (search !== undefined) query.search = search;
+  if (from !== undefined) query.from = from;
+  if (to !== undefined) query.to = to;
+  if (accountIds?.length) query.accountIds = accountIds.join(',');
+  if (sort !== undefined) query.sort = sort;
+  if (limit !== undefined) query.limit = String(limit);
+  if (offset !== undefined) query.offset = String(offset);
+
+  return makeRequest<Awaited<ReturnType<typeof apiSearchLinkable>>, R>({
+    method: 'get',
+    url: `/subscriptions/${id}/linkable-transactions`,
+    payload: Object.keys(query).length ? query : undefined,
+    raw,
+  });
+}
+
+export async function dismissSubscriptionSuggestions<R extends boolean | undefined = undefined>({
+  id,
+  transactionIds,
+  raw,
+}: {
+  id: string;
+  transactionIds: string[];
+  raw?: R;
+}) {
+  return makeRequest<Awaited<ReturnType<typeof apiDismissSuggestions>>, R>({
+    method: 'post',
+    url: `/subscriptions/${id}/suggestions/dismiss`,
+    payload: { transactionIds },
     raw,
   });
 }

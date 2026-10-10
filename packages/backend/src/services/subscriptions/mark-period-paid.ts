@@ -1,15 +1,23 @@
-import { SUBSCRIPTION_PERIOD_STATUSES } from '@bt/shared/types';
+import {
+  type RecordId,
+  SUBSCRIPTION_LINK_STATUS,
+  SUBSCRIPTION_MATCH_SOURCE,
+  SUBSCRIPTION_PERIOD_STATUSES,
+} from '@bt/shared/types';
 import { findOrThrowNotFound } from '@common/utils/find-or-throw-not-found';
 import { t } from '@i18n/index';
 import { ConflictError, ValidationError } from '@js/errors';
 import SubscriptionPeriods from '@models/subscription-periods.model';
+import SubscriptionTransactions from '@models/subscription-transactions.model';
 import { findOneTransaction } from '@models/transactions-query';
 import { withTransaction } from '@services/common/with-transaction';
+import { syncPlanEntriesForTransactions } from '@services/future-budgets/sync-plan-entries';
 import { createTransaction } from '@services/transactions/create-transaction';
 
 import { buildTransactionFromSubscription } from './build-transaction-from-subscription';
 import { ensureNextPeriodExists } from './ensure-next-period';
 import { findSubscriptionOrThrow, validateAccountOwnership } from './helpers';
+import { clearSuggestionsForLinkedTransactions } from './matching/apply-decisions';
 import { stampSubscriptionPayeeAndTags } from './stamp-payee-and-tags';
 
 interface MarkPeriodPaidParams {
@@ -85,6 +93,9 @@ export const markPeriodPaid = withTransaction(
       // the created tx rolls back with the period update if anything below throws.
       const [createdBaseTx] = await createTransaction(createParams);
       linkedTransactionId = createdBaseTx.id;
+      // The matcher inside createTransaction may already have linked the new row and paid this
+      // period with it; continue from the stored state.
+      await period.reload();
     } else if (transactionId != null) {
       // Validate the caller-supplied transaction.
       const linkedTransaction = await findOrThrowNotFound({
@@ -143,6 +154,44 @@ export const markPeriodPaid = withTransaction(
     // Ensure the next upcoming period exists so the schedule continues.
     await ensureNextPeriodExists({ subscription });
 
+    if (linkedTransactionId != null) {
+      await ensurePaymentLink({ subscriptionId: subscription.id, transactionId: linkedTransactionId as RecordId });
+      await syncPlanEntriesForTransactions({ userId, transactionIds: [linkedTransactionId as RecordId] });
+    }
+
     return period.reload();
   },
 );
+
+/**
+ * The transaction paying a period is also a linked transaction of its subscription: re-activates or
+ * creates the manual link. Idempotent when the matcher already linked it. A tx actively linked to
+ * another subscription keeps that link (one active link per transaction).
+ */
+async function ensurePaymentLink({
+  subscriptionId,
+  transactionId,
+}: {
+  subscriptionId: RecordId;
+  transactionId: RecordId;
+}): Promise<void> {
+  const links = await SubscriptionTransactions.findAll({ where: { transactionId } });
+  if (links.some((link) => link.status === SUBSCRIPTION_LINK_STATUS.active)) return;
+
+  const own = links.find((link) => link.subscriptionId === subscriptionId);
+  if (own) {
+    await own.update({
+      status: SUBSCRIPTION_LINK_STATUS.active,
+      matchSource: SUBSCRIPTION_MATCH_SOURCE.manual,
+      matchedAt: new Date(),
+    });
+  } else {
+    await SubscriptionTransactions.create({
+      subscriptionId,
+      transactionId,
+      matchSource: SUBSCRIPTION_MATCH_SOURCE.manual,
+    });
+  }
+
+  await clearSuggestionsForLinkedTransactions({ subscriptionId, transactionIds: [transactionId] });
+}

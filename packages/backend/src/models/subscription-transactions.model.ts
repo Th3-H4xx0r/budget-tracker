@@ -1,4 +1,4 @@
-import { SUBSCRIPTION_LINK_STATUS, SUBSCRIPTION_MATCH_SOURCE, RecordId } from '@bt/shared/types';
+import { MatchReason, SUBSCRIPTION_LINK_STATUS, SUBSCRIPTION_MATCH_SOURCE, RecordId } from '@bt/shared/types';
 import { Table, Column, Model, ForeignKey, DataType } from 'sequelize-typescript';
 
 import Subscriptions from './subscriptions.model';
@@ -45,4 +45,19 @@ export default class SubscriptionTransactions extends Model {
     defaultValue: SUBSCRIPTION_LINK_STATUS.active,
   })
   status!: SUBSCRIPTION_LINK_STATUS;
+
+  /** Scoring-matcher confidence (0..1) for auto-links; null for manual and legacy links. */
+  @Column({
+    type: DataType.REAL,
+    allowNull: true,
+    defaultValue: null,
+  })
+  matchScore!: number | null;
+
+  @Column({
+    type: DataType.JSONB,
+    allowNull: true,
+    defaultValue: null,
+  })
+  matchReasons!: MatchReason[] | null;
 }

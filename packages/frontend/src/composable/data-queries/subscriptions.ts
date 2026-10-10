@@ -54,6 +54,8 @@ export const useInvalidateSubscriptionQueries = () => {
     queryClient.invalidateQueries({ queryKey: VUE_QUERY_CACHE_KEYS.subscriptionsList });
     queryClient.invalidateQueries({ queryKey: VUE_QUERY_CACHE_KEYS.subscriptionsSummary });
     queryClient.invalidateQueries({ queryKey: VUE_QUERY_CACHE_KEYS.widgetSubscriptionsUpcoming });
+    queryClient.invalidateQueries({ queryKey: VUE_QUERY_CACHE_KEYS.subscriptionSuggestions });
+    queryClient.invalidateQueries({ queryKey: VUE_QUERY_CACHE_KEYS.subscriptionLinkableTransactions });
   };
 };
 

@@ -48,7 +48,58 @@
         "legendManual": "Linked manually",
         "chartLabel": "Payment amounts over time",
         "gapTooltip": "No payments · {range}",
-        "convertedTooltip": "Converted at each payment's exchange rate"
+        "convertedTooltip": "Converted at each payment's exchange rate",
+        "autoMatched": "Auto-matched",
+        "autoMatchedTooltip": "Matched automatically, score {score}"
+      },
+      "suggestions": {
+        "title": "Suggested matches",
+        "description": "Transactions that look like this payment. Link the right ones, dismiss the rest.",
+        "link": "Link",
+        "dismiss": "Not this one",
+        "dismissSuccess": "Suggestion dismissed",
+        "dismissError": "Couldn't dismiss the suggestion",
+        "pendingCount": "{count} suggested match | {count} suggested matches",
+        "confidence": {
+          "high": "Strong match",
+          "medium": "Possible match"
+        },
+        "reasons": {
+          "payeeMatch": "Same payee",
+          "merchantSimilar": "Similar description",
+          "learnedMerchant": "Matched before",
+          "keywordMatch": "Keyword match",
+          "ruleMatch": "Matches a rule",
+          "sameAccount": "Same account",
+          "differentAccount": "Different account",
+          "sameCategory": "Same category",
+          "periodAlreadyCovered": "Period already paid",
+          "ambiguousWithOtherSubscription": "Also fits another payment",
+          "nearDueDate": "Near due date",
+          "farFromDueDate": "Far from due date",
+          "onDueDate": "On the due date",
+          "daysFromDue": "{count} day from due date | {count} days from due date",
+          "amountClose": "Similar amount",
+          "amountDiffers": "Amount differs",
+          "amountSame": "Same amount",
+          "amountDeviation": "{pct} vs expected"
+        }
+      },
+      "linkDialog": {
+        "open": "Link transactions",
+        "title": "Link transactions",
+        "description": "Search all your transactions and pick the ones that paid this recurring payment.",
+        "searchPlaceholder": "Search by payee or note",
+        "fromLabel": "From",
+        "toLabel": "To",
+        "accountsLabel": "Accounts",
+        "allAccounts": "All accounts",
+        "emptyTitle": "No transactions found",
+        "emptyDescription": "Try a different search or widen the date range.",
+        "resetFilters": "Reset filters",
+        "linkedTo": "Linked to {name}",
+        "dismissed": "Dismissed",
+        "matchScore": "Match {score}"
       },
       "quickAdd": {
         "currencyPlaceholder": "Select currency",
@@ -350,6 +401,13 @@
           "tagsMore": "+{count} more"
         }
       }
+    },
+    "futureBudgets": {
+      "sources": {
+        "recurringActual": "Paid"
+      },
+      "openRecurringPayment": "Open recurring payment",
+      "autoAddDescription": "Automatically add real transactions in this window ({start}–{end}), including ones matched to recurring payments."
     }
   }
 }

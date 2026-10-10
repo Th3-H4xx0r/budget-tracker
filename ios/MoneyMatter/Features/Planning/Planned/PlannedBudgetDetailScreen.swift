@@ -94,11 +94,12 @@ private enum PlannedEntrySheetTarget: Identifiable {
 }
 
 private struct PlannedOccurrenceItem: Identifiable {
-    let occurrence: PlannedBudgetOccurrence
+    let timeline: PlannedBudgetTimelineOccurrence
 
-    var id: String {
-        "\(occurrence.source.rawValue)-\(occurrence.id ?? occurrence.subscriptionId ?? "salary")-\(occurrence.date)"
-    }
+    var occurrence: PlannedBudgetOccurrence { timeline.occurrence }
+    /// A real transaction standing in for its recurring payment's projected occurrence.
+    var isRecurringActual: Bool { timeline.isRecurringActual }
+    var id: String { timeline.timelineKey }
 }
 
 private struct PlannedCategorySpend: Identifiable {
@@ -120,7 +121,7 @@ struct PlannedBudgetDetailScreen: View {
     @Environment(SessionStore.self) private var session
     @Environment(ReferenceDataStore.self) private var referenceData
     @Environment(\.dismiss) private var dismiss
-    @State private var state: LoadState<PlannedBudgetDetails> = .idle
+    @State private var state: LoadState<PlannedBudgetDetailsWithActuals> = .idle
     @State private var sort: PlannedOccurrenceSort = .date
     @State private var isAscending = true
     @State private var entrySheet: PlannedEntrySheetTarget?
@@ -217,7 +218,7 @@ struct PlannedBudgetDetailScreen: View {
         }
     }
 
-    private func loadedList(_ details: PlannedBudgetDetails) -> some View {
+    private func loadedList(_ details: PlannedBudgetDetailsWithActuals) -> some View {
         List {
             Section {
                 overview(details.plan)
@@ -225,7 +226,7 @@ struct PlannedBudgetDetailScreen: View {
             }
 
             Section {
-                spendingChart(details.occurrences)
+                spendingChart(details.occurrences.map(\.occurrence))
             } header: {
                 Text("Spending by Category")
             } footer: {
@@ -321,7 +322,7 @@ struct PlannedBudgetDetailScreen: View {
         }
     }
 
-    private func timelineSection(_ details: PlannedBudgetDetails) -> some View {
+    private func timelineSection(_ details: PlannedBudgetDetailsWithActuals) -> some View {
         Section {
             Button {
                 entrySheet = .new
@@ -347,7 +348,7 @@ struct PlannedBudgetDetailScreen: View {
                 sortMenu
             }
         } footer: {
-            Text("Salary and active bank-derived recurring payments update automatically. Manual entries are isolated to this plan.")
+            Text("Salary and active bank-derived recurring payments update automatically; a paid recurring payment shows its real transaction in place of the projection. Manual entries are isolated to this plan.")
         }
     }
 
@@ -369,22 +370,40 @@ struct PlannedBudgetDetailScreen: View {
         .accessibilityLabel(Text("Sort projections"))
     }
 
-    private func occurrenceRow(_ item: PlannedOccurrenceItem, details: PlannedBudgetDetails) -> some View {
+    @ViewBuilder
+    private func occurrenceRow(_ item: PlannedOccurrenceItem, details: PlannedBudgetDetailsWithActuals) -> some View {
+        if item.isRecurringActual, let transactionID = item.timeline.transactionId {
+            NavigationLink {
+                TransactionDetailScreen(transactionID: transactionID)
+            } label: {
+                occurrenceContent(item, details: details)
+            }
+        } else {
+            occurrenceContent(item, details: details)
+        }
+    }
+
+    private func occurrenceContent(_ item: PlannedOccurrenceItem, details: PlannedBudgetDetailsWithActuals) -> some View {
         let occurrence = item.occurrence
         let entry = occurrence.source == .manual ? details.entry(id: occurrence.id) : nil
         let isRecurring = occurrence.source == .recurring && occurrence.subscriptionId != nil
         return HStack(spacing: 12) {
-            Image(systemName: sourceSymbol(occurrence.source))
+            Image(systemName: item.isRecurringActual ? "checkmark.circle" : sourceSymbol(occurrence.source))
                 .foregroundStyle(.secondary)
                 .frame(width: 28)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
-                Text(displayName(occurrence))
-                    .lineLimit(1)
+                HStack(spacing: DS.Space.s) {
+                    Text(displayName(occurrence))
+                        .lineLimit(1)
+                    if item.isRecurringActual {
+                        StatusBadge(label: String(localized: "Paid"), color: DS.Palette.success)
+                    }
+                }
                 HStack(spacing: 4) {
                     Text(occurrence.date.plannedDate, format: .dateTime.month(.abbreviated).day().year())
                     Text(verbatim: "·")
-                    Text(sourceLabel(occurrence.source))
+                    Text(item.isRecurringActual ? String(localized: "Recurring Payment") : sourceLabel(occurrence.source))
                 }
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -511,6 +530,10 @@ struct PlannedBudgetDetailScreen: View {
         }
     }
 
+    private func timelineSourceLabel(_ item: PlannedBudgetTimelineOccurrence) -> String {
+        item.isRecurringActual ? String(localized: "Recurring Payment") : sourceLabel(item.occurrence.source)
+    }
+
     private func sourceSymbol(_ source: PlannedBudgetSource) -> String {
         switch source {
         case .recurring: "arrow.triangle.2.circlepath"
@@ -519,8 +542,10 @@ struct PlannedBudgetDetailScreen: View {
         }
     }
 
-    private func sortedItems(_ occurrences: [PlannedBudgetOccurrence]) -> [PlannedOccurrenceItem] {
-        let sorted = occurrences.sorted { lhs, rhs in
+    private func sortedItems(_ timeline: [PlannedBudgetTimelineOccurrence]) -> [PlannedOccurrenceItem] {
+        let sorted = timeline.sorted { lhsItem, rhsItem in
+            let lhs = lhsItem.occurrence
+            let rhs = rhsItem.occurrence
             switch sort {
             case .date:
                 return isAscending ? lhs.date < rhs.date : rhs.date < lhs.date
@@ -528,7 +553,7 @@ struct PlannedBudgetDetailScreen: View {
                 let order = displayName(lhs).localizedStandardCompare(displayName(rhs))
                 return isAscending ? order == .orderedAscending : order == .orderedDescending
             case .source:
-                let order = sourceLabel(lhs.source).localizedStandardCompare(sourceLabel(rhs.source))
+                let order = timelineSourceLabel(lhsItem).localizedStandardCompare(timelineSourceLabel(rhsItem))
                 return isAscending ? order == .orderedAscending : order == .orderedDescending
             case .amount:
                 return isAscending ? lhs.signedAmount < rhs.signedAmount : rhs.signedAmount < lhs.signedAmount
@@ -559,7 +584,7 @@ struct PlannedBudgetDetailScreen: View {
         guard let client = services.client else { return }
         if state.value == nil { state = .loading }
         do {
-            let details = try await client.send(Endpoints.plannedBudgetDetails(id: planID))
+            let details = try await client.send(Endpoints.plannedBudgetDetailsWithActuals(id: planID))
             state = .loaded(details)
             if details.salaryProfileChanged, !hasHandledSalaryChange {
                 hasHandledSalaryChange = true

@@ -1,220 +1,142 @@
-import { SUBSCRIPTION_LINK_STATUS, SubscriptionMatchingRule } from '@bt/shared/types';
+import {
+  type RecordId,
+  SUBSCRIPTION_LINK_STATUS,
+  SUBSCRIPTION_SUGGESTION_STATUS,
+  type SubscriptionMatchingRule,
+} from '@bt/shared/types';
 import { Money } from '@common/types/money';
+import SubscriptionMatchSuggestions from '@models/subscription-match-suggestions.model';
 import SubscriptionTransactions from '@models/subscription-transactions.model';
 import { findTransactions } from '@models/transactions-query';
-import type Transactions from '@models/transactions.model';
 import { serializeTransactions } from '@root/serializers/transactions.serializer';
-import { calculateRefAmount } from '@services/calculate-ref-amount.service';
 import { startOfDay, subMonths } from 'date-fns';
-import { Op, WhereOptions } from 'sequelize';
+import { Op, type WhereOptions } from 'sequelize';
 
 import { findSubscriptionOrThrow } from './helpers';
+import { toScorableTransaction } from './matching/candidate-transactions';
+import { getSubscriptionSuggestions } from './matching/get-suggestions';
+import { evaluateRule } from './matching/legacy-rules';
+import { createFxConverter } from './matching/link-state';
 
 const HISTORICAL_MONTHS = 12;
 const MAX_SUGGESTIONS = 100;
-const CROSS_CURRENCY_TOLERANCE = 0.05; // 5% tolerance for cross-currency matching
 
+/**
+ * `GET /subscriptions/:id/suggest-matches`, kept for shipped clients: the ranked suggestions of
+ * `GET /subscriptions/:id/suggestions` reduced to their transactions, followed by every transaction of
+ * the last 12 months that passes all of the subscription's explicit matching rules (cross-currency
+ * amount rules after conversion). Rows actively linked to this subscription or dismissed for it are
+ * left out.
+ */
 export const suggestHistoricalMatches = async ({
   subscriptionId,
   userId,
 }: {
-  subscriptionId: string;
+  subscriptionId: RecordId;
   userId: number;
 }) => {
+  const { suggestions } = await getSubscriptionSuggestions({ userId, subscriptionId, limit: MAX_SUGGESTIONS });
+  const scored = suggestions.map((suggestion) => suggestion.transaction);
+
+  const ruleMatches = await findRuleMatchingTransactions({ subscriptionId, userId });
+  const scoredIds = new Set(scored.map((tx) => tx.id));
+
+  return [...scored, ...ruleMatches.filter((tx) => !scoredIds.has(tx.id))].slice(0, MAX_SUGGESTIONS);
+};
+
+/** SQL-expressible part of the rules; amount rules in another currency are checked after conversion. */
+function buildWhereFromRules({ rules }: { rules: SubscriptionMatchingRule[] }): {
+  sqlConditions: WhereOptions[];
+  hasCrossCurrencyAmountRule: boolean;
+} {
+  const sqlConditions: WhereOptions[] = [];
+  let hasCrossCurrencyAmountRule = false;
+
+  for (const rule of rules) {
+    if (rule.field === 'note' && rule.operator === 'contains_any' && Array.isArray(rule.value)) {
+      sqlConditions.push({
+        note: { [Op.or]: (rule.value as string[]).map((value) => ({ [Op.iLike]: `%${value}%` })) },
+      });
+    } else if (
+      rule.field === 'amount' &&
+      rule.operator === 'between' &&
+      typeof rule.value === 'object' &&
+      !Array.isArray(rule.value)
+    ) {
+      if (rule.currencyCode) {
+        hasCrossCurrencyAmountRule = true;
+      } else {
+        // Rule bounds are decimals; the `amount` column holds cents.
+        const { min, max } = rule.value as { min: number; max: number };
+        sqlConditions.push({
+          amount: { [Op.between]: [Money.fromDecimal(min).toCents(), Money.fromDecimal(max).toCents()] },
+        });
+      }
+    } else if (rule.field === 'transactionType' && rule.operator === 'equals') {
+      sqlConditions.push({ transactionType: rule.value as string });
+    } else if (rule.field === 'accountId' && rule.operator === 'equals') {
+      sqlConditions.push({ accountId: rule.value as string });
+    }
+  }
+
+  return { sqlConditions, hasCrossCurrencyAmountRule };
+}
+
+async function findRuleMatchingTransactions({ subscriptionId, userId }: { subscriptionId: RecordId; userId: number }) {
   const subscription = await findSubscriptionOrThrow({ id: subscriptionId, userId });
+  const rules = subscription.matchingRules?.rules ?? [];
+  if (rules.length === 0) return [];
 
-  const { matchingRules } = subscription;
-  if (!matchingRules?.rules?.length) {
-    return [];
-  }
+  const { sqlConditions, hasCrossCurrencyAmountRule } = buildWhereFromRules({ rules });
+  if (sqlConditions.length === 0 && !hasCrossCurrencyAmountRule) return [];
 
-  // Snap to start-of-day so the cutoff doesn't slide with wall-clock time —
-  // otherwise a transaction drops out of suggestions partway through the day.
-  const cutoffDate = startOfDay(subMonths(new Date(), HISTORICAL_MONTHS));
-
-  // Separate rules into SQL-applicable and post-processing rules
-  // NOTE: This builds Sequelize WHERE clauses for the same rule types that
-  // matching-engine.ts evaluates at runtime via `evaluateRule`. Keep in sync.
-  const { sqlConditions, crossCurrencyAmountRules } = buildWhereFromRules({
-    rules: matchingRules.rules,
-  });
-
-  // If no SQL conditions and no cross-currency rules, nothing to match
-  if (sqlConditions.length === 0 && crossCurrencyAmountRules.length === 0) {
-    return [];
-  }
-
-  // Only active links are excluded, so an unlinked transaction can be suggested again.
-  const excludedIds = (
-    await SubscriptionTransactions.findAll({
+  const [linked, dismissed] = await Promise.all([
+    SubscriptionTransactions.findAll({
       attributes: ['transactionId'],
       where: { subscriptionId, status: SUBSCRIPTION_LINK_STATUS.active },
-    })
-  ).map((l) => l.transactionId);
+    }),
+    SubscriptionMatchSuggestions.findAll({
+      attributes: ['transactionId'],
+      where: { subscriptionId, status: SUBSCRIPTION_SUGGESTION_STATUS.dismissed },
+    }),
+  ]);
+  const excludedIds = [...linked, ...dismissed].map((row) => row.transactionId);
 
-  const baseWhere: WhereOptions = {
-    time: { [Op.gte]: cutoffDate },
-    transactionType: subscription.transactionType,
-    ...(sqlConditions.length > 0 && { [Op.and]: sqlConditions }),
-    ...(excludedIds.length > 0 && { id: { [Op.notIn]: excludedIds } }),
-    ...(subscription.accountId && { accountId: subscription.accountId }),
-  };
+  // Snapped to start-of-day so a transaction doesn't drop out partway through the day.
+  const cutoffDate = startOfDay(subMonths(new Date(), HISTORICAL_MONTHS));
+  // Cross-currency rules filter after conversion, so over-fetch to keep up to MAX_SUGGESTIONS.
+  const fetchLimit = hasCrossCurrencyAmountRule ? MAX_SUGGESTIONS * 3 : MAX_SUGGESTIONS;
 
-  // Fetch more transactions if we need to post-filter by cross-currency amount
-  // We fetch more because some will be filtered out after conversion
-  const fetchLimit = crossCurrencyAmountRules.length > 0 ? MAX_SUGGESTIONS * 3 : MAX_SUGGESTIONS;
-
-  let transactions = await findTransactions({
+  const transactions = await findTransactions({
     planned: 'exclude',
     access: { creator: userId },
     balanceAdjustments: 'include',
     completeness: { cap: { limit: fetchLimit, onTruncated: 'log', context: { userId, subscriptionId } } },
-    where: baseWhere,
+    where: {
+      time: { [Op.gte]: cutoffDate },
+      transactionType: subscription.transactionType,
+      ...(sqlConditions.length > 0 && { [Op.and]: sqlConditions }),
+      ...(excludedIds.length > 0 && { id: { [Op.notIn]: excludedIds } }),
+    },
     order: [['time', 'DESC']],
   });
 
-  // Apply cross-currency amount filtering in memory
-  if (crossCurrencyAmountRules.length > 0 && transactions.length > 0) {
-    transactions = await filterByCrossCurrencyAmount({
-      transactions,
-      rules: crossCurrencyAmountRules,
-      userId,
-    });
-  }
-
-  // Limit to MAX_SUGGESTIONS after filtering
-  return serializeTransactions(transactions.slice(0, MAX_SUGGESTIONS));
-};
-
-interface AmountRuleWithCurrency {
-  minCents: number;
-  maxCents: number;
-  currencyCode: string;
-}
-
-interface BuildWhereResult {
-  sqlConditions: WhereOptions[];
-  crossCurrencyAmountRules: AmountRuleWithCurrency[];
-}
-
-function buildWhereFromRules({ rules }: { rules: SubscriptionMatchingRule[] }): BuildWhereResult {
-  const sqlConditions: WhereOptions[] = [];
-  const crossCurrencyAmountRules: AmountRuleWithCurrency[] = [];
-
-  for (const rule of rules) {
-    switch (rule.field) {
-      case 'note': {
-        if (rule.operator === 'contains_any' && Array.isArray(rule.value)) {
-          const patterns = (rule.value as string[]).map((v) => ({
-            [Op.iLike]: `%${v}%`,
-          }));
-          sqlConditions.push({ note: { [Op.or]: patterns } });
-        }
-        break;
-      }
-      case 'amount': {
-        if (rule.operator === 'between' && typeof rule.value === 'object' && !Array.isArray(rule.value)) {
-          const { min, max } = rule.value as { min: number; max: number };
-          // Rule bounds are decimals; the `amount` column and the tolerance math below are cents.
-          const minCents = Money.fromDecimal(min).toCents();
-          const maxCents = Money.fromDecimal(max).toCents();
-
-          if (rule.currencyCode) {
-            // Cross-currency amount rules need post-processing
-            crossCurrencyAmountRules.push({
-              minCents,
-              maxCents,
-              currencyCode: rule.currencyCode,
-            });
-          } else {
-            // Same-currency amount rules can use SQL
-            sqlConditions.push({
-              amount: { [Op.between]: [minCents, maxCents] },
-            });
-          }
-        }
-        break;
-      }
-      case 'transactionType': {
-        if (rule.operator === 'equals') {
-          sqlConditions.push({ transactionType: rule.value as string });
-        }
-        break;
-      }
-      case 'accountId': {
-        if (rule.operator === 'equals') {
-          sqlConditions.push({ accountId: rule.value as string });
-        }
-        break;
-      }
-    }
-  }
-
-  return { sqlConditions, crossCurrencyAmountRules };
-}
-
-/**
- * Filter transactions by cross-currency amount rules.
- * Converts each transaction's amount to the rule's currency and checks if it falls within the range.
- * Uses the same tolerance (5%) as matching-engine.ts for consistency.
- */
-async function filterByCrossCurrencyAmount({
-  transactions,
-  rules,
-  userId,
-}: {
-  transactions: Transactions[];
-  rules: AmountRuleWithCurrency[];
-  userId: number;
-}): Promise<Transactions[]> {
-  const results: Transactions[] = [];
-
+  // Every rule is re-checked in memory with the matcher's own semantics; this is what applies
+  // cross-currency amount rules (converted, ±5% tolerance).
+  const fx = createFxConverter({ userId });
+  const matching: typeof transactions = [];
   for (const tx of transactions) {
-    let matchesAllRules = true;
-
+    const transaction = toScorableTransaction({ tx });
+    let passes = true;
     for (const rule of rules) {
-      let amount = tx.amount.abs();
-
-      // If currencies match, compare directly
-      if (tx.currencyCode === rule.currencyCode) {
-        const amountCents = amount.toCents();
-        if (amountCents < rule.minCents || amountCents > rule.maxCents) {
-          matchesAllRules = false;
-          break;
-        }
-        continue;
-      }
-
-      // Cross-currency: convert transaction amount to rule's currency
-      try {
-        const converted = await calculateRefAmount({
-          amount,
-          userId,
-          date: tx.time,
-          baseCode: tx.currencyCode,
-          quoteCode: rule.currencyCode,
-        });
-        amount = converted;
-      } catch {
-        // If conversion fails, rule doesn't match
-        matchesAllRules = false;
-        break;
-      }
-
-      // Apply tolerance (same as matching-engine.ts)
-      const tolerantMin = Math.floor(rule.minCents * (1 - CROSS_CURRENCY_TOLERANCE));
-      const tolerantMax = Math.ceil(rule.maxCents * (1 + CROSS_CURRENCY_TOLERANCE));
-      const amountCents = amount.toCents();
-      if (amountCents < tolerantMin || amountCents > tolerantMax) {
-        matchesAllRules = false;
+      if (!(await evaluateRule({ rule, transaction, fx }))) {
+        passes = false;
         break;
       }
     }
-
-    if (matchesAllRules) {
-      results.push(tx);
-    }
+    if (passes) matching.push(tx);
+    if (matching.length === MAX_SUGGESTIONS) break;
   }
 
-  return results;
+  return serializeTransactions(matching);
 }

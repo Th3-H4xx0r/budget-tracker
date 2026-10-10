@@ -16,6 +16,7 @@ import * as UsersCurrencies from '@models/users-currencies.model';
 import { getUserDefaultCategory } from '@models/users.model';
 import { calculateRefAmount } from '@services/calculate-ref-amount.service';
 import { DOMAIN_EVENTS, eventBus } from '@services/common/event-bus';
+import { syncPlanEntriesForTransactions } from '@services/future-budgets/sync-plan-entries';
 import { assertLoanEditAllowed } from '@services/loans/assert-loan-edit-allowed';
 import { deriveImpliedDestinationAmount } from '@services/loans/implied-destination-amount';
 import {
@@ -23,6 +24,7 @@ import {
   assertTxWriteAccess,
 } from '@services/sharing/auth/authorize-account-write.service';
 import { ensureUserCurrencyConnected } from '@services/sharing/auth/ensure-currency-connected.service';
+import { matchTransactionToSubscriptions } from '@services/subscriptions/matching-engine';
 import * as refundsService from '@services/tx-refunds';
 
 import { withTransaction } from '../common/with-transaction';
@@ -754,6 +756,27 @@ export const updateTransaction = withTransaction(
           }
         }
       }
+
+      // Edits to the matcher's inputs re-score a not-yet-linked row against the recurring payments
+      // (the matcher skips actively linked rows).
+      if (
+        !isTwoLegTransfer(baseTransaction.transferNature) &&
+        (payload.note !== undefined ||
+          payload.payeeId !== undefined ||
+          payload.amount !== undefined ||
+          payload.time !== undefined ||
+          payload.accountId !== undefined ||
+          payload.categoryId !== undefined)
+      ) {
+        await matchTransactionToSubscriptions({ transaction: baseTransaction, userId: ctx.accountOwnerUserId });
+      }
+
+      // Re-mirror the edit (amount, date, category, note, type, becoming a transfer or a plan) into
+      // auto-adding planned budgets.
+      await syncPlanEntriesForTransactions({
+        userId: ctx.accountOwnerUserId,
+        transactionIds: updatedTransactions.filter((tx) => tx !== undefined).map((tx) => tx.id),
+      });
 
       return updatedTransactions;
     } catch (e) {

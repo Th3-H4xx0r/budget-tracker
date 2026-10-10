@@ -3,7 +3,7 @@ import SwiftUI
 
 /// One recurring payment (web: subscription details), Stocks style: a hero with the amount,
 /// status and the current period's pay and skip actions, a details grid, then reminders,
-/// automation, matching rules, payment history and linked transactions.
+/// automation, matching rules, payment history, suggested matches and linked transactions.
 struct RecurringPaymentDetailScreen: View {
     let subscriptionID: String
     /// Refreshes the list behind this screen after a change.
@@ -14,6 +14,8 @@ struct RecurringPaymentDetailScreen: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var state: LoadState<RecurringSubscriptionDetail> = .idle
+    @State private var suggestions: LoadState<RecurringSuggestionsResponse> = .idle
+    @State private var busySuggestionIDs = Set<String>()
     @State private var isEditing = false
     @State private var payTarget: RecurringPeriod?
     @State private var isLinkPickerPresented = false
@@ -145,6 +147,13 @@ struct RecurringPaymentDetailScreen: View {
                 }
             }
             periodsSection(detail)
+            RecurringSuggestedMatchesSection(
+                state: suggestions,
+                busyIDs: busySuggestionIDs,
+                onLink: { await linkSuggestion($0) },
+                onDismiss: { await dismissSuggestion($0) },
+                onRetry: { await loadSuggestions() }
+            )
             transactionsSection(detail)
         }
         .listStyle(.insetGrouped)
@@ -449,7 +458,7 @@ struct RecurringPaymentDetailScreen: View {
                 } description: {
                     Text("Link past payments to build this payment's history.")
                 } actions: {
-                    Button("Find Matches") { isLinkPickerPresented = true }
+                    Button("Search Transactions") { isLinkPickerPresented = true }
                 }
             } else {
                 ForEach(linked) { link in
@@ -465,6 +474,9 @@ struct RecurringPaymentDetailScreen: View {
                             Label("Unlink", systemImage: "link")
                         }
                     }
+                }
+                InlineActionRow(String(localized: "Search all transactions"), systemImage: "magnifyingglass") {
+                    isLinkPickerPresented = true
                 }
             }
         } header: {
@@ -503,6 +515,12 @@ struct RecurringPaymentDetailScreen: View {
     // MARK: - Data
 
     private func load() async {
+        async let detail: Void = loadDetail()
+        async let matches: Void = loadSuggestions()
+        _ = await (detail, matches)
+    }
+
+    private func loadDetail() async {
         guard let client = services.client else { return }
         if state.value == nil { state = .loading }
         do {
@@ -511,6 +529,47 @@ struct RecurringPaymentDetailScreen: View {
             let apiError = APIError(error)
             if apiError.isCancellation { return }
             if state.value == nil { state = .failed(apiError) } else { alert = ErrorAlert(error) }
+        }
+    }
+
+    private func loadSuggestions() async {
+        guard let client = services.client else { return }
+        if suggestions.value == nil { suggestions = .loading }
+        do {
+            suggestions = .loaded(try await client.send(Endpoints.recurringSuggestions(id: subscriptionID)))
+        } catch {
+            let apiError = APIError(error)
+            if apiError.isCancellation { return }
+            if suggestions.value == nil { suggestions = .failed(apiError) }
+        }
+    }
+
+    private func linkSuggestion(_ suggestion: RecurringSuggestion) async {
+        await updateSuggestion(suggestion) {
+            try await $0.send(Endpoints.linkRecurringTransactions(id: subscriptionID, transactionIds: [suggestion.id]))
+        }
+    }
+
+    private func dismissSuggestion(_ suggestion: RecurringSuggestion) async {
+        await updateSuggestion(suggestion) {
+            try await $0.send(Endpoints.dismissRecurringSuggestions(id: subscriptionID, transactionIds: [suggestion.id]))
+        }
+    }
+
+    /// Runs a link or dismiss for one suggestion, then reloads the payment and its suggestions
+    /// so the linked list, periods and the remaining ranking stay in step.
+    private func updateSuggestion<Value>(
+        _ suggestion: RecurringSuggestion,
+        _ action: (APIClient) async throws -> Value
+    ) async {
+        guard let client = services.client else { return }
+        busySuggestionIDs.insert(suggestion.id)
+        defer { busySuggestionIDs.remove(suggestion.id) }
+        do {
+            _ = try await action(client)
+            await changed()
+        } catch {
+            alert = ErrorAlert(error)
         }
     }
 

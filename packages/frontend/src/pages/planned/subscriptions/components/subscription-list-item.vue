@@ -12,7 +12,7 @@ import Button from '@/components/lib/ui/button/Button.vue';
 import { DesktopOnlyTooltip } from '@/components/lib/ui/tooltip';
 import { useFormatCurrency } from '@/composable/formatters';
 import { cn } from '@/lib/utils';
-import { CheckIcon, CirclePauseIcon, MoreHorizontalIcon, RepeatIcon, Trash2Icon } from '@lucide/vue';
+import { CheckIcon, CirclePauseIcon, MoreHorizontalIcon, RepeatIcon, SparklesIcon, Trash2Icon } from '@lucide/vue';
 import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 
@@ -111,6 +111,22 @@ const due = computed<{ label: string; chipClass: string } | null>(() => {
             <CirclePauseIcon class="size-3" />
             {{ $t('planned.subscriptions.paused') }}
           </span>
+          <DesktopOnlyTooltip
+            v-if="subscription.pendingSuggestionsCount > 0"
+            :content="
+              $t('planned.subscriptions.suggestions.pendingCount', { count: subscription.pendingSuggestionsCount })
+            "
+          >
+            <span
+              class="bg-primary/10 text-primary-text inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-xs tabular-nums"
+              :aria-label="
+                $t('planned.subscriptions.suggestions.pendingCount', { count: subscription.pendingSuggestionsCount })
+              "
+            >
+              <SparklesIcon class="size-3" />
+              {{ subscription.pendingSuggestionsCount }}
+            </span>
+          </DesktopOnlyTooltip>
         </div>
         <p class="text-muted-foreground mt-0.5 flex min-w-0 items-center gap-1.5 text-xs">
           <template v-if="subscription.category">

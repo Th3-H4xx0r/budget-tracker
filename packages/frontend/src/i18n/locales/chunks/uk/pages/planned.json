@@ -48,7 +48,58 @@
         "legendManual": "Прив'язано вручну",
         "chartLabel": "Суми платежів у часі",
         "gapTooltip": "Немає платежів · {range}",
-        "convertedTooltip": "Конвертовано за курсом на дату кожного платежу"
+        "convertedTooltip": "Конвертовано за курсом на дату кожного платежу",
+        "autoMatched": "Зіставлено автоматично",
+        "autoMatchedTooltip": "Зіставлено автоматично, оцінка {score}"
+      },
+      "suggestions": {
+        "title": "Запропоновані збіги",
+        "description": "Транзакції, схожі на цей платіж. Прив'яжіть відповідні, решту відхиліть.",
+        "link": "Прив'язати",
+        "dismiss": "Не ця",
+        "dismissSuccess": "Пропозицію відхилено",
+        "dismissError": "Не вдалося відхилити пропозицію",
+        "pendingCount": "{count} запропонований збіг | {count} запропоновані збіги | {count} запропонованих збігів",
+        "confidence": {
+          "high": "Сильний збіг",
+          "medium": "Можливий збіг"
+        },
+        "reasons": {
+          "payeeMatch": "Той самий отримувач",
+          "merchantSimilar": "Схожий опис",
+          "learnedMerchant": "Зіставлено раніше",
+          "keywordMatch": "Збіг за ключовим словом",
+          "ruleMatch": "Відповідає правилу",
+          "sameAccount": "Той самий рахунок",
+          "differentAccount": "Інший рахунок",
+          "sameCategory": "Та сама категорія",
+          "periodAlreadyCovered": "Період уже сплачено",
+          "ambiguousWithOtherSubscription": "Підходить і до іншого платежу",
+          "nearDueDate": "Близько до терміну",
+          "farFromDueDate": "Далеко від терміну",
+          "onDueDate": "У день терміну",
+          "daysFromDue": "{count} день від терміну | {count} дні від терміну | {count} днів від терміну",
+          "amountClose": "Схожа сума",
+          "amountDiffers": "Сума відрізняється",
+          "amountSame": "Та сама сума",
+          "amountDeviation": "{pct} відносно очікуваної"
+        }
+      },
+      "linkDialog": {
+        "open": "Прив'язати транзакції",
+        "title": "Прив'язати транзакції",
+        "description": "Шукайте серед усіх своїх транзакцій і виберіть ті, що сплатили цей регулярний платіж.",
+        "searchPlaceholder": "Пошук за отримувачем або приміткою",
+        "fromLabel": "Від",
+        "toLabel": "До",
+        "accountsLabel": "Рахунки",
+        "allAccounts": "Усі рахунки",
+        "emptyTitle": "Транзакцій не знайдено",
+        "emptyDescription": "Спробуйте інший запит або розширте діапазон дат.",
+        "resetFilters": "Скинути фільтри",
+        "linkedTo": "Прив'язано до {name}",
+        "dismissed": "Відхилено",
+        "matchScore": "Збіг {score}"
       },
       "quickAdd": {
         "currencyPlaceholder": "Оберіть валюту",
@@ -350,6 +401,13 @@
           "tagsMore": "+{count} ще"
         }
       }
+    },
+    "futureBudgets": {
+      "sources": {
+        "recurringActual": "Сплачено"
+      },
+      "openRecurringPayment": "Відкрити регулярний платіж",
+      "autoAddDescription": "Автоматично додавати реальні транзакції в цьому вікні ({start}–{end}), зокрема ті, що зіставлені з регулярними платежами."
     }
   }
 }

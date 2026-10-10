@@ -8,6 +8,8 @@ struct RecurringPaymentsSegmentView: View {
     @AppStorage("planning.recurring.sort") private var sortRaw = RecurringSortKey.dueDate.rawValue
 
     @State private var items: LoadState<[SubscriptionListItem]> = .idle
+    /// `pendingSuggestionsCount` by subscription id.
+    @State private var pendingSuggestions: [String: Int] = [:]
     @State private var summary: LoadState<SubscriptionsSummary> = .idle
     @State private var typeFilter: SubscriptionType?
     @State private var periodFilter: RecurringPeriodFilter = .all
@@ -106,7 +108,7 @@ struct RecurringPaymentsSegmentView: View {
         NavigationLink {
             RecurringPaymentDetailScreen(subscriptionID: item.id) { await load() }
         } label: {
-            RecurringListRow(item: item, today: today)
+            RecurringListRow(item: item, today: today, pendingSuggestions: pendingSuggestions[item.id] ?? 0)
         }
         .swipeActions(edge: .trailing) {
             Button(role: .destructive) {
@@ -224,7 +226,9 @@ struct RecurringPaymentsSegmentView: View {
         guard let client = services.client else { return }
         if items.value == nil { items = .loading }
         do {
-            items = .loaded(try await client.send(Endpoints.recurringSubscriptions(sortBy: sortBy)))
+            let entries = try await client.send(Endpoints.recurringSubscriptionEntries(sortBy: sortBy))
+            pendingSuggestions = Dictionary(entries.map { ($0.id, $0.pendingSuggestionsCount) }, uniquingKeysWith: { first, _ in first })
+            items = .loaded(entries.map(\.item))
         } catch {
             let apiError = APIError(error)
             if apiError.isCancellation { return }
@@ -364,6 +368,8 @@ private struct RecurringSummaryCard: View {
 private struct RecurringListRow: View {
     let item: SubscriptionListItem
     let today: CalendarDate
+    /// Transactions the matcher thinks are this payment, awaiting a link or dismiss.
+    var pendingSuggestions = 0
 
     var body: some View {
         HStack(spacing: 12) {
@@ -386,6 +392,13 @@ private struct RecurringListRow: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .lineLimit(2)
+                if pendingSuggestions > 0 {
+                    StatusBadge(
+                        label: String(localized: "\(pendingSuggestions) suggested"),
+                        color: DS.Palette.info
+                    )
+                    .accessibilityLabel(Text("\(pendingSuggestions) suggested matches to review"))
+                }
                 if let max = item.maxOccurrences {
                     ProgressView(value: Double(min(item.paidPeriodsCount ?? 0, max)), total: Double(max)) {
                         Text("\(item.paidPeriodsCount ?? 0) of \(max) paid")

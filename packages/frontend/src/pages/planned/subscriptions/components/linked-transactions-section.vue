@@ -13,7 +13,7 @@ import { useFormatCurrency } from '@/composable/formatters';
 import { SUBSCRIPTION_MATCH_SOURCE, TRANSACTION_TYPES } from '@bt/shared/types';
 import { useMutation, useQueryClient } from '@tanstack/vue-query';
 import { format } from 'date-fns';
-import { LinkIcon, SearchIcon, SettingsIcon, UnlinkIcon } from '@lucide/vue';
+import { LinkIcon, SearchIcon, SettingsIcon, SparklesIcon, UnlinkIcon } from '@lucide/vue';
 import { computed, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 
@@ -174,6 +174,8 @@ const formatRowAmount = ({ tx }: { tx: LinkedTransaction }): string =>
     tx.currencyCode,
   );
 
+const formatMatchScore = ({ score }: { score: number }): string => `${Math.round(score * 100)}%`;
+
 const MATCH_SOURCE_DOT_CLASSES: Record<string, string> = {
   [SUBSCRIPTION_MATCH_SOURCE.rule]: 'bg-success-text',
   [SUBSCRIPTION_MATCH_SOURCE.ai]: 'bg-primary',
@@ -193,15 +195,15 @@ const getMatchSourceDotClass = ({ source }: { source: string }): string =>
           {{ summary.payments.length }}
         </span>
       </h2>
-      <DesktopOnlyTooltip :content="$t('planned.subscriptions.suggestMatches')">
+      <DesktopOnlyTooltip :content="$t('planned.subscriptions.linkDialog.open')">
         <Button
           variant="outline"
           size="sm"
-          :aria-label="$t('planned.subscriptions.suggestMatches')"
+          :aria-label="$t('planned.subscriptions.linkDialog.open')"
           @click="emit('suggest-matches')"
         >
           <SearchIcon class="size-4" />
-          <span class="hidden @lg/linked:inline">{{ $t('planned.subscriptions.suggestMatches') }}</span>
+          <span class="hidden @lg/linked:inline">{{ $t('planned.subscriptions.linkDialog.open') }}</span>
         </Button>
       </DesktopOnlyTooltip>
     </div>
@@ -366,6 +368,21 @@ const getMatchSourceDotClass = ({ source }: { source: string }): string =>
               :class="getMatchSourceDotClass({ source: tx.SubscriptionTransactions.matchSource })"
             />
             <span class="flex-1 truncate text-[13px] @lg/linked:text-sm">{{ tx.note }}</span>
+            <DesktopOnlyTooltip
+              v-if="tx.SubscriptionTransactions.matchScore != null"
+              :content="
+                $t('planned.subscriptions.linked.autoMatchedTooltip', {
+                  score: formatMatchScore({ score: tx.SubscriptionTransactions.matchScore }),
+                })
+              "
+            >
+              <span
+                class="bg-primary/10 text-primary-text hidden shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium @md/linked:inline-flex"
+              >
+                <SparklesIcon class="size-3" />
+                {{ $t('planned.subscriptions.linked.autoMatched') }}
+              </span>
+            </DesktopOnlyTooltip>
             <FraudIndicator :transaction="tx" />
             <span
               class="text-amount shrink-0 text-xs @lg/linked:text-sm"

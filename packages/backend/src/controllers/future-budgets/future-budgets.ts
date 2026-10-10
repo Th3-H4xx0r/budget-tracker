@@ -1,4 +1,4 @@
-import { BUDGET_STATUSES, BUDGET_TYPES, RecordId, SUBSCRIPTION_LINK_STATUS, TRANSACTION_TYPES } from '@bt/shared/types';
+import { BUDGET_STATUSES, BUDGET_TYPES, RecordId, TRANSACTION_TYPES } from '@bt/shared/types';
 import { recordId } from '@common/lib/zod/custom-types';
 import { Money } from '@common/types/money';
 import { createController } from '@controllers/helpers/controller-factory';
@@ -8,7 +8,9 @@ import FutureBudgetPlans from '@models/future-budget-plans.model';
 import FutureBudgetRecurringOverrides from '@models/future-budget-recurring-overrides.model';
 import FutureBudgetSettings from '@models/future-budget-settings.model';
 import Subscriptions from '@models/subscriptions.model';
-import Transactions from '@models/transactions.model';
+import { occurrences } from '@services/future-budgets/occurrences';
+import { buildRecurringOccurrences } from '@services/future-budgets/project-recurring';
+import { updatePlan as updatePlanService } from '@services/future-budgets/update-plan';
 import { z } from 'zod';
 
 const frequencyValues = ['weekly', 'biweekly', 'monthly', 'quarterly', 'semi_annual', 'annual', 'custom'] as const;
@@ -35,48 +37,6 @@ const entryShape = {
   intervalDays: z.number().int().positive().nullable().optional(),
 };
 
-function startOfDay(value: string): Date {
-  return new Date(`${value}T00:00:00.000Z`);
-}
-
-function asDate(value: Date): string {
-  return value.toISOString().slice(0, 10);
-}
-
-function addOccurrence(date: Date, frequency: string, intervalDays?: number | null): Date {
-  const next = new Date(date);
-  if (frequency === 'weekly') next.setUTCDate(next.getUTCDate() + 7);
-  else if (frequency === 'biweekly') next.setUTCDate(next.getUTCDate() + 14);
-  else if (frequency === 'quarterly') next.setUTCMonth(next.getUTCMonth() + 3);
-  else if (frequency === 'semi_annual') next.setUTCMonth(next.getUTCMonth() + 6);
-  else if (frequency === 'annual') next.setUTCFullYear(next.getUTCFullYear() + 1);
-  else if (frequency === 'custom') next.setUTCDate(next.getUTCDate() + (intervalDays ?? 30));
-  else next.setUTCMonth(next.getUTCMonth() + 1);
-  return next;
-}
-
-function occurrences(input: {
-  startDate: string;
-  endDate: string;
-  anchorDate: string | null;
-  frequency: string;
-  intervalDays?: number | null;
-}) {
-  const rangeStart = startOfDay(input.startDate);
-  const rangeEnd = startOfDay(input.endDate);
-  let current = startOfDay(input.anchorDate ?? input.startDate);
-  if (input.frequency === 'once') {
-    return current >= rangeStart && current <= rangeEnd ? [asDate(current)] : [];
-  }
-  while (current < rangeStart) current = addOccurrence(current, input.frequency, input.intervalDays);
-  const result: string[] = [];
-  while (current <= rangeEnd) {
-    result.push(asDate(current));
-    current = addOccurrence(current, input.frequency, input.intervalDays);
-  }
-  return result;
-}
-
 function serializePlan(plan: FutureBudgetPlans) {
   return plan.toJSON();
 }
@@ -84,18 +44,6 @@ function serializePlan(plan: FutureBudgetPlans) {
 function amountAsNumber(amount: Money | number): number {
   return Money.isMoney(amount) ? amount.toNumber() : amount;
 }
-
-/** Only subscriptions backed by at least one active, real bank transaction are projected. */
-export const realBankRecurringTransactionsInclude = () => ({
-  model: Transactions,
-  attributes: [],
-  required: true,
-  where: { isPlanned: false },
-  through: {
-    attributes: [],
-    where: { status: SUBSCRIPTION_LINK_STATUS.active },
-  },
-});
 
 async function getPlan(userId: number, id: RecordId) {
   const plan = await FutureBudgetPlans.findOne({ where: { id, userId } });
@@ -190,10 +138,10 @@ export const updatePlan = createController(
   }),
   async ({ user, params, body }) => {
     const plan = await getPlan(user.id, params.id);
-    const data = { ...body } as Record<string, unknown>;
-    if (typeof data.salaryAmount === 'number') data.salaryAmount = Money.fromDecimal(data.salaryAmount);
-    await plan.update(data);
-    return { data: serializePlan(plan) };
+    const changes = { ...body } as Record<string, unknown>;
+    if (typeof changes.salaryAmount === 'number') changes.salaryAmount = Money.fromDecimal(changes.salaryAmount);
+    const updated = await updatePlanService({ userId: user.id, plan, changes });
+    return { data: serializePlan(updated) };
   },
 );
 
@@ -227,20 +175,19 @@ export const getPlanDetails = createController(
   z.object({ params: z.object({ id: recordId() }) }),
   async ({ user, params }) => {
     const plan = await getPlan(user.id, params.id);
-    const [settings, entries, categories, overrides, subscriptions] = await Promise.all([
+    const [settings, entries, categories, overrides] = await Promise.all([
       getSettings(user.id),
       FutureBudgetEntries.findAll({ where: { planId: plan.id }, order: [['date', 'ASC']] }),
       FutureBudgetPlanCategories.findAll({ where: { planId: plan.id } }),
       FutureBudgetRecurringOverrides.findAll({ where: { planId: plan.id } }),
-      // A subscription only projects when it still has a live link to real activity.
-      // Manually-created reminders have no link and are excluded by `required: true`.
-      Subscriptions.findAll({
-        where: { userId: user.id, isActive: true },
-        include: [realBankRecurringTransactionsInclude()],
-      }),
     ]);
     const categoryIds = new Set(categories.map((category) => category.categoryId));
-    const overrideBySubscription = new Map(overrides.map((override) => [override.subscriptionId, override]));
+    const { occurrences: recurringOccurrences, actualEntryIds } = await buildRecurringOccurrences({
+      userId: user.id,
+      plan,
+      overrides,
+      entries,
+    });
     const salaryOccurrences = plan.salaryAmount.isPositive()
       ? occurrences({
           startDate: plan.startDate,
@@ -257,34 +204,17 @@ export const getPlanDetails = createController(
           note: 'Salary',
         }))
       : [];
-    const recurringOccurrences = subscriptions.flatMap((subscription) => {
-      const override = overrideBySubscription.get(subscription.id);
-      if (override?.isIncluded === false || !subscription.expectedAmount) return [];
-      const anchor = override?.nextOccurrenceDate ?? subscription.dueDate ?? subscription.startDate;
-      return occurrences({
-        startDate: plan.startDate,
-        endDate: plan.endDate,
-        anchorDate: anchor,
-        frequency: subscription.frequency,
-      }).map((date) => ({
-        source: 'recurring',
-        subscriptionId: subscription.id,
-        name: subscription.name,
-        transactionType: subscription.transactionType,
-        amount: override?.amount ?? subscription.expectedAmount,
-        date,
-        categoryId: override?.categoryId ?? subscription.categoryId,
-      }));
-    });
-    const manualOccurrences = entries.flatMap((entry) =>
-      occurrences({
-        startDate: plan.startDate,
-        endDate: plan.endDate,
-        anchorDate: entry.date,
-        frequency: entry.frequency ?? 'once',
-        intervalDays: entry.intervalDays,
-      }).map((date) => ({ ...entry.toJSON(), source: 'manual', date })),
-    );
+    const manualOccurrences = entries
+      .filter((entry) => !actualEntryIds.has(entry.id))
+      .flatMap((entry) =>
+        occurrences({
+          startDate: plan.startDate,
+          endDate: plan.endDate,
+          anchorDate: entry.date,
+          frequency: entry.frequency ?? 'once',
+          intervalDays: entry.intervalDays,
+        }).map((date) => ({ ...entry.toJSON(), source: 'manual', date })),
+      );
     const all = [...salaryOccurrences, ...recurringOccurrences, ...manualOccurrences].filter(
       (item) => plan.type !== BUDGET_TYPES.category || (item.categoryId && categoryIds.has(item.categoryId)),
     ) as Array<{

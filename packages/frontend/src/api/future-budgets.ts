@@ -45,6 +45,21 @@ export type FutureEntry = {
   note: string | null;
   frequency: FutureBudgetFrequency | null;
   intervalDays: number | null;
+  /** Set when the entry was auto-added from a real transaction. */
+  transactionId?: string | null;
+  /** Set when that transaction is linked to a recurring payment. */
+  subscriptionId?: string | null;
+};
+/**
+ * - `recurring`: a projected (not yet paid) occurrence of a recurring payment.
+ * - `recurring_actual`: a real transaction matched to a recurring payment; it replaces the
+ *   projected occurrence it paid, so each payment is counted once.
+ */
+export type FutureOccurrenceSource = 'salary' | 'recurring' | 'recurring_actual' | 'manual';
+export type FutureOccurrence = Omit<FutureEntry, 'subscriptionId'> & {
+  source: FutureOccurrenceSource;
+  name?: string;
+  subscriptionId?: string | null;
 };
 
 export const loadFutureBudgetPlans = (): Promise<FutureBudgetPlan[]> => api.get('/future-budgets');
@@ -58,9 +73,7 @@ export const loadFutureBudgetPlan = (
 ): Promise<{
   plan: FutureBudgetPlan;
   entries: FutureEntry[];
-  occurrences: Array<
-    FutureEntry & { source: 'salary' | 'recurring' | 'manual'; name?: string; subscriptionId?: string }
-  >;
+  occurrences: FutureOccurrence[];
   summary: { income: number; expense: number; net: number };
   salaryProfileChanged: boolean;
   salarySettings: SalarySettings;

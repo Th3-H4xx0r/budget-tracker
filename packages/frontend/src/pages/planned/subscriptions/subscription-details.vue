@@ -1,9 +1,7 @@
 <script setup lang="ts">
 import {
   deleteSubscription,
-  linkTransactionsToSubscription,
   loadSubscriptionById,
-  loadSuggestedMatches,
   revertSubscriptionPeriod,
   skipSubscriptionPeriod,
   toggleSubscriptionActive,
@@ -13,14 +11,12 @@ import { loadTransactionById } from '@/api/transactions';
 import { VUE_QUERY_CACHE_KEYS, VUE_QUERY_GLOBAL_PREFIXES } from '@/common/const';
 import ResourceNotFound from '@/components/common/resource-not-found.vue';
 import ResponsiveAlertDialog from '@/components/common/responsive-alert-dialog.vue';
-import ResponsiveDialog from '@/components/common/responsive-dialog.vue';
 import Button from '@/components/lib/ui/button/Button.vue';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/lib/ui/popover';
 import { DesktopOnlyTooltip } from '@/components/lib/ui/tooltip';
 import { useNotificationCenter } from '@/components/notification-center';
 import TransactionDetailsModal from '@/components/transactions-list/transaction-details-modal.vue';
 import { useManageTransactionDialog } from '@/components/transactions-list/use-manage-transaction-dialog';
-import TransactionRecord from '@/components/transactions-list/transaction-record.vue';
 import { usePayeeLookup } from '@/composable/data-queries/payees';
 import { useInvalidateSubscriptionQueries } from '@/composable/data-queries/subscriptions';
 import { CUSTOM_BREAKPOINTS, useWindowBreakpoints } from '@/composable/window-breakpoints';
@@ -30,12 +26,7 @@ import { getCurrencyIcon } from '@/js/helpers/currencyImage';
 import { captureException } from '@/lib/sentry';
 import { ROUTES_NAMES } from '@/routes';
 import { useTagsStore } from '@/stores';
-import {
-  SUBSCRIPTION_PERIOD_STATUSES,
-  SUBSCRIPTION_TYPES,
-  type SubscriptionPeriodModel,
-  type TransactionModel,
-} from '@bt/shared/types';
+import { SUBSCRIPTION_PERIOD_STATUSES, SUBSCRIPTION_TYPES, type SubscriptionPeriodModel } from '@bt/shared/types';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/vue-query';
 import { useNow } from '@vueuse/core';
 import { format, parseISO } from 'date-fns';
@@ -46,7 +37,6 @@ import {
   EllipsisVerticalIcon,
   LinkIcon,
   RepeatIcon,
-  SettingsIcon,
   SkipForwardIcon,
   Trash2Icon,
   UndoIcon,
@@ -63,8 +53,10 @@ import EditAutomationDialog from './components/edit-automation-dialog.vue';
 import EditBasicsDialog from './components/edit-basics-dialog.vue';
 import EditOrganizeDialog from './components/edit-organize-dialog.vue';
 import EditScheduleDialog from './components/edit-schedule-dialog.vue';
+import LinkTransactionsDialog from './components/link-transactions-dialog.vue';
 import LinkedTransactionsSection from './components/linked-transactions-section.vue';
 import SubscriptionMarkPaidDialog from './components/subscription-mark-paid-dialog.vue';
+import SuggestedMatchesSection from './components/suggested-matches-section.vue';
 import SubscriptionTypeBadge from './components/subscription-type-badge.vue';
 import { daysUntilDue } from './subscription-due-status';
 import { formatFrequency, getTransactionTypePrefix, getTransactionTypeStyles } from './utils';
@@ -122,10 +114,7 @@ const isScheduleEditorOpen = ref(false);
 const isAutomationEditorOpen = ref(false);
 const isOrganizeEditorOpen = ref(false);
 const isDeleteDialogOpen = ref(false);
-const isSuggestDialogOpen = ref(false);
-const suggestedMatches = ref<TransactionModel[]>([]);
-const selectedSuggestionIds = ref<Set<string>>(new Set());
-const isSuggestLoading = ref(false);
+const isLinkDialogOpen = ref(false);
 
 const invalidateSubscriptionQueries = useInvalidateSubscriptionQueries();
 
@@ -159,49 +148,6 @@ const handleDelete = async () => {
     isDeleteDialogOpen.value = false;
   }
 };
-
-const handleSuggestMatches = async () => {
-  if (isSuggestLoading.value) return;
-  isSuggestLoading.value = true;
-  try {
-    suggestedMatches.value = await loadSuggestedMatches({ id: subscriptionId.value });
-    selectedSuggestionIds.value = new Set();
-    isSuggestDialogOpen.value = true;
-  } catch {
-    addErrorNotification(t('planned.subscriptions.suggestError'));
-  } finally {
-    isSuggestLoading.value = false;
-  }
-};
-
-const toggleSuggestionSelection = ({ transactionId }: { transactionId: string }) => {
-  const newSet = new Set(selectedSuggestionIds.value);
-  if (newSet.has(transactionId)) {
-    newSet.delete(transactionId);
-  } else {
-    newSet.add(transactionId);
-  }
-  selectedSuggestionIds.value = newSet;
-};
-
-const handleLinkSelected = async () => {
-  if (selectedSuggestionIds.value.size === 0) return;
-  try {
-    await linkTransactionsToSubscription({
-      id: subscriptionId.value,
-      transactionIds: Array.from(selectedSuggestionIds.value),
-    });
-    invalidateQueries();
-    isSuggestDialogOpen.value = false;
-    addSuccessNotification(t('planned.subscriptions.linkSuccess'));
-  } catch {
-    addErrorNotification(t('planned.subscriptions.linkError'));
-  }
-};
-
-const hasMatchingRules = computed(() => {
-  return (subscription.value?.matchingRules?.rules?.length ?? 0) > 0;
-});
 
 const KIND_LABEL_KEYS: Record<SUBSCRIPTION_TYPES, string> = {
   [SUBSCRIPTION_TYPES.subscription]: 'planned.subscriptions.typeSubscription',
@@ -987,11 +933,18 @@ async function openTransaction({ transactionId }: { transactionId: string }) {
       </div>
     </template>
 
+    <SuggestedMatchesSection
+      :subscription-id="subscription.id"
+      :pending-suggestions-count="subscription.pendingSuggestionsCount ?? 0"
+    />
+
     <LinkedTransactionsSection
       :subscription="subscription"
-      @suggest-matches="handleSuggestMatches"
+      @suggest-matches="isLinkDialogOpen = true"
       @open-automation="isAutomationEditorOpen = true"
     />
+
+    <LinkTransactionsDialog v-model:open="isLinkDialogOpen" :subscription-id="subscription.id" />
 
     <!-- Focused editors: each one owns and sends only its own field slice. -->
     <EditBasicsDialog v-model:open="isBasicsEditorOpen" :subscription="subscription" />
@@ -1010,61 +963,6 @@ async function openTransaction({ transactionId }: { transactionId: string }) {
       <template #title>{{ $t('planned.subscriptions.deleteConfirmTitle') }}</template>
       <template #description>{{ $t('planned.subscriptions.deleteConfirmDescription') }}</template>
     </ResponsiveAlertDialog>
-
-    <!-- Suggest Matches Dialog -->
-    <ResponsiveDialog v-model:open="isSuggestDialogOpen" dialog-content-class="max-w-2xl max-h-[80vh]">
-      <template #title>{{ $t('planned.subscriptions.suggestMatchesTitle') }}</template>
-      <template #description>{{ $t('planned.subscriptions.suggestMatchesDescription') }}</template>
-
-      <div v-if="suggestedMatches.length" class="max-h-[50vh] overflow-y-auto">
-        <div class="divide-border divide-y">
-          <TransactionRecord
-            v-for="(tx, i) in suggestedMatches"
-            :key="tx.id"
-            :tx="tx"
-            :as-button="false"
-            show-checkbox
-            :is-selected="selectedSuggestionIds.has(tx.id)"
-            :index="i"
-            @selection-change="({ id }) => toggleSuggestionSelection({ transactionId: id })"
-            @record-click="() => toggleSuggestionSelection({ transactionId: tx.id })"
-          />
-        </div>
-      </div>
-
-      <div v-else class="py-8 text-center">
-        <p class="text-muted-foreground text-sm">{{ $t('planned.subscriptions.noSuggestedMatches') }}</p>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          class="mt-3"
-          @click="
-            isSuggestDialogOpen = false;
-            isAutomationEditorOpen = true;
-          "
-        >
-          <SettingsIcon class="size-4" />
-          {{
-            hasMatchingRules
-              ? $t('planned.subscriptions.updateMatchingRules')
-              : $t('planned.subscriptions.addMatchingRules')
-          }}
-        </Button>
-      </div>
-
-      <template #footer>
-        <div class="flex justify-end gap-2">
-          <Button variant="outline" @click="isSuggestDialogOpen = false">
-            {{ $t('planned.subscriptions.cancel') }}
-          </Button>
-          <Button :disabled="selectedSuggestionIds.size === 0" @click="handleLinkSelected">
-            <LinkIcon class="size-4" />
-            {{ $t('planned.subscriptions.linkSelected', { count: selectedSuggestionIds.size }) }}
-          </Button>
-        </div>
-      </template>
-    </ResponsiveDialog>
 
     <!-- Revert period confirmation -->
     <ResponsiveAlertDialog

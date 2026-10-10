@@ -33,6 +33,11 @@ export const FEATURE_RECOMMENDATIONS: Record<AI_FEATURE, AI_MODEL_ID[]> = {
   ],
   [AI_FEATURE.statementParsing]: DOCUMENT_EXTRACTION_MODELS,
   [AI_FEATURE.investmentTransactionsParsing]: DOCUMENT_EXTRACTION_MODELS,
+  [AI_FEATURE.recurringDetection]: [
+    AI_MODEL_ID['google/gemini-3.5-flash-lite'], // Cheap and fast; one JSON call per detection run
+    AI_MODEL_ID['openai/gpt-5.4-nano'], // Cheapest OpenAI tier
+    AI_MODEL_ID['anthropic/claude-haiku-4-5'], // Fast Claude option
+  ],
 };
 
 /**
@@ -43,4 +48,5 @@ export const FEATURE_DEFAULTS: Record<AI_FEATURE, AI_MODEL_ID> = {
   [AI_FEATURE.categorization]: AI_MODEL_ID['google/gemma-4-31b-it'],
   [AI_FEATURE.statementParsing]: AI_MODEL_ID['google/gemini-3.6-flash'],
   [AI_FEATURE.investmentTransactionsParsing]: AI_MODEL_ID['google/gemini-3.6-flash'],
+  [AI_FEATURE.recurringDetection]: AI_MODEL_ID['google/gemini-3.5-flash-lite'],
 };

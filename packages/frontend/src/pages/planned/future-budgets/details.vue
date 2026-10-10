@@ -9,6 +9,7 @@ import {
   updateFutureBudgetPlan,
   updateRecurringOverride,
   type FutureBudgetFrequency,
+  type FutureOccurrenceSource,
 } from '@/api/future-budgets';
 import Button from '@/components/lib/ui/button/Button.vue';
 import ActionButton from '@/components/lib/ui/action-button/action-button.vue';
@@ -30,16 +31,21 @@ import {
   ArchiveRestoreIcon,
   ArrowLeftIcon,
   CalendarClockIcon,
+  CheckIcon,
+  ExternalLinkIcon,
   PencilIcon,
   PlusIcon,
   Trash2Icon,
 } from '@lucide/vue';
 import { storeToRefs } from 'pinia';
+import { ROUTES_NAMES } from '@/routes';
 import { computed, reactive, ref, watch } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { useRoute, useRouter } from 'vue-router';
 
 type OccurrenceSortKey = 'name' | 'date' | 'source' | 'amount';
 
+const { t } = useI18n();
 const route = useRoute();
 const router = useRouter();
 const { addSuccessNotification } = useNotificationCenter();
@@ -181,9 +187,14 @@ watch(
 );
 const currency = (amount: number) => amount.toLocaleString(undefined, { style: 'currency', currency: 'USD' });
 
-const sourceLabel = (source: 'salary' | 'recurring' | 'manual') =>
-  source === 'recurring' ? 'Bank recurring' : source === 'salary' ? 'Salary' : 'Plan only';
-const occurrenceName = (item: { name?: string; note?: string | null; source: 'salary' | 'recurring' | 'manual' }) =>
+const SOURCE_LABELS: Record<FutureOccurrenceSource, () => string> = {
+  recurring: () => 'Bank recurring',
+  recurring_actual: () => t('planned.futureBudgets.sources.recurringActual'),
+  salary: () => 'Salary',
+  manual: () => 'Plan only',
+};
+const sourceLabel = (source: FutureOccurrenceSource) => SOURCE_LABELS[source]();
+const occurrenceName = (item: { name?: string; note?: string | null; source: FutureOccurrenceSource }) =>
   item.name ?? item.note ?? (item.source === 'salary' ? 'Salary' : 'Future transaction');
 const signedAmount = (item: { amount: number; transactionType: 'income' | 'expense' }) =>
   item.transactionType === 'income' ? item.amount : -item.amount;
@@ -348,8 +359,7 @@ const maxCategoryAmount = computed(() => Math.max(1, ...categoryBreakdown.value.
         <div>
           <h2 class="font-semibold">Auto-add synced transactions</h2>
           <p class="text-muted-foreground mt-1 text-sm">
-            Automatically add real transactions to this plan when they sync and fall within
-            {{ data.plan.startDate }}–{{ data.plan.endDate }}.
+            {{ $t('planned.futureBudgets.autoAddDescription', { start: data.plan.startDate, end: data.plan.endDate }) }}
           </p>
         </div>
         <Switch
@@ -457,7 +467,16 @@ const maxCategoryAmount = computed(() => Math.max(1, ...categoryBreakdown.value.
             >
               <TableCell class="font-medium">{{ occurrenceName(item) }}</TableCell>
               <TableCell class="text-muted-foreground">{{ item.date }}</TableCell>
-              <TableCell class="text-muted-foreground">{{ sourceLabel(item.source) }}</TableCell>
+              <TableCell class="text-muted-foreground">
+                <span
+                  v-if="item.source === 'recurring_actual'"
+                  class="bg-success-text/10 text-success-text inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs"
+                >
+                  <CheckIcon class="size-3" />
+                  {{ sourceLabel(item.source) }}
+                </span>
+                <template v-else>{{ sourceLabel(item.source) }}</template>
+              </TableCell>
               <TableCell
                 class="text-right"
                 :class="item.transactionType === 'income' ? 'text-app-income-color' : 'text-app-expense-color'"
@@ -515,6 +534,22 @@ const maxCategoryAmount = computed(() => Math.max(1, ...categoryBreakdown.value.
                       @click="updateRecurring.mutate({ subscriptionId: item.subscriptionId, isIncluded: false })"
                       ><Trash2Icon class="size-4"
                     /></Button>
+                  </DesktopOnlyTooltip>
+                </div>
+                <div v-else-if="item.source === 'recurring_actual' && item.subscriptionId" class="flex items-center">
+                  <DesktopOnlyTooltip :content="$t('planned.futureBudgets.openRecurringPayment')">
+                    <Button
+                      as-child
+                      variant="ghost"
+                      size="icon-sm"
+                      :aria-label="$t('planned.futureBudgets.openRecurringPayment')"
+                    >
+                      <RouterLink
+                        :to="{ name: ROUTES_NAMES.plannedSubscriptionDetails, params: { id: item.subscriptionId } }"
+                      >
+                        <ExternalLinkIcon class="size-4" />
+                      </RouterLink>
+                    </Button>
                   </DesktopOnlyTooltip>
                 </div>
                 <div v-else-if="item.source === 'manual' && item.id" class="flex items-center gap-2">

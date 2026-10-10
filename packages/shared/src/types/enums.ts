@@ -408,6 +408,7 @@ export enum AI_FEATURE {
   categorization = 'categorization',
   statementParsing = 'statement_parsing',
   investmentTransactionsParsing = 'investment_transactions_parsing',
+  recurringDetection = 'recurring_detection',
   // Future features:
   // insights = 'insights',
   // budgetSuggestions = 'budget_suggestions',
@@ -524,6 +525,36 @@ export enum SUBSCRIPTION_CANDIDATE_STATUS {
   pending = 'pending',
   accepted = 'accepted',
   dismissed = 'dismissed',
+}
+
+/**
+ * Status of a transaction ↔ subscription match suggestion.
+ * Stored as VARCHAR(20) in the DB – not a Postgres ENUM.
+ * `dismissed` is the user's "Not this one" memory: the pair is never suggested or auto-linked again
+ * until the user links it explicitly.
+ */
+export enum SUBSCRIPTION_SUGGESTION_STATUS {
+  pending = 'pending',
+  dismissed = 'dismissed',
+}
+
+/**
+ * What produced a match suggestion: the scoring matcher (on create, sync or backfill) or discovery
+ * routing a detected cluster to an existing subscription.
+ * Stored as VARCHAR(20) in the DB – not a Postgres ENUM.
+ */
+export enum SUBSCRIPTION_SUGGESTION_SOURCE {
+  engine = 'engine',
+  discovery = 'discovery',
+}
+
+/**
+ * How a subscription candidate was detected.
+ * Stored as VARCHAR(20) in the DB – not a Postgres ENUM.
+ */
+export enum SUBSCRIPTION_DETECTION_SOURCE {
+  heuristic = 'heuristic',
+  ai = 'ai',
 }
 
 /**

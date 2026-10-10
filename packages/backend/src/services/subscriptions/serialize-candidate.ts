@@ -1,3 +1,4 @@
+import type { SubscriptionCandidateDetectionFields } from '@bt/shared/types';
 import { Money } from '@common/types/money';
 import SubscriptionCandidates from '@models/subscription-candidates.model';
 import Subscriptions from '@models/subscriptions.model';
@@ -9,7 +10,7 @@ interface PossibleMatch {
   name: string;
 }
 
-export interface SerializedCandidate {
+export interface SerializedCandidate extends SubscriptionCandidateDetectionFields {
   id: string;
   suggestedName: string;
   detectedFrequency: string;
@@ -64,5 +65,11 @@ export function serializeCandidate({
     detectedAt: json.detectedAt,
     possibleMatch,
     isOutdated,
+    merchantKey: json.merchantKey,
+    transactionType: json.transactionType,
+    amountVariability: json.amountVariability,
+    detectionSource: json.detectionSource,
+    aiReason: json.aiReason,
+    nextExpectedDate: json.nextExpectedDate,
   };
 }

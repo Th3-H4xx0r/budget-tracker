@@ -25,8 +25,23 @@ import {
   validateTagsOwnership,
 } from './helpers';
 import { assertInstallmentScheduleComplete, assertMaxOccurrencesNotBelowConsumed } from './installments';
+import { backfillSubscriptionMatchesAfterCommit } from './matching/backfill-subscription';
 import { resolveOpenPeriodStatus } from './resolve-period-status';
 import { getSubscriptionTagIds } from './subscription-tags';
+
+/** Fields that feed the scoring matcher; sending any of them triggers a history backfill. */
+const MATCHING_FIELDS = [
+  'name',
+  'payeeId',
+  'matchingRules',
+  'expectedAmount',
+  'expectedCurrencyCode',
+  'accountId',
+  'categoryId',
+  'frequency',
+  'dueDate',
+  'isActive',
+] as const;
 
 /** Statuses that count as a live, un-consumed period. */
 const OPEN_PERIOD_STATUSES = [SUBSCRIPTION_PERIOD_STATUSES.upcoming, SUBSCRIPTION_PERIOD_STATUSES.overdue];
@@ -246,6 +261,11 @@ export const updateSubscription = withTransaction(
     // set applies to later matches only.
     if (uniqueTagIds !== undefined) {
       await subscription.$set('tags', uniqueTagIds);
+    }
+
+    // Matching inputs changed: re-scan history against the new profile after commit.
+    if (MATCHING_FIELDS.some((field) => fields[field] !== undefined)) {
+      await backfillSubscriptionMatchesAfterCommit({ userId, subscriptionId: subscription.id });
     }
 
     // Surface expectedAmount as a decimal so the response matches GET (the

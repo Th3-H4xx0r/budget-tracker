@@ -21,7 +21,7 @@ import * as Transactions from '@models/transactions.model';
 import * as UsersCurrencies from '@models/users-currencies.model';
 import { calculateRefAmount } from '@services/calculate-ref-amount.service';
 import { DOMAIN_EVENTS, eventBus } from '@services/common/event-bus';
-import { autoAddSyncedTransaction } from '@services/future-budgets/auto-add-synced-transaction';
+import { syncPlanEntriesForTransactions } from '@services/future-budgets/sync-plan-entries';
 import { assertLoanPaymentAllowed } from '@services/loans/assert-loan-payment-allowed';
 import { applyPayeeCategorization } from '@services/payees/apply-categorization';
 import { applyPayeeDefaultTags } from '@services/payees/apply-default-tags';
@@ -750,15 +750,9 @@ export const createTransaction = withTransaction(
       // a budget, so both legs are excluded too.
       if (!payload.isPlanned && !isTwoLegTransfer(transferNature)) {
         try {
-          const finalTransaction = transactions[0]!;
-          await autoAddSyncedTransaction({
-            accountOwnerUserId,
-            transactionType: finalTransaction.transactionType,
-            amount: finalTransaction.amount,
-            date: finalTransaction.time.toISOString().slice(0, 10),
-            categoryId: finalTransaction.categoryId ?? null,
-            note: finalTransaction.note ?? null,
-          });
+          // Runs after subscription matching, so a tx matched to a recurring payment is recorded
+          // as that payment's occurrence rather than as an unrelated one-off entry.
+          await syncPlanEntriesForTransactions({ userId: accountOwnerUserId, transactionIds: [baseTransaction!.id] });
         } catch (error) {
           if (abortsTransaction(error)) throw error;
 

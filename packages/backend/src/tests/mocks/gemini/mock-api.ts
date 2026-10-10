@@ -144,3 +144,56 @@ export function createGeminiMock(options: MockCategorizationOptions = {}) {
     });
   });
 }
+
+/** Collects every `text` part of a Gemini request body (system instruction and user content). */
+function extractRequestText({ body }: { body: unknown }): string {
+  const texts: string[] = [];
+  JSON.stringify(body, (key, value) => {
+    if (key === 'text' && typeof value === 'string') texts.push(value);
+    return value;
+  });
+  return texts.join('\n');
+}
+
+interface MockJsonOptions {
+  /** Static JSON answer, serialized as the model's text. */
+  json?: unknown;
+  /** Builds the JSON answer from the prompt text; wins over `json`. */
+  respond?: (prompt: string) => unknown;
+  /** Called with the prompt text of every request the handler answers (for call counting). */
+  onRequest?: (prompt: string) => void;
+  shouldFail?: boolean;
+  errorStatus?: number;
+}
+
+/**
+ * Gemini handler for features that expect a JSON answer. Answers any model, so a case can save a
+ * user API key (validated against another model) behind an earlier handler and still be served here.
+ */
+export function createGeminiJsonMock({
+  json,
+  respond,
+  onRequest,
+  shouldFail = false,
+  errorStatus = 500,
+}: MockJsonOptions) {
+  return http.post(GEMINI_API_URL, async ({ request }) => {
+    const prompt = extractRequestText({ body: await request.json() });
+    onRequest?.(prompt);
+
+    if (shouldFail) {
+      return HttpResponse.json(
+        { error: { code: errorStatus, message: 'Internal server error', status: 'INTERNAL' } },
+        { status: errorStatus },
+      );
+    }
+
+    const answer = respond ? respond(prompt) : json;
+    return HttpResponse.json({
+      candidates: [
+        { content: { parts: [{ text: JSON.stringify(answer ?? []) }], role: 'model' }, finishReason: 'STOP', index: 0 },
+      ],
+      usageMetadata: { promptTokenCount: 100, candidatesTokenCount: 50, totalTokenCount: 150 },
+    });
+  });
+}

@@ -18,6 +18,10 @@
           v-else-if="feature.feature === AI_FEATURE.statementParsing"
           :feature-status="feature"
         />
+        <RecurringDetectionFeature
+          v-else-if="feature.feature === AI_FEATURE.recurringDetection"
+          :feature-status="feature"
+        />
       </template>
     </div>
   </div>
@@ -29,6 +33,7 @@ import { AI_FEATURE } from '@bt/shared/types';
 import { Loader2Icon } from '@lucide/vue';
 
 import CategorizationFeature from './features/categorization-feature.vue';
+import RecurringDetectionFeature from './features/recurring-detection-feature.vue';
 import StatementParsingFeature from './features/statement-parsing-feature.vue';
 
 const { featuresStatus, isLoadingFeatures: isLoading } = useAiSettings();

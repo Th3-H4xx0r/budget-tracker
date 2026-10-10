@@ -37,6 +37,7 @@ import {
 } from './enums';
 import { LoanEvent } from './loans';
 import { RecordId } from './record-id';
+import type { SubscriptionCandidateDetectionFields, SubscriptionLinkMatchFields } from './subscriptions-matching';
 
 export interface UserModel {
   id: number;
@@ -713,7 +714,7 @@ export interface SubscriptionPeriodModel {
   updatedAt: Date;
 }
 
-export interface SubscriptionTransactionModel {
+export interface SubscriptionTransactionModel extends SubscriptionLinkMatchFields {
   subscriptionId: RecordId;
   transactionId: RecordId;
   matchSource: SUBSCRIPTION_MATCH_SOURCE;
@@ -721,7 +722,7 @@ export interface SubscriptionTransactionModel {
   status: SUBSCRIPTION_LINK_STATUS;
 }
 
-export interface SubscriptionCandidateModel {
+export interface SubscriptionCandidateModel extends SubscriptionCandidateDetectionFields {
   id: RecordId;
   userId: number;
   suggestedName: string;
@@ -739,6 +740,8 @@ export interface SubscriptionCandidateModel {
   detectedAt: Date;
   lastOccurrenceAt: Date | null;
   resolvedAt: Date | null;
+  /** sha256(merchantKey + sorted tx ids) of the cluster last sent to AI review; unchanged clusters aren't re-sent. */
+  aiFingerprint: string | null;
 }
 
 export interface SubscriptionPeriodNotificationModel {

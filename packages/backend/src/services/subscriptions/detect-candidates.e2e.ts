@@ -3,8 +3,11 @@ import { SUBSCRIPTION_FREQUENCIES, TRANSACTION_TRANSFER_NATURE, TRANSACTION_TYPE
 import { generateRandomRecordId } from '@common/lib/record-id-helpers';
 import { describe, expect, it } from '@jest/globals';
 import SubscriptionCandidates from '@models/subscription-candidates.model';
+import SubscriptionMatchSuggestions from '@models/subscription-match-suggestions.model';
+import SubscriptionTransactions from '@models/subscription-transactions.model';
 import Transactions from '@models/transactions.model';
 import * as helpers from '@tests/helpers';
+import { useSelfHostWithoutServerAiKeys } from '@tests/helpers/ai-test-env';
 import { buildTransactionPayload } from '@tests/helpers/transactions';
 
 /**
@@ -57,7 +60,44 @@ async function expireCooldown({ userId }: { userId: number }) {
   await SubscriptionCandidates.update({ detectedAt: twoHoursAgo }, { where: { userId } });
 }
 
+/** A transaction `monthsAgo` calendar months before now, shifted by `dayShift` days. */
+async function createTransactionMonthsAgo({
+  accountId,
+  note,
+  amount,
+  monthsAgo,
+  dayShift = 0,
+  transactionType = TRANSACTION_TYPES.expense,
+}: {
+  accountId: RecordId;
+  note: string;
+  amount: number;
+  monthsAgo: number;
+  dayShift?: number;
+  transactionType?: TRANSACTION_TYPES;
+}) {
+  const time = new Date();
+  time.setMonth(time.getMonth() - monthsAgo);
+  time.setDate(time.getDate() + dayShift);
+
+  const [tx] = await helpers.createTransaction({
+    raw: true,
+    payload: buildTransactionPayload({
+      accountId,
+      amount,
+      transactionType,
+      transferNature: TRANSACTION_TRANSFER_NATURE.not_transfer,
+      note,
+      time: time.toISOString(),
+    }),
+  });
+  return tx!;
+}
+
 describe('Subscription Candidate Detection', () => {
+  // Heuristics only: an ambient server AI key would add an AI pass to every run.
+  useSelfHostWithoutServerAiKeys();
+
   describe('Happy paths', () => {
     it('detects a monthly pattern and exposes decimal amounts and isOutdated on both endpoints', async () => {
       const account = await helpers.createAccount({ raw: true });
@@ -591,11 +631,12 @@ describe('Subscription Candidate Detection', () => {
   });
 
   describe('Possible match detection', () => {
-    it('includes possibleMatch when a similar subscription exists', async () => {
+    it('includes possibleMatch when a similar paused subscription exists', async () => {
       const account = await helpers.createAccount({ raw: true });
 
-      // Create an existing subscription
-      await helpers.createSubscription({
+      // A paused payment is not routed to (active ones get link suggestions instead), so the
+      // cluster becomes a candidate carrying the name hint.
+      const subscription = await helpers.createSubscription({
         name: 'Digital Ocean',
         expectedAmount: 7,
         expectedCurrencyCode: account.currencyCode,
@@ -603,6 +644,7 @@ describe('Subscription Candidate Detection', () => {
         startDate: '2025-01-01',
         raw: true,
       });
+      await helpers.toggleSubscriptionActive({ id: subscription.id, isActive: false, raw: true });
 
       // Create recurring transactions with a similar name
       await createRecurringTransactions({
@@ -720,5 +762,170 @@ describe('Subscription Candidate Detection', () => {
       const reDismissRes = await helpers.dismissSubscriptionCandidate({ id: spotify.id });
       expect(reDismissRes.statusCode).toBe(409);
     }, 60_000);
+  });
+
+  describe('Smarter discovery', () => {
+    it('detects a monthly payment with one skipped month', async () => {
+      const account = await helpers.createAccount({ raw: true });
+      for (const monthsAgo of [5, 4, 3, 1, 0]) {
+        await createTransactionMonthsAgo({ accountId: account.id, note: 'SKIPPY STREAM', amount: 11.99, monthsAgo });
+      }
+
+      const result = await helpers.detectSubscriptionCandidates({ raw: true });
+      const candidate = result.candidates.find((c) => c.suggestedName.includes('SKIPPY'));
+
+      expect(candidate).toBeDefined();
+      expect(candidate!.detectedFrequency).toBe(SUBSCRIPTION_FREQUENCIES.monthly);
+      expect(candidate!.occurrenceCount).toBe(5);
+      expect(candidate!.transactionType).toBe(TRANSACTION_TYPES.expense);
+      expect(candidate!.detectionSource).toBe('heuristic');
+      expect(candidate!.nextExpectedDate).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    }, 60_000);
+
+    it('detects a monthly utility bill whose amount varies by about 25%', async () => {
+      const account = await helpers.createAccount({ raw: true });
+      const amounts = [60, 100, 75, 120, 64, 110];
+      for (const [index, amount] of amounts.entries()) {
+        await createTransactionMonthsAgo({
+          accountId: account.id,
+          note: 'CITY POWER UTILITY',
+          amount,
+          monthsAgo: amounts.length - 1 - index,
+          dayShift: index % 2 === 0 ? 1 : -1,
+        });
+      }
+
+      const result = await helpers.detectSubscriptionCandidates({ raw: true });
+      const candidate = result.candidates.find((c) => c.suggestedName.includes('CITY POWER'));
+
+      expect(candidate).toBeDefined();
+      expect(candidate!.detectedFrequency).toBe(SUBSCRIPTION_FREQUENCIES.monthly);
+      expect(candidate!.occurrenceCount).toBe(6);
+      expect(candidate!.amountVariability).toBeGreaterThan(0.15);
+    }, 60_000);
+
+    it('detects an annual charge from two occurrences about a year apart', async () => {
+      const account = await helpers.createAccount({ raw: true });
+      await createTransactionMonthsAgo({
+        accountId: account.id,
+        note: 'DOMAINREG YEARLY',
+        amount: 99,
+        monthsAgo: 12,
+        dayShift: -3,
+      });
+      await createTransactionMonthsAgo({
+        accountId: account.id,
+        note: 'DOMAINREG YEARLY',
+        amount: 99,
+        monthsAgo: 0,
+        dayShift: -1,
+      });
+
+      const result = await helpers.detectSubscriptionCandidates({ raw: true });
+      const candidate = result.candidates.find((c) => c.suggestedName.includes('DOMAINREG'));
+
+      expect(candidate).toBeDefined();
+      expect(candidate!.detectedFrequency).toBe(SUBSCRIPTION_FREQUENCIES.annual);
+      expect(candidate!.occurrenceCount).toBe(2);
+      expect(candidate!.averageAmount).toBe(99);
+    }, 60_000);
+
+    it('detects recurring income with transactionType income', async () => {
+      const account = await helpers.createAccount({ raw: true });
+      for (const monthsAgo of [3, 2, 1, 0]) {
+        await createTransactionMonthsAgo({
+          accountId: account.id,
+          note: 'ACME CORP SALARY',
+          amount: 3000,
+          monthsAgo,
+          transactionType: TRANSACTION_TYPES.income,
+        });
+      }
+
+      const result = await helpers.detectSubscriptionCandidates({ raw: true });
+      const candidate = result.candidates.find((c) => c.suggestedName.includes('ACME'));
+
+      expect(candidate).toBeDefined();
+      expect(candidate!.transactionType).toBe(TRANSACTION_TYPES.income);
+      expect(candidate!.detectedFrequency).toBe(SUBSCRIPTION_FREQUENCIES.monthly);
+      expect(candidate!.averageAmount).toBe(3000);
+    }, 60_000);
+
+    it('clusters one merchant across descriptor suffixes and accounts into a single candidate', async () => {
+      const accountA = await helpers.createAccount({ raw: true });
+      const accountB = await helpers.createAccount({ raw: true });
+
+      await createTransactionMonthsAgo({
+        accountId: accountA.id,
+        note: 'NETFLIX.COM 8822',
+        amount: 15.49,
+        monthsAgo: 3,
+      });
+      await createTransactionMonthsAgo({
+        accountId: accountA.id,
+        note: 'POS NETFLIX.COM 1931',
+        amount: 15.49,
+        monthsAgo: 2,
+      });
+      await createTransactionMonthsAgo({
+        accountId: accountB.id,
+        note: 'NETFLIX.COM P4410',
+        amount: 15.49,
+        monthsAgo: 1,
+      });
+      await createTransactionMonthsAgo({
+        accountId: accountB.id,
+        note: 'NETFLIX.COM 7710',
+        amount: 15.49,
+        monthsAgo: 0,
+      });
+
+      const result = await helpers.detectSubscriptionCandidates({ raw: true });
+      const netflix = result.candidates.filter((c) => c.merchantKey === 'netflix');
+
+      expect(netflix).toHaveLength(1);
+      expect(netflix[0]!.occurrenceCount).toBe(4);
+      expect([accountA.id, accountB.id]).toContain(netflix[0]!.accountId);
+    }, 60_000);
+
+    it('routes a cluster of an existing recurring payment to link suggestions instead of a candidate', async () => {
+      const account = await helpers.createAccount({ raw: true });
+      const subscription = await helpers.createSubscription({
+        name: 'Gymco',
+        expectedAmount: 40,
+        expectedCurrencyCode: account.currencyCode,
+        frequency: SUBSCRIPTION_FREQUENCIES.monthly,
+        startDate: '2020-01-01',
+        raw: true,
+      });
+
+      const txs: Transactions[] = [];
+      for (const monthsAgo of [3, 2, 1, 0]) {
+        txs.push(
+          await createTransactionMonthsAgo({ accountId: account.id, note: 'GYMCO 4411', amount: 55, monthsAgo }),
+        );
+      }
+
+      const result = await helpers.detectSubscriptionCandidates({ raw: true });
+      expect(result.candidates.find((c) => c.suggestedName.includes('GYMCO'))).toBeUndefined();
+
+      // Each transaction is either already linked by the matcher or suggested by discovery.
+      const [links, suggestions] = await Promise.all([
+        SubscriptionTransactions.findAll({ where: { subscriptionId: subscription.id } }),
+        SubscriptionMatchSuggestions.findAll({ where: { subscriptionId: subscription.id } }),
+      ]);
+      const covered = new Set([...links, ...suggestions].map((row) => row.transactionId));
+      for (const tx of txs) expect(covered.has(tx.id)).toBe(true);
+      for (const suggestion of suggestions) {
+        expect(suggestion.score).toBeGreaterThanOrEqual(0.5);
+      }
+    }, 60_000);
+
+    it('returns an empty list and aiStatus skipped when the user has no transactions', async () => {
+      const result = await helpers.detectSubscriptionCandidates({ raw: true });
+
+      expect(result.candidates).toEqual([]);
+      expect(result.aiStatus).toBe('skipped');
+    });
   });
 });

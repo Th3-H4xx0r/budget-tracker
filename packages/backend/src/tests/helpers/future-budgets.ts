@@ -12,9 +12,11 @@ export interface FutureBudgetPlanResponse {
 }
 
 export interface FutureBudgetOccurrenceResponse {
-  source: 'salary' | 'recurring' | 'manual';
+  /** `recurring_actual`: an auto-added transaction standing in for its recurring payment's occurrence. */
+  source: 'salary' | 'recurring' | 'recurring_actual' | 'manual';
   id?: string;
-  subscriptionId?: string;
+  subscriptionId?: string | null;
+  transactionId?: string | null;
   name?: string;
   note?: string | null;
   transactionType: 'income' | 'expense';
@@ -26,7 +28,15 @@ export interface FutureBudgetOccurrenceResponse {
 export interface FutureBudgetPlanDetailsResponse {
   plan: FutureBudgetPlanResponse;
   categoryIds: string[];
-  entries: Array<{ id: string; date: string; amount: number; note: string | null; categoryId: string | null }>;
+  entries: Array<{
+    id: string;
+    date: string;
+    amount: number;
+    note: string | null;
+    categoryId: string | null;
+    transactionId: string | null;
+    subscriptionId: string | null;
+  }>;
   occurrences: FutureBudgetOccurrenceResponse[];
   summary: { income: number; expense: number; net: number };
 }

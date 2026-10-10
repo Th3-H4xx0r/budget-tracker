@@ -1,6 +1,7 @@
-import { SUBSCRIPTION_LINK_STATUS } from '@bt/shared/types';
+import { type RecordId, SUBSCRIPTION_LINK_STATUS } from '@bt/shared/types';
 import SubscriptionTransactions from '@models/subscription-transactions.model';
 import { withTransaction } from '@services/common/with-transaction';
+import { syncPlanEntriesForTransactions } from '@services/future-budgets/sync-plan-entries';
 import { Op } from 'sequelize';
 
 import { findSubscriptionOrThrow } from './helpers';
@@ -25,6 +26,8 @@ export const unlinkTransactionsFromSubscription = withTransaction(
         },
       },
     );
+
+    await syncPlanEntriesForTransactions({ userId, transactionIds: transactionIds as RecordId[] });
 
     return { unlinked: updated };
   },

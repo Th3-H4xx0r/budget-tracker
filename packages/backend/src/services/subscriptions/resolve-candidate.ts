@@ -5,9 +5,11 @@ import SubscriptionCandidates from '@models/subscription-candidates.model';
 import SubscriptionTransactions from '@models/subscription-transactions.model';
 import { findTransactions } from '@models/transactions-query';
 import { withTransaction } from '@services/common/with-transaction';
+import { syncPlanEntriesForTransactions } from '@services/future-budgets/sync-plan-entries';
 import { Op } from 'sequelize';
 
 import { findSubscriptionOrThrow } from './helpers';
+import { backfillSubscriptionMatchesAfterCommit } from './matching/backfill-subscription';
 import { stampSubscriptionPayeeAndTags } from './stamp-payee-and-tags';
 
 interface ResolveCandidateParams {
@@ -82,8 +84,12 @@ export const resolveCandidate = withTransaction(
           );
 
           await stampSubscriptionPayeeAndTags({ subscription, transactionIds: newTxIds });
+          await syncPlanEntriesForTransactions({ userId, transactionIds: newTxIds });
         }
       }
+
+      // The accepted samples now teach the profile (payees, merchant keys, amount): re-scan history.
+      await backfillSubscriptionMatchesAfterCommit({ userId, subscriptionId: subscription.id });
     }
 
     await candidate.update({

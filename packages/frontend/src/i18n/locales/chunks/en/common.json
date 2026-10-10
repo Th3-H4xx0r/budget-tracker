@@ -131,6 +131,10 @@
       "investmentTransactionsParsing": {
         "name": "Investment transactions import",
         "description": "AI-extracted buy/sell transactions from exchange exports, broker statements, or pasted text."
+      },
+      "recurringDetection": {
+        "name": "Recurring payment detection",
+        "description": "Reviews detected recurring payments: confirms which are truly recurring, names them, and estimates frequency and amount"
       }
     },
     "transactions": {

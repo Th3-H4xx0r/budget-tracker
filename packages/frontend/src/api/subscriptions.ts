@@ -1,9 +1,15 @@
 import { api } from '@/api/_api';
 import type {
+  DismissSubscriptionSuggestionsResponse,
   EntityLogoFields,
+  LinkableTransactionsQuery,
+  LinkableTransactionsResponse,
   RemindBeforePreset,
+  SubscriptionLinkMatchFields,
+  SubscriptionSuggestionCounts,
   SubscriptionModel,
   SubscriptionPeriodModel,
+  SubscriptionSuggestionsResponse,
   TransactionModel,
   TRANSACTION_TYPES,
 } from '@bt/shared/types';
@@ -15,7 +21,7 @@ export interface SubscriptionListCurrentPeriod {
   status: SubscriptionPeriodModel['status'];
 }
 
-export interface SubscriptionListItem extends SubscriptionModel {
+export interface SubscriptionListItem extends SubscriptionModel, SubscriptionSuggestionCounts {
   linkedTransactionsCount: number;
   /** Earliest open (upcoming or overdue) period, or null for detection-only subscriptions. */
   currentPeriod: SubscriptionListCurrentPeriod | null;
@@ -31,7 +37,7 @@ export interface SubscriptionListItem extends SubscriptionModel {
   category?: { id: string; name: string; color: string; icon: string | null } | null;
 }
 
-export interface SubscriptionDetail extends SubscriptionModel {
+export interface SubscriptionDetail extends SubscriptionModel, SubscriptionSuggestionCounts {
   nextExpectedDate: string | null;
   periods: SubscriptionPeriodModel[];
   /** The detail endpoint always includes the tag association, unlike bare subscription rows. */
@@ -43,7 +49,7 @@ export interface SubscriptionDetail extends SubscriptionModel {
       SubscriptionTransactions: {
         matchSource: string;
         matchedAt: string;
-      };
+      } & Partial<SubscriptionLinkMatchFields>;
     }
   >;
 }
@@ -136,8 +142,52 @@ export const unlinkTransactionsFromSubscription = async ({
   });
 };
 
-export const loadSuggestedMatches = async ({ id }: { id: string }): Promise<TransactionModel[]> => {
-  return api.get(`/subscriptions/${id}/suggest-matches`);
+export const loadSubscriptionSuggestions = async ({
+  id,
+  limit,
+}: {
+  id: string;
+  limit?: number;
+}): Promise<SubscriptionSuggestionsResponse> => {
+  const query: Record<string, string> = {};
+  if (limit !== undefined) query.limit = String(limit);
+
+  return api.get(`/subscriptions/${id}/suggestions`, query);
+};
+
+export const searchLinkableTransactions = async ({
+  id,
+  search,
+  from,
+  to,
+  accountIds,
+  sort,
+  limit,
+  offset,
+}: { id: string; accountIds?: string[] } & Omit<
+  LinkableTransactionsQuery,
+  'accountIds'
+>): Promise<LinkableTransactionsResponse> => {
+  const query: Record<string, string> = {};
+  if (search) query.search = search;
+  if (from) query.from = from;
+  if (to) query.to = to;
+  if (accountIds?.length) query.accountIds = accountIds.join(',');
+  if (sort) query.sort = sort;
+  if (limit !== undefined) query.limit = String(limit);
+  if (offset !== undefined) query.offset = String(offset);
+
+  return api.get(`/subscriptions/${id}/linkable-transactions`, query);
+};
+
+export const dismissSubscriptionSuggestions = async ({
+  id,
+  transactionIds,
+}: {
+  id: string;
+  transactionIds: string[];
+}): Promise<DismissSubscriptionSuggestionsResponse> => {
+  return api.post(`/subscriptions/${id}/suggestions/dismiss`, { transactionIds });
 };
 
 interface UpcomingPayment extends EntityLogoFields {

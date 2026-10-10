@@ -36,6 +36,7 @@ const BASE_SUBSCRIPTION: SubscriptionListItem = {
   currentPeriod: null,
   nextDueDate: null,
   paidPeriodsCount: 0,
+  pendingSuggestionsCount: 0,
 };
 
 export const buildSubscription = (overrides: Partial<SubscriptionListItem> = {}): SubscriptionListItem => ({

@@ -22,6 +22,7 @@ import {
   validateTagsOwnership,
 } from './helpers';
 import { assertInstallmentScheduleComplete } from './installments';
+import { backfillSubscriptionMatchesAfterCommit } from './matching/backfill-subscription';
 import { resolveOpenPeriodStatus } from './resolve-period-status';
 
 interface CreateSubscriptionParams extends EntityLogoPayload {
@@ -157,6 +158,9 @@ export const createSubscription = withTransaction(
     // manual logo is never clobbered. Deferred to afterCommit so the worker only
     // sees a committed row.
     enqueueLogoResolutionAfterCommit({ entity: 'subscription', id: subscription.id });
+
+    // Link or suggest matching history once the subscription and its first period are committed.
+    await backfillSubscriptionMatchesAfterCommit({ userId, subscriptionId: subscription.id });
 
     // Surface expectedAmount as a decimal so the response matches GET (the
     // column holds raw cents).
