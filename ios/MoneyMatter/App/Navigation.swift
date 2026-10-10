@@ -39,6 +39,11 @@ enum TransactionsRoute: Hashable {
     case optimizations
 }
 
+/// Pushes within the Settings sheet's stack.
+enum SettingsRoute: Hashable {
+    case monthlyBudget
+}
+
 /// A request to open the review card stack.
 struct ReviewStackRequest: Identifiable, Hashable {
     let id = UUID()
@@ -59,6 +64,7 @@ final class AppRouter {
     /// Type-erased so the Insights area can push its own route types.
     var insightsPath = NavigationPath()
     var isSettingsPresented = false
+    var settingsPath: [SettingsRoute] = []
     var reviewStack: ReviewStackRequest?
 
     /// Switches tabs, optionally returning the destination tab to its root.
@@ -76,7 +82,26 @@ final class AppRouter {
     }
 
     func presentSettings() {
+        settingsPath.removeAll()
         isSettingsPresented = true
+    }
+
+    /// Presents Settings with the monthly budget screen pushed.
+    func presentMonthlyBudgetSettings() {
+        settingsPath = [.monthlyBudget]
+        isSettingsPresented = true
+    }
+
+    func open(_ link: AppDeepLink) {
+        switch link {
+        case .home:
+            reviewStack = nil
+            isSettingsPresented = false
+            show(.home, popToRoot: true)
+        case .monthlyBudgetSettings:
+            reviewStack = nil
+            presentMonthlyBudgetSettings()
+        }
     }
 
     func presentReviewStack(expectedTotal: Int? = nil) {

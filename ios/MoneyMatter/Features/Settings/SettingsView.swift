@@ -6,15 +6,18 @@ import SwiftUI
 /// `SettingsIconTile` and push that area's screen, then server, sign out, and version.
 struct SettingsView: View {
     @Environment(SessionStore.self) private var session
+    @Environment(AppRouter.self) private var router
     @Environment(\.dismiss) private var dismiss
     @State private var confirmsSignOut = false
     @State private var confirmsChangeServer = false
     @State private var isWorking = false
 
     var body: some View {
-        NavigationStack {
+        @Bindable var router = router
+        NavigationStack(path: $router.settingsPath) {
             List {
                 profileSection
+                budgetSection
                 organizationSection
                 sharingSection
                 dataSection
@@ -50,6 +53,12 @@ struct SettingsView: View {
             }
             .listStyle(.insetGrouped)
             .navigationTitle("Settings")
+            .navigationDestination(for: SettingsRoute.self) { route in
+                switch route {
+                case .monthlyBudget:
+                    MonthlyBudgetSettingsScreen()
+                }
+            }
             .navigationBarTitleDisplayMode(.large)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
@@ -92,6 +101,14 @@ struct SettingsView: View {
 
             if let base = session.baseCurrency {
                 LabeledContent("Base Currency", value: base.currency?.currency ?? base.currencyCode)
+            }
+        }
+    }
+
+    private var budgetSection: some View {
+        Section("Budget") {
+            NavigationLink(value: SettingsRoute.monthlyBudget) {
+                SettingsHubRow("Monthly Budget", systemImage: "gauge.with.dots.needle.67percent", color: .orange)
             }
         }
     }

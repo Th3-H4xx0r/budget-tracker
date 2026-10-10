@@ -27,7 +27,10 @@ final class AppDependencies {
             webAuthenticator: webAuthenticator,
             passkeyAuthenticator: passkeyAuthenticator
         )
-        session.onSessionEnded = { [weak referenceData] in referenceData?.reset() }
+        session.onSessionEnded = { [weak referenceData] in
+            referenceData?.reset()
+            MonthlyBudgetAlerts.sessionEnded()
+        }
     }
 
     /// Services for the connected server; `nil` before a server is chosen.

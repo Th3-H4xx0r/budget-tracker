@@ -256,6 +256,19 @@ const ZodSavedPivotViewConfigSchema = withDateOrder(
   }),
 );
 
+// Monthly spending cap in the user's base currency. `amount` is a decimal, not cents: the
+// settings JSONB is not a Money column. The field defaults let a patch that sets only one field
+// on an unset budget still persist a complete object.
+const ZodMonthlySpendingBudgetSchema = z.object({
+  amount: z.number().min(0).nullable().default(null),
+  alertsEnabled: z.boolean().default(true),
+});
+
+export const DEFAULT_MONTHLY_SPENDING_BUDGET: endpointsTypes.MonthlySpendingBudgetSettings = {
+  amount: null,
+  alertsEnabled: true,
+};
+
 const ZodSavedPivotViewSchema = z.object({
   id: z.string(),
   name: z.string().min(1).max(endpointsTypes.SAVED_PIVOT_VIEW_NAME_MAX_LENGTH),
@@ -297,6 +310,7 @@ export const ZodSettingsSchema = z.object({
   // recordId(): the branded RecordId output breaks the SettingsPatchSchemaIsInSync assertion below.
   savingsCategoryIds: z.array(z.uuid()).optional(),
   currencyDisplay: z.enum(endpointsTypes.CURRENCY_DISPLAY_PREFERENCES).optional(),
+  monthlySpendingBudget: ZodMonthlySpendingBudgetSchema.optional(),
 });
 
 export type SettingsSchema = z.infer<typeof ZodSettingsSchema>;
@@ -396,6 +410,13 @@ export const ZodSettingsPatchSchema = z.object({
   matchTransfersWithManualAccounts: z.boolean().optional(),
   savingsCategoryIds: z.array(z.uuid()).optional(),
   currencyDisplay: z.enum(endpointsTypes.CURRENCY_DISPLAY_PREFERENCES).optional(),
+  // `amount: null` clears the budget; the deep merge writes null over a stored amount.
+  monthlySpendingBudget: z
+    .object({
+      amount: z.number().min(0).nullable().optional(),
+      alertsEnabled: z.boolean().optional(),
+    })
+    .optional(),
 });
 
 export type SettingsPatchSchema = z.infer<typeof ZodSettingsPatchSchema>;
@@ -452,6 +473,16 @@ export type SidebarSectionsSchemaIsInSync = Expect<
 >;
 
 /**
+ * Compile-time drift guard: the monthly-spending-budget schema must infer exactly the shared
+ * `MonthlySpendingBudgetSettings` contract the clients also read.
+ *
+ * @public exported only so the assertion isn't flagged as unused.
+ */
+export type MonthlySpendingBudgetSchemaIsInSync = Expect<
+  Equals<z.infer<typeof ZodMonthlySpendingBudgetSchema>, endpointsTypes.MonthlySpendingBudgetSettings>
+>;
+
+/**
  * Compile-time drift guard: a stored custom endpoint and the `AICustomEndpointInfo` the API
  * returns declare the same fields apart from how the key is represented.
  *
@@ -464,6 +495,7 @@ export type AiCustomEndpointSchemaIsInSync = Expect<
 export const DEFAULT_SETTINGS: SettingsSchema = {
   locale: SUPPORTED_LOCALES.ENGLISH,
   includeCreditLimitInStats: false,
+  monthlySpendingBudget: { ...DEFAULT_MONTHLY_SPENDING_BUDGET },
 };
 
 @Table({

@@ -1,6 +1,6 @@
 import { getDefaultValue } from '@common/helpers/get-default-value-from-zod-schema';
 import { describe, expect, it } from '@jest/globals';
-import { SettingsSchema, ZodSettingsSchema } from '@models/user-settings.model';
+import { DEFAULT_MONTHLY_SPENDING_BUDGET, SettingsSchema, ZodSettingsSchema } from '@models/user-settings.model';
 import * as helpers from '@tests/helpers';
 
 describe('Update user settings', () => {
@@ -8,7 +8,10 @@ describe('Update user settings', () => {
     const useSettings = await helpers.getUserSettings({ raw: true });
     const defaultUserSettingsValue = getDefaultValue(ZodSettingsSchema);
 
-    expect(useSettings).toStrictEqual(defaultUserSettingsValue);
+    expect(useSettings).toStrictEqual({
+      ...defaultUserSettingsValue,
+      monthlySpendingBudget: DEFAULT_MONTHLY_SPENDING_BUDGET,
+    });
   });
 
   it('updates empty settings and returns new value right away', async () => {
@@ -22,7 +25,10 @@ describe('Update user settings', () => {
     });
 
     expect(updatedUserSettings).toStrictEqual(newSettings);
-    expect(await helpers.getUserSettings({ raw: true })).toStrictEqual(newSettings);
+    expect(await helpers.getUserSettings({ raw: true })).toStrictEqual({
+      ...newSettings,
+      monthlySpendingBudget: DEFAULT_MONTHLY_SPENDING_BUDGET,
+    });
 
     const overridingSettings: SettingsSchema = { locale: 'uk' };
 
@@ -32,7 +38,10 @@ describe('Update user settings', () => {
     });
 
     expect(overridden).toStrictEqual(overridingSettings);
-    expect(await helpers.getUserSettings({ raw: true })).toStrictEqual(overridingSettings);
+    expect(await helpers.getUserSettings({ raw: true })).toStrictEqual({
+      ...overridingSettings,
+      monthlySpendingBudget: DEFAULT_MONTHLY_SPENDING_BUDGET,
+    });
   });
 
   it('saves every accepted widget config shape', async () => {

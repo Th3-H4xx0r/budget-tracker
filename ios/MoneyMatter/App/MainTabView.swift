@@ -11,6 +11,9 @@ struct MainTabView: View {
     @State private var router = AppRouter()
     @State private var unreviewedCount = 0
     @State private var isAddingTransaction = false
+    @State private var budget = MonthlyBudgetModel()
+    @State private var deepLinks = DeepLinkInbox.shared
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         TabView(selection: $router.selectedTab) {
@@ -61,6 +64,34 @@ struct MainTabView: View {
         .onChange(of: router.reviewStack == nil) { _, isClosed in
             if isClosed { Task { await loadUnreviewedCount() } }
         }
+        // On launch and sign-in: refresh the budget snapshot, widget, and alerts.
+        .task {
+            await budget.refresh(client: services.client)
+            MonthlyBudgetAlerts.scheduleBackgroundRefresh()
+        }
+        .onChange(of: scenePhase) { _, phase in
+            switch phase {
+            case .active: Task { await budget.refresh(client: services.client) }
+            case .background: MonthlyBudgetAlerts.scheduleBackgroundRefresh()
+            default: break
+            }
+        }
+        // After transaction saves and deletes; a burst of writes settles into one refresh.
+        .task(id: TransactionChangeFeed.shared.latest?.id) {
+            guard TransactionChangeFeed.shared.latest != nil else { return }
+            try? await Task.sleep(for: .seconds(1))
+            guard !Task.isCancelled else { return }
+            await budget.refresh(client: services.client)
+        }
+        .onOpenURL { url in
+            if let link = AppDeepLink(url: url) { router.open(link) }
+        }
+        .onChange(of: deepLinks.pending, initial: true) { _, link in
+            guard let link else { return }
+            deepLinks.pending = nil
+            router.open(link)
+        }
+        .environment(budget)
         // Last, so the sheet and cover content can read the router too.
         .environment(router)
     }

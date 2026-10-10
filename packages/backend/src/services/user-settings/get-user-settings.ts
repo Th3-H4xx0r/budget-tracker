@@ -1,5 +1,5 @@
 import { getDefaultValue } from '@common/helpers/get-default-value-from-zod-schema';
-import UserSettings, { ZodSettingsSchema } from '@models/user-settings.model';
+import UserSettings, { DEFAULT_MONTHLY_SPENDING_BUDGET, ZodSettingsSchema } from '@models/user-settings.model';
 
 import { withTransaction } from '../common/with-transaction';
 import { type RedactedSettingsSchema, redactKeyMaterial } from './redact-key-material';
@@ -11,7 +11,11 @@ export const getUserSettings = withTransaction(
       attributes: ['settings'],
     });
 
-    const defaults = getDefaultValue(ZodSettingsSchema);
+    // `getDefaultValue` skips optional keys, so optional keys with a reported default are listed here.
+    const defaults = {
+      ...getDefaultValue(ZodSettingsSchema),
+      monthlySpendingBudget: { ...DEFAULT_MONTHLY_SPENDING_BUDGET },
+    };
 
     if (!userSettings) {
       return defaults;

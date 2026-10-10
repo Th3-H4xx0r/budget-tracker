@@ -391,6 +391,15 @@ export interface SidebarSectionsConfig {
   loans: boolean;
 }
 
+// Monthly spending cap, persisted in the user-settings JSONB. `amount` is a decimal in the
+// user's base currency (>= 0), `null` when no budget is set. `GET /user/settings` reports
+// `{ amount: null, alertsEnabled: true }` when nothing is stored. The backend Zod schema
+// (`ZodMonthlySpendingBudgetSchema`) is asserted to infer exactly this shape.
+export interface MonthlySpendingBudgetSettings {
+  amount: number | null;
+  alertsEnabled: boolean;
+}
+
 // How fiat amounts render their currency: `symbol` disambiguates (CA$, A$, SGD), `narrowSymbol`
 // is what locals use (Rp, ₴, zł) but collapses every dollar to `$`. Persisted in the
 // user-settings JSONB; the backend Zod enum is built straight off this tuple.

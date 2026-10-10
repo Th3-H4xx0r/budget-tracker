@@ -1,8 +1,14 @@
+import MoneyMatterKit
 import SwiftUI
+import UserNotifications
 
 @main
 struct MoneyMatterApp: App {
     @State private var dependencies = AppDependencies.live()
+
+    init() {
+        UNUserNotificationCenter.current().delegate = AppNotificationDelegate.shared
+    }
 
     var body: some Scene {
         WindowGroup {
@@ -16,6 +22,9 @@ struct MoneyMatterApp: App {
                     .environment(dependencies.session)
                     .environment(dependencies.referenceData)
             }
+        }
+        .backgroundTask(.appRefresh(SharedContainer.budgetRefreshTaskIdentifier)) {
+            await MonthlyBudgetAlerts.runBackgroundRefresh()
         }
     }
 }

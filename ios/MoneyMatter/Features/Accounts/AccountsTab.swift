@@ -1,7 +1,7 @@
 import MoneyMatterKit
 import SwiftUI
 
-/// Root of the Accounts tab: net worth, accounts by root group, other accounts, a collapsed
+/// Root of the Accounts tab: net worth with its history chart, accounts by root group, other accounts, a collapsed
 /// Archived section, then the Assets and Bank Connections entry points.
 struct AccountsTab: View {
     private struct GroupSection: Identifiable {
@@ -19,6 +19,9 @@ struct AccountsTab: View {
     @State private var isCreatePresented = false
     @State private var isArchivedExpanded = false
     @State private var syncMonitor = BankSyncMonitor.shared
+    @State private var history = NetWorthHistoryModel()
+    /// The scrubbed day of the net worth chart, shown in the hero.
+    @State private var scrubbed: NetWorthChartPoint?
 
     var body: some View {
         @Bindable var router = router
@@ -44,10 +47,13 @@ struct AccountsTab: View {
             .refreshable {
                 async let accounts: Void = referenceData.refresh()
                 async let groups: Void = loadGroups()
-                _ = await (accounts, groups)
+                async let historyLoad: Void = history.load(stats: services.stats)
+                _ = await (accounts, groups, historyLoad)
             }
             .task {
-                await loadGroups()
+                async let groups: Void = loadGroups()
+                async let historyLoad: Void = history.loadIfNeeded(stats: services.stats)
+                _ = await (groups, historyLoad)
             }
             .onChange(of: referenceData.accounts) {
                 Task { await loadGroups() }
@@ -117,7 +123,20 @@ struct AccountsTab: View {
             }
         } else {
             Section {
-                netWorthHeader
+                VStack(alignment: .leading, spacing: DS.Space.l) {
+                    netWorthHeader
+                    NetWorthHistoryChart(
+                        state: history.state,
+                        range: history.range,
+                        scrubbed: $scrubbed,
+                        currencyCode: session.baseCurrency?.currencyCode ?? "",
+                        setRange: { range in
+                            scrubbed = nil
+                            Task { await history.setRange(range, stats: services.stats) }
+                        },
+                        retry: { await history.load(stats: services.stats) }
+                    )
+                }
             }
             .accountsHeroRow()
             ForEach(groupSections) { section in
@@ -180,19 +199,42 @@ struct AccountsTab: View {
         }
     }
 
+    /// Net worth with its change over the chart's range. Scrubbing shows the scrubbed day's
+    /// balance, its change from the range's start and its date instead.
     private var netWorthHeader: some View {
         let code = session.baseCurrency?.currencyCode ?? ""
+        let digits = referenceData.digits(for: code)
+        let trend = history.state.value
+        let shown = scrubbed?.amount ?? netWorth
+        let delta: Decimal? = if let scrubbed {
+            trend?.baseline.map { scrubbed.amount - $0 }
+        } else {
+            trend?.change
+        }
+        let value = code.isEmpty ? "" : MoneyFormat.string(shown, currencyCode: code, digits: digits)
         return HeroValueHeader(
-            code.isEmpty ? "" : MoneyFormat.string(netWorth, currencyCode: code, digits: referenceData.digits(for: code)),
-            numericValue: NSDecimalNumber(decimal: netWorth).doubleValue,
-            changeLabel: nil,
-            status: hasBankAccounts ? BankSyncText.summary(syncMonitor.status, isSyncing: syncMonitor.isSyncing) : String(localized: "Net worth"),
-            statusColor: hasBankAccounts ? syncColor : nil,
-            statusPulsing: syncMonitor.isSyncing
+            value,
+            numericValue: NSDecimalNumber(decimal: shown).doubleValue,
+            valueAnimation: scrubbed == nil ? .snappy : nil,
+            change: code.isEmpty ? nil : delta.map { changeText(delta: $0, baseline: trend?.baseline ?? 0, currencyCode: code) },
+            direction: ChangeDirection(delta),
+            changeLabel: scrubbed == nil ? history.range.summaryLabel : nil,
+            status: scrubbed.map { $0.date.formatted(date: .abbreviated, time: .omitted) }
+                ?? (hasBankAccounts ? BankSyncText.summary(syncMonitor.status, isSyncing: syncMonitor.isSyncing) : String(localized: "Net worth")),
+            statusColor: scrubbed == nil && hasBankAccounts ? syncColor : nil,
+            statusPulsing: scrubbed == nil && syncMonitor.isSyncing
         )
         .accessibilityElement(children: .combine)
         .accessibilityLabel(Text("Net worth"))
-        .accessibilityValue(Text(verbatim: code.isEmpty ? "" : MoneyFormat.string(netWorth, currencyCode: code, digits: referenceData.digits(for: code))))
+        .accessibilityValue(Text(verbatim: value))
+    }
+
+    private func changeText(delta: Decimal, baseline: Decimal, currencyCode: String) -> String {
+        let amount = MoneyFormat.string(abs(delta), currencyCode: currencyCode, digits: referenceData.digits(for: currencyCode))
+        let sign = delta >= 0 ? "+" : "\u{2212}"
+        guard baseline != 0 else { return sign + amount }
+        let percent = (delta / abs(baseline)).doubleValue
+        return "\(sign)\(amount) (\(percent.formatted(.percent.precision(.fractionLength(2)).sign(strategy: .always()))))"
     }
 
     private var hasBankAccounts: Bool {

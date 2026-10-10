@@ -127,6 +127,8 @@ export interface UserSettingsSchema {
    */
   savingsCategoryIds?: string[];
   currencyDisplay?: endpointsTypes.CurrencyDisplayPreference;
+  /** Monthly spending cap in the base currency (decimal); `amount: null` means no budget is set. */
+  monthlySpendingBudget?: endpointsTypes.MonthlySpendingBudgetSettings;
 }
 
 export const getUserSettings = async (): Promise<UserSettingsSchema> => {

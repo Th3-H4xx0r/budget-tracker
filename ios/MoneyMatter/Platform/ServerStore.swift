@@ -8,15 +8,24 @@ protocol ServerStoring: AnyObject {
     func clearServer()
 }
 
+/// Stores the server origin in the App Group defaults so the widget extension can reach the
+/// same server. A value left in `legacyDefaults` (the app's own defaults) is moved over on
+/// first load.
 final class UserDefaultsServerStore: ServerStoring {
     private let defaults: UserDefaults
-    private let key = "serverOrigin"
+    private let legacyDefaults: UserDefaults?
+    private let key = SharedContainer.serverOriginKey
 
-    init(defaults: UserDefaults = .standard) {
+    init(defaults: UserDefaults = SharedContainer.defaults, legacyDefaults: UserDefaults? = .standard) {
         self.defaults = defaults
+        self.legacyDefaults = legacyDefaults === defaults ? nil : legacyDefaults
     }
 
     func loadServer() -> ServerEndpoint? {
+        if defaults.string(forKey: key) == nil, let legacy = legacyDefaults?.string(forKey: key) {
+            defaults.set(legacy, forKey: key)
+            legacyDefaults?.removeObject(forKey: key)
+        }
         guard let origin = defaults.string(forKey: key) else { return nil }
         return try? ServerEndpoint(validating: origin)
     }
@@ -27,5 +36,6 @@ final class UserDefaultsServerStore: ServerStoring {
 
     func clearServer() {
         defaults.removeObject(forKey: key)
+        legacyDefaults?.removeObject(forKey: key)
     }
 }

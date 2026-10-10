@@ -8,6 +8,8 @@
 
 /* Begin PBXBuildFile section */
 		7A000000000000000000001D /* MoneyMatterKit in Frameworks */ = {isa = PBXBuildFile; productRef = 7A000000000000000000001C /* MoneyMatterKit */; };
+		7A000000000000000000002B /* MoneyMatterKit in Frameworks */ = {isa = PBXBuildFile; productRef = 7A000000000000000000002A /* MoneyMatterKit */; };
+		7A000000000000000000002C /* MoneyMatterWidget.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 7A0000000000000000000020 /* MoneyMatterWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -18,12 +20,34 @@
 			remoteGlobalIDString = 7A0000000000000000000008;
 			remoteInfo = MoneyMatter;
 		};
+		7A000000000000000000002E /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 7A0000000000000000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 7A0000000000000000000023;
+			remoteInfo = MoneyMatterWidget;
+		};
 /* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		7A000000000000000000002D /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				7A000000000000000000002C /* MoneyMatterWidget.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		7A0000000000000000000006 /* MoneyMatter.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MoneyMatter.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		7A0000000000000000000007 /* MoneyMatterTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = MoneyMatterTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		7A000000000000000000001F /* MoneyMatterKit */ = {isa = PBXFileReference; lastKnownFileType = wrapper; path = MoneyMatterKit; sourceTree = "<group>"; };
+		7A0000000000000000000020 /* MoneyMatterWidget.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = MoneyMatterWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -33,6 +57,13 @@
 				Resources/Info.plist,
 			);
 			target = 7A0000000000000000000008 /* MoneyMatter */;
+		};
+		7A0000000000000000000022 /* Exceptions for "MoneyMatterWidget" folder in "MoneyMatterWidget" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 7A0000000000000000000023 /* MoneyMatterWidget */;
 		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
@@ -48,6 +79,14 @@
 		7A0000000000000000000005 /* MoneyMatterTests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = MoneyMatterTests;
+			sourceTree = "<group>";
+		};
+		7A0000000000000000000021 /* MoneyMatterWidget */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				7A0000000000000000000022 /* Exceptions for "MoneyMatterWidget" folder in "MoneyMatterWidget" target */,
+			);
+			path = MoneyMatterWidget;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -68,6 +107,14 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		7A0000000000000000000025 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				7A000000000000000000002B /* MoneyMatterKit in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -77,6 +124,7 @@
 				7A000000000000000000001F /* MoneyMatterKit */,
 				7A0000000000000000000004 /* MoneyMatter */,
 				7A0000000000000000000005 /* MoneyMatterTests */,
+				7A0000000000000000000021 /* MoneyMatterWidget */,
 				7A0000000000000000000003 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -86,6 +134,7 @@
 			children = (
 				7A0000000000000000000006 /* MoneyMatter.app */,
 				7A0000000000000000000007 /* MoneyMatterTests.xctest */,
+				7A0000000000000000000020 /* MoneyMatterWidget.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -100,10 +149,12 @@
 				7A000000000000000000000A /* Sources */,
 				7A000000000000000000000B /* Frameworks */,
 				7A000000000000000000000C /* Resources */,
+				7A000000000000000000002D /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				7A000000000000000000002F /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				7A0000000000000000000004 /* MoneyMatter */,
@@ -139,6 +190,29 @@
 			productReference = 7A0000000000000000000007 /* MoneyMatterTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
 		};
+		7A0000000000000000000023 /* MoneyMatterWidget */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 7A0000000000000000000027 /* Build configuration list for PBXNativeTarget "MoneyMatterWidget" */;
+			buildPhases = (
+				7A0000000000000000000024 /* Sources */,
+				7A0000000000000000000025 /* Frameworks */,
+				7A0000000000000000000026 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				7A0000000000000000000021 /* MoneyMatterWidget */,
+			);
+			name = MoneyMatterWidget;
+			packageProductDependencies = (
+				7A000000000000000000002A /* MoneyMatterKit */,
+			);
+			productName = MoneyMatterWidget;
+			productReference = 7A0000000000000000000020 /* MoneyMatterWidget.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -155,6 +229,9 @@
 					7A0000000000000000000009 = {
 						CreatedOnToolsVersion = 27.0;
 						TestTargetID = 7A0000000000000000000008;
+					};
+					7A0000000000000000000023 = {
+						CreatedOnToolsVersion = 27.0;
 					};
 				};
 			};
@@ -177,6 +254,7 @@
 			targets = (
 				7A0000000000000000000008 /* MoneyMatter */,
 				7A0000000000000000000009 /* MoneyMatterTests */,
+				7A0000000000000000000023 /* MoneyMatterWidget */,
 			);
 		};
 /* End PBXProject section */
@@ -190,6 +268,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		7A000000000000000000000F /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		7A0000000000000000000026 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -213,6 +298,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		7A0000000000000000000024 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -220,6 +312,11 @@
 			isa = PBXTargetDependency;
 			target = 7A0000000000000000000008 /* MoneyMatter */;
 			targetProxy = 7A0000000000000000000010 /* PBXContainerItemProxy */;
+		};
+		7A000000000000000000002F /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 7A0000000000000000000023 /* MoneyMatterWidget */;
+			targetProxy = 7A000000000000000000002E /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -467,6 +564,72 @@
 			};
 			name = Release;
 		};
+		7A0000000000000000000028 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
+				CODE_SIGN_ENTITLEMENTS = MoneyMatterWidget/MoneyMatterWidget.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = VY5CNF8734;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = MoneyMatterWidget/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = MoneyMatter;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.pranavkrishna.budgettracker.widget;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		7A0000000000000000000029 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
+				CODE_SIGN_ENTITLEMENTS = MoneyMatterWidget/MoneyMatterWidget.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = VY5CNF8734;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = MoneyMatterWidget/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = MoneyMatter;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.pranavkrishna.budgettracker.widget;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -497,6 +660,15 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
+		7A0000000000000000000027 /* Build configuration list for PBXNativeTarget "MoneyMatterWidget" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				7A0000000000000000000028 /* Debug */,
+				7A0000000000000000000029 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 /* End XCConfigurationList section */
 
 /* Begin XCLocalSwiftPackageReference section */
@@ -508,6 +680,11 @@
 
 /* Begin XCSwiftPackageProductDependency section */
 		7A000000000000000000001C /* MoneyMatterKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 7A000000000000000000001B /* XCLocalSwiftPackageReference "MoneyMatterKit" */;
+			productName = MoneyMatterKit;
+		};
+		7A000000000000000000002A /* MoneyMatterKit */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = 7A000000000000000000001B /* XCLocalSwiftPackageReference "MoneyMatterKit" */;
 			productName = MoneyMatterKit;
