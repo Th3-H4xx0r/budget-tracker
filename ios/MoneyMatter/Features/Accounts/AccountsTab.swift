@@ -22,6 +22,8 @@ struct AccountsTab: View {
     @State private var history = NetWorthHistoryModel()
     /// The scrubbed day of the net worth chart, shown in the hero.
     @State private var scrubbed: NetWorthChartPoint?
+    /// Whether the net worth figure is on screen; the bar's compact title shows once it isn't.
+    @State private var heroVisible = true
 
     var body: some View {
         @Bindable var router = router
@@ -31,7 +33,8 @@ struct AccountsTab: View {
                 assetsSection
                 connectionsSection
             }
-            .navigationTitle("Accounts")
+            // Without accounts there is no hero, so the compact title stays.
+            .heroScreenTitle("Accounts", isHeroVisible: heroVisible && !referenceData.accounts.isEmpty)
             .toolbar {
                 if referenceData.accounts.contains(where: { $0.bankDataProviderConnectionId != nil }) {
                     ToolbarItem(placement: .topBarLeading) {
@@ -124,7 +127,17 @@ struct AccountsTab: View {
         } else {
             Section {
                 VStack(alignment: .leading, spacing: DS.Space.l) {
-                    netWorthHeader
+                    VStack(alignment: .leading, spacing: DS.Space.xxs) {
+                        // The hero already reads as "Net worth" to VoiceOver.
+                        Text("Net worth")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                            .accessibilityHidden(true)
+                        netWorthHeader
+                            .onScrollVisibilityChange(threshold: 0.1) { visible in
+                                heroVisible = visible
+                            }
+                    }
                     NetWorthHistoryChart(
                         state: history.state,
                         range: history.range,
@@ -220,7 +233,7 @@ struct AccountsTab: View {
             direction: ChangeDirection(delta),
             changeLabel: scrubbed == nil ? history.range.summaryLabel : nil,
             status: scrubbed.map { $0.date.formatted(date: .abbreviated, time: .omitted) }
-                ?? (hasBankAccounts ? BankSyncText.summary(syncMonitor.status, isSyncing: syncMonitor.isSyncing) : String(localized: "Net worth")),
+                ?? (hasBankAccounts ? BankSyncText.summary(syncMonitor.status, isSyncing: syncMonitor.isSyncing) : nil),
             statusColor: scrubbed == nil && hasBankAccounts ? syncColor : nil,
             statusPulsing: scrubbed == nil && syncMonitor.isSyncing
         )

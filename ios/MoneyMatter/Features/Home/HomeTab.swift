@@ -12,9 +12,6 @@ struct HomeTab: View {
         @Bindable var router = router
         NavigationStack(path: $router.homePath) {
             HomeScreen(model: HomeViewModel(services: services))
-                .navigationTitle("Home")
-                // No bar: spending leads the screen, with the glass buttons beside it.
-                .toolbar(.hidden, for: .navigationBar)
                 .navigationDestination(for: HomeRoute.self) { route in
                     switch route {
                     case .transaction(let id):
@@ -38,6 +35,8 @@ private struct HomeScreen: View {
     /// The scrubbed bar of the longer periods' chart, shown in the hero.
     @State private var selectedBucketID: String?
     @State private var isAddingTransaction = false
+    /// Whether the spending figure is on screen; the bar's compact title shows once it isn't.
+    @State private var heroVisible = true
     @Environment(AppRouter.self) private var router
     @Environment(SessionStore.self) private var session
     @Environment(ReferenceDataStore.self) private var referenceData
@@ -67,8 +66,12 @@ private struct HomeScreen: View {
         return snapshot
     }
 
+    private var isOverBudgetBannerShown: Bool {
+        budgetSnapshot?.isOverBudget ?? false
+    }
+
     /// The tab bar accessory carries the `+` while there is anything to review; otherwise
-    /// it sits in the header.
+    /// it sits in the toolbar.
     private var showsAddButton: Bool {
         (model.reviewSummary.value?.unreviewedCount ?? 0) == 0
     }
@@ -98,9 +101,7 @@ private struct HomeScreen: View {
         let today = CalendarDate(date: .now)
         ScrollView {
             VStack(spacing: Self.sectionSpacing) {
-                header
-
-                if let snapshot = budgetSnapshot, snapshot.isOverBudget {
+                if let snapshot = budgetSnapshot, isOverBudgetBannerShown {
                     OverBudgetBanner(snapshot: snapshot) {
                         router.presentMonthlyBudgetSettings()
                     }
@@ -113,16 +114,26 @@ private struct HomeScreen: View {
                 }
 
                 VStack(alignment: .leading, spacing: DS.Space.m) {
-                    SpendingHero(
-                        state: model.totals,
-                        selection: chartSelection,
-                        comparisonLabel: model.period.comparisonLabel,
-                        currencyCode: currencyCode,
-                        digits: digits,
-                        retry: { await model.loadTotals() }
-                    )
+                    VStack(alignment: .leading, spacing: DS.Space.xxs) {
+                        Text("Spending")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                            .accessibilityAddTraits(.isHeader)
+                        SpendingHero(
+                            state: model.totals,
+                            selection: chartSelection,
+                            comparisonLabel: model.period.comparisonLabel,
+                            currencyCode: currencyCode,
+                            digits: digits,
+                            retry: { await model.loadTotals() }
+                        )
+                        .onScrollVisibilityChange(threshold: 0.1) { visible in
+                            heroVisible = visible
+                        }
+                    }
                     if isCurrentMonth {
-                        HomeBudgetLine(model: budget) {
+                        // The banner already states the overrun, so the line keeps only its bar.
+                        HomeBudgetLine(model: budget, showsDetail: !isOverBudgetBannerShown) {
                             router.presentMonthlyBudgetSettings()
                         }
                     }
@@ -160,6 +171,8 @@ private struct HomeScreen: View {
             .animation(.default, value: model.reviewSummary.value)
         }
         .background(DS.Surface.canvas)
+        .heroScreenTitle("Spending", isHeroVisible: heroVisible)
+        .toolbar { toolbarItems }
         .refreshable {
             async let cards: Void = model.refresh()
             async let reference: Void = referenceData.refresh()
@@ -168,6 +181,14 @@ private struct HomeScreen: View {
         }
         .task {
             await model.loadIfNeeded()
+        }
+        .task(id: scenePhase) {
+            // Keeps the shared unread count fresh while Home is on screen.
+            guard scenePhase == .active else { return }
+            while !Task.isCancelled {
+                await unread.refresh(client: services.client)
+                try? await Task.sleep(for: .seconds(60))
+            }
         }
         .sheet(isPresented: $isAddingTransaction) {
             TransactionEditorSheet(mode: .create(accountId: nil))
@@ -183,104 +204,41 @@ private struct HomeScreen: View {
         }
     }
 
-    /// "Spending" as a large title, with compact glass buttons on its baseline: add (while
-    /// the review queue is empty), notifications, and profile.
-    private var header: some View {
-        HStack(alignment: .firstTextBaseline, spacing: DS.Space.s) {
-            Text("Spending")
-                .font(.largeTitle.bold())
-                .lineLimit(1)
-                .minimumScaleFactor(0.8)
-                .accessibilityAddTraits(.isHeader)
-            Spacer(minLength: DS.Space.s)
-            if showsAddButton {
-                HomeHeaderButton(systemImage: "plus", accessibilityLabel: String(localized: "Add transaction")) {
+    /// Add (while the review queue is empty) and notifications share one glass group;
+    /// profile sits apart.
+    @ToolbarContentBuilder
+    private var toolbarItems: some ToolbarContent {
+        if showsAddButton {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button("Add transaction", systemImage: "plus") {
                     isAddingTransaction = true
                 }
-                .transition(.scale.combined(with: .opacity))
             }
-            HomeHeaderButton(
-                systemImage: "bell",
-                badge: unread.count,
-                accessibilityLabel: String(localized: "Notifications")
-            ) {
+        }
+        ToolbarItem(placement: .topBarTrailing) {
+            Button("Notifications", systemImage: "bell") {
                 router.homePath.append(.notifications)
             }
-            HomeHeaderButton(accessibilityLabel: String(localized: "Profile and Settings")) {
+            .badge(unreadBadge)
+            .accessibilityValue(unread.count > 0 ? Text("\(unread.count) unread") : Text(verbatim: ""))
+        }
+        ToolbarSpacer(.fixed, placement: .topBarTrailing)
+        ToolbarItem(placement: .topBarTrailing) {
+            Button {
                 router.presentSettings()
             } label: {
                 Text(verbatim: session.user?.initials ?? "?")
                     .font(.footnote.weight(.semibold))
             }
-        }
-        .padding(.top, DS.Space.s)
-        .animation(.snappy, value: showsAddButton)
-        .task(id: scenePhase) {
-            // Keeps the shared unread count fresh while Home is on screen.
-            guard scenePhase == .active else { return }
-            while !Task.isCancelled {
-                await unread.refresh(client: services.client)
-                try? await Task.sleep(for: .seconds(60))
-            }
+            .accessibilityLabel(Text("Profile and Settings"))
         }
     }
-}
 
-/// A 36 pt Liquid Glass circle for Home's header, sitting on the title's baseline, with an
-/// optional unread badge on its corner. The hit area stays 44 pt.
-private struct HomeHeaderButton<Label: View>: View {
-    let accessibilityLabel: String
-    var badge: Int
-    let action: () -> Void
-    private let label: Label
-
-    private static var size: CGFloat { 36 }
-
-    init(badge: Int = 0, accessibilityLabel: String, action: @escaping () -> Void, @ViewBuilder label: () -> Label) {
-        self.badge = badge
-        self.accessibilityLabel = accessibilityLabel
-        self.action = action
-        self.label = label()
-    }
-
-    var body: some View {
-        Button(action: action) {
-            label
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.primary)
-                .frame(width: Self.size, height: Self.size)
-                .glassEffect(.regular.interactive(), in: .circle)
-                .frame(width: 44, height: 44)
-                .contentShape(.circle)
-        }
-        .buttonStyle(.plain)
-        .overlay(alignment: .topTrailing) {
-            if badge > 0 {
-                Text(verbatim: badge > 99 ? "99+" : "\(badge)")
-                    .font(.caption2.weight(.bold))
-                    .monospacedDigit()
-                    .foregroundStyle(DS.Palette.onAccent)
-                    .padding(.horizontal, 4)
-                    .frame(minWidth: 16, minHeight: 16)
-                    .background(DS.Palette.accent, in: .capsule)
-                    .offset(x: 0, y: 2)
-                    .accessibilityHidden(true)
-            }
-        }
-        .padding(.horizontal, -(44 - Self.size) / 2)
-        // The circle's centre sits about half a cap height above the title's baseline.
-        .alignmentGuide(.firstTextBaseline) { dimensions in
-            dimensions[VerticalAlignment.center] + 12
-        }
-        .accessibilityLabel(accessibilityLabel)
-        .accessibilityValue(badge > 0 ? Text("\(badge) unread") : Text(verbatim: ""))
-    }
-}
-
-extension HomeHeaderButton where Label == Image {
-    init(systemImage: String, badge: Int = 0, accessibilityLabel: String, action: @escaping () -> Void) {
-        self.init(badge: badge, accessibilityLabel: accessibilityLabel, action: action) {
-            Image(systemName: systemImage)
+    private var unreadBadge: Text? {
+        switch unread.count {
+        case ...0: nil
+        case 100...: Text(verbatim: "99+")
+        default: Text(verbatim: "\(unread.count)")
         }
     }
 }

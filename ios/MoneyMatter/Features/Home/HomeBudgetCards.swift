@@ -3,14 +3,16 @@ import SwiftUI
 
 /// The monthly budget under the hero: a slim progress bar with what's left, or a small
 /// "Set a monthly budget" link when none is set. Both open the budget settings. The
-/// over-budget banner sits separately, at the top of Home.
+/// over-budget banner sits separately, at the top of Home; while it shows, pass
+/// `showsDetail: false` so the bar drops its duplicate "Over by" line.
 struct HomeBudgetLine: View {
     let model: MonthlyBudgetModel
+    var showsDetail = true
     let openSettings: () -> Void
 
     var body: some View {
         if let snapshot = model.snapshot, snapshot.hasBudget {
-            BudgetProgressLine(snapshot: snapshot, action: openSettings)
+            BudgetProgressLine(snapshot: snapshot, showsDetail: showsDetail, action: openSettings)
         } else if model.hasLoaded {
             Button("Set a monthly budget", action: openSettings)
                 .font(.footnote.weight(.semibold))
@@ -71,9 +73,11 @@ struct OverBudgetBanner: View {
 }
 
 /// A 4 pt bar in the accent (red once over) over one `.footnote` line: "$1,051 left of
-/// $4,000 · 22 days to go", or "Over by $988".
+/// $4,000 · 22 days to go", or "Over by $988". With `showsDetail` off, only the bar shows;
+/// VoiceOver still reads the line.
 struct BudgetProgressLine: View {
     let snapshot: MonthlySpendingSnapshot
+    var showsDetail = true
     let action: () -> Void
 
     private func money(_ amount: Decimal) -> String {
@@ -117,17 +121,20 @@ struct BudgetProgressLine: View {
                         }
                     }
                     .accessibilityHidden(true)
-                Text(verbatim: detail)
-                    .font(.footnote.weight(snapshot.isOverBudget ? .semibold : .regular))
-                    .monospacedDigit()
-                    .foregroundStyle(snapshot.isOverBudget ? DS.Palette.danger : Color(uiColor: .secondaryLabel))
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
+                if showsDetail {
+                    Text(verbatim: detail)
+                        .font(.footnote.weight(snapshot.isOverBudget ? .semibold : .regular))
+                        .monospacedDigit()
+                        .foregroundStyle(snapshot.isOverBudget ? DS.Palette.danger : Color(uiColor: .secondaryLabel))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                }
             }
             .contentShape(.rect)
         }
         .buttonStyle(.plain)
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text(verbatim: detail))
         .accessibilityAddTraits(.isButton)
         .accessibilityHint("Opens the monthly budget settings")
     }
