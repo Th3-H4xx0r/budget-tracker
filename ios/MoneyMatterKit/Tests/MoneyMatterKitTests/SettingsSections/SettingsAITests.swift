@@ -209,3 +209,64 @@ struct SettingsAITests {
         #expect(Endpoints.settingsMCPServerURL(server: server).absoluteString == "https://budget.example.com/mcp")
     }
 }
+
+/// Payloads in the shape the backend controllers return for a user set up on the web: two
+/// saved keys (one flagged invalid), one custom endpoint with a stored key, and categorization
+/// running on its default model with no per-feature pick.
+@Suite("Settings AI backend parity")
+struct SettingsAIBackendParityTests {
+    private func decode<Response>(_ endpoint: Endpoint<Response>, _ json: String) throws -> Response {
+        try endpoint.decodeBody(Data(json.utf8), JSONCoding.makeDecoder())
+    }
+
+    @Test("getAiApiKeyStatus: saved keys, statuses, and the default provider come through")
+    func savedKeys() throws {
+        let json = """
+        {"status":"success","response":{"hasApiKey":true,"providers":[
+          {"provider":"google","createdAt":"2026-10-01T10:00:00.000Z","status":"valid","lastValidatedAt":"2026-10-01T10:00:00.000Z"},
+          {"provider":"openai","createdAt":"2026-09-12T08:30:00.000Z","status":"invalid","lastValidatedAt":"2026-10-02T09:00:00.000Z","lastError":"Incorrect API key provided","invalidatedAt":"2026-10-02T09:00:00.000Z"}
+        ],"defaultProvider":"google"}}
+        """
+        let status = try decode(Endpoints.settingsAIKeyStatus(), json)
+        #expect(status.hasApiKey)
+        #expect(status.defaultProvider == .google)
+        #expect(status.providers.map(\.provider) == [.google, .openai])
+        #expect(status.providers.map(\.status) == [.valid, .invalid])
+        #expect(status.providers.allSatisfy { $0.createdAt != nil })
+        #expect(status.providers[1].lastError == "Incorrect API key provided")
+    }
+
+    @Test("getCustomEndpointsController: a saved endpoint and its redacted key flag come through")
+    func savedEndpoints() throws {
+        let json = """
+        {"status":"success","response":[
+          {"id":"0b8f6a8e-2d0a-4a51-9c1e-6a2f3d1b9e77","name":"Home Ollama","baseUrl":"http://ollama.lan:11434/v1","defaultModel":"llama3.1:8b","hasApiKey":true,"createdAt":"2026-10-01T10:00:00.000Z","status":"valid","lastValidatedAt":"2026-10-01T10:00:00.000Z"}
+        ]}
+        """
+        let endpoint = try #require(try decode(Endpoints.settingsAICustomEndpoints(), json).first)
+        #expect(endpoint.name == "Home Ollama")
+        #expect(endpoint.defaultModel == "llama3.1:8b")
+        #expect(endpoint.hasApiKey)
+        #expect(endpoint.status == .valid)
+    }
+
+    @Test("getFeaturesStatus: each feature's resolved model and credential source come through")
+    func featureModels() throws {
+        let json = """
+        {"status":"success","response":{"features":[
+          {"feature":"categorization","isConfigured":false,"modelId":"google/gemma-4-31b-it","modelName":"Gemma 4 31B","usingUserKey":true},
+          {"feature":"statement_parsing","isConfigured":true,"modelId":"custom/llama3.1:8b","modelName":"llama3.1:8b","usingUserKey":true,"customEndpointId":"0b8f6a8e-2d0a-4a51-9c1e-6a2f3d1b9e77","endpointName":"Home Ollama"},
+          {"feature":"investment_transactions_parsing","isConfigured":false,"modelId":"google/gemini-3.6-flash","modelName":"Gemini 3.6 Flash","usingUserKey":true},
+          {"feature":"recurring_detection","isConfigured":false,"modelId":"google/gemini-3.5-flash-lite","modelName":"Gemini 3.5 Flash Lite","usingUserKey":true}
+        ]}}
+        """
+        let features = try decode(Endpoints.settingsAIFeatures(), json)
+        let categorization = try #require(features.first { $0.feature == .categorization })
+        #expect(categorization.modelName == "Gemma 4 31B")
+        #expect(categorization.usingUserKey)
+        let statements = try #require(features.first { $0.feature == .statementParsing })
+        #expect(statements.isCustomModel)
+        #expect(statements.endpointName == "Home Ollama")
+        #expect(statements.customEndpointId == "0b8f6a8e-2d0a-4a51-9c1e-6a2f3d1b9e77")
+    }
+}

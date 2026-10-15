@@ -369,6 +369,61 @@ struct DataOptimizationTests {
     }
 }
 
+/// `GET /user/settings/ai/features` as `getFeaturesStatus` builds it. `isConfigured` is
+/// `!!config` (an explicit per-feature pick); a feature without one still resolves a model
+/// through the user's key, endpoint, or the server key, and the web treats any resolved
+/// `categorization` entry as set up.
+@Suite("Data AI categorization readiness")
+struct DataAICategorizationReadinessTests {
+    private func categorization(_ entry: String) throws -> DataAIFeatureStatus {
+        let json = """
+        {"status":"success","response":{"features":[
+          \(entry),
+          {"feature":"statement_parsing","isConfigured":false,"modelId":"google/gemini-3.6-flash","modelName":"Gemini 3.6 Flash","usingUserKey":true},
+          {"feature":"investment_transactions_parsing","isConfigured":false,"modelId":"google/gemini-3.6-flash","modelName":"Gemini 3.6 Flash","usingUserKey":true},
+          {"feature":"recurring_detection","isConfigured":false,"modelId":"google/gemini-3.5-flash-lite","modelName":"Gemini 3.5 Flash Lite","usingUserKey":true}
+        ]}}
+        """
+        return try #require(try decodeEnvelope(Endpoints.dataAICategorizationFeature(), json))
+    }
+
+    @Test("A saved provider key with no per-feature pick runs on the feature's default model")
+    func savedKeyOnDefaultModelIsReady() throws {
+        let status = try categorization(
+            #"{"feature":"categorization","isConfigured":false,"modelId":"google/gemma-4-31b-it","modelName":"Gemma 4 31B","usingUserKey":true}"#
+        )
+        #expect(status.modelName == "Gemma 4 31B")
+        #expect(status.usingUserKey)
+        #expect(status.isReadyToCategorize)
+    }
+
+    @Test("A saved custom endpoint with no per-feature pick serves categorization")
+    func fallbackEndpointIsReady() throws {
+        let status = try categorization(
+            #"{"feature":"categorization","isConfigured":false,"modelId":"custom/llama3.1:8b","modelName":"llama3.1:8b","usingUserKey":true,"customEndpointId":"0b8f6a8e-2d0a-4a51-9c1e-6a2f3d1b9e77","endpointName":"Home Ollama"}"#
+        )
+        #expect(status.endpointName == "Home Ollama")
+        #expect(status.isReadyToCategorize)
+    }
+
+    @Test("The server key serves the default model without any user setup")
+    func serverKeyDefaultIsReady() throws {
+        let status = try categorization(
+            #"{"feature":"categorization","isConfigured":false,"modelId":"google/gemma-4-31b-it","modelName":"Gemma 4 31B","usingUserKey":false}"#
+        )
+        #expect(!status.usingUserKey)
+        #expect(status.isReadyToCategorize)
+    }
+
+    @Test("An explicit per-feature pick is ready")
+    func explicitPickIsReady() throws {
+        let status = try categorization(
+            #"{"feature":"categorization","isConfigured":true,"modelId":"openai/gpt-5.4-nano","modelName":"GPT-5.4 Nano","usingUserKey":true}"#
+        )
+        #expect(status.isReadyToCategorize)
+    }
+}
+
 @Suite("Data AI category mapping")
 struct DataAICategoryMappingTests {
     @Test func decodesMatchesAndNulls() throws {

@@ -161,6 +161,12 @@ public struct DataAIFeatureStatus: Sendable, Hashable, Decodable {
     public let usingUserKey: Bool
     public let endpointName: String?
 
+    /// Whether a model is set up to answer categorization runs: gates the setup summary and
+    /// the run buttons. `isConfigured` only marks an explicit per-feature pick; the server
+    /// resolves a model from the user's saved key, a custom endpoint, or its own key even
+    /// without one, which is what the web's setup chip treats as set up.
+    public var isReadyToCategorize: Bool { isConfigured || !(modelName ?? "").isEmpty }
+
     private enum CodingKeys: String, CodingKey { case feature, isConfigured, modelName, usingUserKey, endpointName }
 
     public init(from decoder: any Decoder) throws {

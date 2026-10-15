@@ -77,7 +77,7 @@ struct DataAICategorizationScreen: View {
             }
         case .loaded(let status):
             Section {
-                if let status, status.isConfigured {
+                if let status, status.isReadyToCategorize {
                     LabeledContent("Model", value: status.modelName ?? String(localized: "Default"))
                     if let endpoint = status.endpointName {
                         LabeledContent("Endpoint", value: endpoint)
@@ -203,7 +203,7 @@ struct DataAICategorizationScreen: View {
 
     private var isRunning: Bool { status?.status.isActive ?? false }
 
-    private var isConfigured: Bool { feature.value??.isConfigured ?? false }
+    private var isConfigured: Bool { feature.value??.isReadyToCategorize ?? false }
 
     // MARK: Loading
 
