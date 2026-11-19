@@ -49,6 +49,11 @@ open the Proxy Host's **Advanced** tab, add the line below, and save:
 client_max_body_size 15m;
 ```
 
+Publishing iPhone builds (over-the-air updates) uploads a much larger body to
+`/api/v1/app-updates/upload`. Give that path its own larger limit, for
+example `location = /api/v1/app-updates/upload { client_max_body_size 1g; proxy_request_buffering off; }`
+in the Advanced tab.
+
 If you connect an MCP client (Claude, ChatGPT) and the sign-in page returns a
 **403**, turn **Block Common Exploits** off on the Proxy Host. Nginx Proxy
 Manager's exploit filter rejects the OAuth authorization URL because of its
@@ -136,6 +141,16 @@ server {
     # with a 413 error.
     client_max_body_size 15m;
 
+    # iPhone build uploads (over-the-air updates) send a body of hundreds of MB.
+    location = /api/v1/app-updates/upload {
+        client_max_body_size 1g;
+        proxy_request_buffering off;
+        proxy_read_timeout 3600s;
+        proxy_pass http://127.0.0.1:8080;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
     location / {
         proxy_pass http://127.0.0.1:8080;
         proxy_set_header Host $host;
@@ -161,6 +176,8 @@ server {
     listen 80;
     server_name budget.example.com;
 
+    # For iPhone build uploads (over-the-air updates), raise this to 1g on
+    # `location = /api/v1/app-updates/upload` as in the Plain nginx recipe.
     client_max_body_size 15m;
 
     location / {

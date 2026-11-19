@@ -8,3 +8,6 @@ DerivedData/
 .build/
 .swiftpm/
 build/
+
+# Over-the-air release settings (server URL, upload token, Cloudflare service token)
+scripts/.ota.env

@@ -114,6 +114,37 @@ location /api/ {
   proxy_buffering off;
   proxy_read_timeout 3600s;
 }
+# Build uploads stream a multi-hundred-MB IPA; the server-wide body cap and
+# request buffering would reject or spool it. The exact match outranks `location /api/`.
+location = /api/v1/app-updates/upload {
+  # Reject a caller with no bearer token before any of the body is proxied.
+  if (\$http_authorization !~* "^Bearer ") { return 401; }
+  proxy_pass ${BACKEND_URL};
+  proxy_http_version 1.1;
+  proxy_set_header Host \$host;
+  proxy_set_header X-Real-IP \$remote_addr;
+  proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+  proxy_set_header X-Forwarded-Proto \$scheme;
+  proxy_set_header X-Forwarded-Host \$host;
+  proxy_set_header Connection "";
+  client_max_body_size 1g;
+  proxy_request_buffering off;
+  proxy_read_timeout 3600s;
+}
+# Public OTA install links (signed, expiring tokens). `^~` keeps the
+# static-asset regex locations from claiming them.
+location ^~ /ota/ {
+  proxy_pass ${BACKEND_URL};
+  proxy_http_version 1.1;
+  proxy_set_header Host \$host;
+  proxy_set_header X-Real-IP \$remote_addr;
+  proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+  proxy_set_header X-Forwarded-Proto \$scheme;
+  proxy_set_header X-Forwarded-Host \$host;
+  proxy_set_header Connection "";
+  proxy_buffering off;
+  proxy_read_timeout 3600s;
+}
 EOF
 else
   : > "$API_PROXY_INCLUDE"

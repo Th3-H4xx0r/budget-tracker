@@ -117,7 +117,11 @@ export function setupMiddleware(app: Express) {
   // Binary uploads: the body is a file, not JSON, and the route mounts its own
   // `express.raw` parser. Running the JSON parser here first would buffer a
   // multi-megabyte body a second time for nothing.
-  const binaryUploadPaths: string[] = [MS_MONEY_FULL_PATHS.upload, OFX_FULL_PATHS.upload];
+  const binaryUploadPaths: string[] = [
+    MS_MONEY_FULL_PATHS.upload,
+    OFX_FULL_PATHS.upload,
+    `${API_PREFIX}/app-updates/upload`,
+  ];
 
   // Body parser with conditional limits
   app.use((req, res, next) => {

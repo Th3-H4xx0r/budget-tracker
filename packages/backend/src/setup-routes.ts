@@ -11,6 +11,7 @@ import { SUPPORTED_LOCALES } from './i18n';
 import accountGroupsRoutes from './routes/account-groups';
 import accountsRoutes from './routes/accounts.route';
 import adminRoutes from './routes/admin.route';
+import appUpdatesRoutes from './routes/app-updates.route';
 import attachmentsRoutes from './routes/attachments.route';
 import bankDataProvidersRoutes from './routes/bank-data-providers.route';
 import betterAuthExtensionsRoutes from './routes/better-auth-extensions.route';
@@ -36,6 +37,7 @@ import loansRoutes from './routes/loans.route';
 import mcpRoutes from './routes/mcp.route';
 import notificationsRoutes from './routes/notifications.route';
 import { setupOAuthMetadataRoutes } from './routes/oauth-metadata.route';
+import otaRoutes from './routes/ota.route';
 import payeesRoutes from './routes/payees.route';
 import resourceLeasesRoutes from './routes/resource-leases.route';
 import shareRoutes from './routes/share.route';
@@ -252,6 +254,9 @@ export function setupRoutes(app: Express) {
   app.use(`${API_PREFIX}/github`, githubRoutes);
   app.use(`${API_PREFIX}/billing`, billingRoutes);
   app.use(`${API_PREFIX}/admin`, adminRoutes);
+  app.use(`${API_PREFIX}/app-updates`, appUpdatesRoutes);
+  // Public install links (signed tokens), deliberately outside the authenticated API prefix.
+  app.use('/ota', otaRoutes);
 
   // "development" is required here: Playwright frontend e2e tests run against
   // the dev backend on CI and rely on /tests/verify-email and other test-only endpoints.

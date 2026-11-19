@@ -43,7 +43,9 @@ services:
       redis: { condition: service_healthy }
       currency-rates-api: { condition: service_healthy }
     env_file: .env
-    volumes: ['attachments_data:/app/packages/backend/data/attachments']
+    volumes:
+      - 'attachments_data:/app/packages/backend/data/attachments'
+      - 'app_updates_data:/app/packages/backend/data/app-updates'
     environment:
       # Hardcoded, not read from .env: every stack started from this file is by
       # definition self-hosted, and `environment:` outranks `env_file:` so a
@@ -60,6 +62,9 @@ services:
       # `attachments_data` volume mounted above, otherwise the files are lost on
       # container recreate. Set ATTACHMENTS_S3_BUCKET in .env to use S3/R2 instead.
       ATTACHMENTS_DIR: ${ATTACHMENTS_DIR:-/app/packages/backend/data/attachments}
+      # Where OTA iPhone builds are kept (see ios/scripts/README.md). Must stay
+      # inside the `app_updates_data` volume mounted above.
+      APP_UPDATES_DIR: ${APP_UPDATES_DIR:-/app/packages/backend/data/app-updates}
     healthcheck:
       # BusyBox wget ships in the node:alpine image. `--spider` returns non-zero
       # on any non-2xx status, so this flips healthy only once /health answers.
@@ -183,3 +188,4 @@ volumes:
   redis_data:
   currency_rates_data:
   attachments_data:
+  app_updates_data:

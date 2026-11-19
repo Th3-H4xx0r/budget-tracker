@@ -48,6 +48,7 @@ export * from './data-export';
 export * from './backup';
 export * from './ai-categorization';
 export * from './billing';
+export * from './app-updates';
 export * from './cloudflare-access';
 export * from './attachments';
 export * from './native-auth';

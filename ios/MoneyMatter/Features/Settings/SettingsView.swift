@@ -7,6 +7,7 @@ import SwiftUI
 struct SettingsView: View {
     @Environment(SessionStore.self) private var session
     @Environment(AppRouter.self) private var router
+    @Environment(AppUpdateCenter.self) private var updates
     @Environment(\.dismiss) private var dismiss
     @State private var confirmsSignOut = false
     @State private var confirmsChangeServer = false
@@ -152,6 +153,31 @@ struct SettingsView: View {
             NavigationLink { AppearanceSettingsScreen() } label: { SettingsHubRow("Appearance", systemImage: "circle.lefthalf.filled", color: .blue) }
             NavigationLink { LanguageSettingsScreen() } label: { SettingsHubRow("Language", systemImage: "globe", color: .red) }
             NavigationLink { GeneralSettingsScreen() } label: { SettingsHubRow("General", systemImage: "gearshape", color: .gray) }
+            Button { checkForUpdates() } label: {
+                HStack {
+                    SettingsHubRow("Check for Updates", systemImage: "arrow.down.app", color: .blue)
+                    Spacer()
+                    if updates.isChecking {
+                        ProgressView()
+                    } else if updates.lastOutcome == .upToDate {
+                        Text("You\u{2019}re up to date")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    } else if updates.lastOutcome == .notInstallable {
+                        Text("Can\u{2019}t install from this server address")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.trailing)
+                    } else if updates.lastOutcome == .failed {
+                        Text("Couldn\u{2019}t check")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .contentShape(.rect)
+            }
+            .buttonStyle(.plain)
+            .disabled(updates.isChecking)
         }
     }
 
@@ -175,6 +201,10 @@ struct SettingsView: View {
         Section {
             NavigationLink { AdminScreen() } label: { SettingsHubRow("Admin", systemImage: "shield.lefthalf.filled", color: .brown) }
         }
+    }
+
+    private func checkForUpdates() {
+        Task { await updates.checkNow() }
     }
 
     private func run(_ action: @escaping () async -> Void) {

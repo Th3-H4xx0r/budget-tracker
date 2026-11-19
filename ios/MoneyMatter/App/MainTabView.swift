@@ -13,6 +13,7 @@ struct MainTabView: View {
     @State private var isAddingTransaction = false
     @State private var budget = MonthlyBudgetModel()
     @State private var deepLinks = DeepLinkInbox.shared
+    @State private var updates = AppUpdateCenter()
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
@@ -58,6 +59,10 @@ struct MainTabView: View {
             await referenceData.loadIfNeeded()
         }
         .task { await loadUnreviewedCount() }
+        .task(id: ObjectIdentifier(services)) {
+            updates.use(services.client.map(LiveAppUpdateService.init))
+            updates.scenePhaseChanged(to: scenePhase)
+        }
         .onReceive(NotificationCenter.default.publisher(for: .reviewStatusesDidChange)) { _ in
             Task { await loadUnreviewedCount() }
         }
@@ -70,6 +75,7 @@ struct MainTabView: View {
             MonthlyBudgetAlerts.scheduleBackgroundRefresh()
         }
         .onChange(of: scenePhase) { _, phase in
+            updates.scenePhaseChanged(to: phase)
             switch phase {
             case .active: Task { await budget.refresh(client: services.client) }
             case .background: MonthlyBudgetAlerts.scheduleBackgroundRefresh()
@@ -92,6 +98,7 @@ struct MainTabView: View {
             router.open(link)
         }
         .environment(budget)
+        .environment(updates)
         // Last, so the sheet and cover content can read the router too.
         .environment(router)
     }

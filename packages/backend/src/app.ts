@@ -97,6 +97,10 @@ if (isTest) {
   }
 }
 
+// Build uploads stream up to 1 GiB; the default 300 s request timeout would cut a slow link.
+// nginx's client_body_timeout still guards against stalled clients.
+serverInstance.requestTimeout = 60 * 60 * 1000;
+
 export { serverInstance };
 
 serverInstance.on('error', (error) => {

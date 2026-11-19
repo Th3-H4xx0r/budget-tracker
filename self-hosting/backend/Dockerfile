@@ -72,6 +72,10 @@ RUN chmod +x /docker-entrypoint.sh
 # Set working directory to backend
 WORKDIR /app/packages/backend
 
+# Volume mount points (attachments, app updates) must be writable by the runtime user
+RUN mkdir -p /app/packages/backend/data/attachments /app/packages/backend/data/app-updates \
+  && chown -R nodejs:nodejs /app/packages/backend/data
+
 # Switch to non-root user
 USER nodejs
 

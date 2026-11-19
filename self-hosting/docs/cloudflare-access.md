@@ -32,7 +32,7 @@ Do these in order, so the phone is never locked out:
    the variables below are set.
 2. Create a service token, put it in `.env`, and restart.
 3. Set up the iPhone app with the QR card.
-4. Create the two Access applications.
+4. Create the Access applications.
 5. Check the gate with `curl`.
 
 ## 1. Create a service token
@@ -82,8 +82,8 @@ The full variable list is in the [environment reference](environment-reference.m
 
 ## 4. Create the Access applications
 
-Create both applications under **Access → Applications → Add an application**,
-choosing **Self-hosted**. Create the bypass application first.
+Create each application under **Access → Applications → Add an application**,
+choosing **Self-hosted**. Create the bypass applications first.
 
 ### a. Bypass application for the iOS app association file
 
@@ -94,7 +94,30 @@ choosing **Self-hosted**. Create the bypass application first.
 iOS fetches this file on its own, without any token, to link the app to your
 domain. The more specific path wins over the main application below.
 
-### b. Main application
+### b. Bypass application for over-the-air iPhone updates
+
+Needed only if you publish iPhone builds with `ios/scripts/release.sh` (see
+[over-the-air iPhone updates](../../ios/scripts/README.md)).
+
+- Name: `OTA bypass`
+- Domain: `budget.example.com`
+- Path: `/ota/`
+- Policy: Action **Bypass**, Include **Everyone**
+
+When you tap **Install Now** in the app, iOS's installer downloads the install
+manifest and the app from `/ota/` on its own. It can't send the app's session
+or the service token, so behind the gate it would get Cloudflare's login page
+and the install would fail. The server answers `/ota/` only for links it
+signed: each names one stored build and expires 10 minutes after the app asks
+for it. Anything else gets a bare 403.
+
+Uploading and rolling back builds go through `/api/v1/app-updates/`, which
+stays behind the main application. The publish script sends a service token:
+set `MM_CF_ACCESS_CLIENT_ID` and `MM_CF_ACCESS_CLIENT_SECRET` on the Mac you
+release from. Use the token from step 1, or create a separate one and add it
+to the **iPhone** policy below as a second Include.
+
+### c. Main application
 
 - Domain: `budget.example.com`, all paths
 - Session duration: 1 week
@@ -129,6 +152,16 @@ curl -sI \
 ```
 
 Expect `HTTP/2 200` from the app.
+
+If you created the OTA bypass, a request under `/ota/` should reach the app
+without a token:
+
+```bash
+curl -sI https://budget.example.com/ota/m/invalid.plist
+```
+
+Expect `HTTP/2 403` from the app, since the link isn't signed. A redirect to
+Cloudflare means the bypass isn't in place.
 
 In a browser, open `https://budget.example.com`. You should see Cloudflare's
 login page before the app's sign-in page.
