@@ -27,6 +27,7 @@ export * from './money';
 export * from './transfer-nature';
 export * from './transaction-automations';
 export * from './billing';
+export * from './cloudflare-access';
 export * from './attachments';
 export * from './subscriptions-matching';
 export * from './testing';

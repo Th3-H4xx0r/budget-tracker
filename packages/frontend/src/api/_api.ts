@@ -6,6 +6,7 @@ import { useImportBatchDeleteJobStatus } from '@/composable/use-import-batch-del
 import { useRestoreJobStatus } from '@/composable/use-restore-job-status';
 import { getCurrentLocale, i18n } from '@/i18n';
 import * as errors from '@/js/errors';
+import { recoverFromExpiredCloudflareSession } from '@/js/helpers/cloudflare-session-recovery';
 import { router } from '@/routes';
 import { ROUTES_NAMES } from '@/routes/constants';
 import { useAuthStore } from '@/stores';
@@ -259,7 +260,7 @@ class ApiCaller {
       if (e instanceof DOMException && e.name === 'AbortError') {
         throw e;
       }
-      if (e instanceof TypeError && errors.FETCH_NETWORK_FAILURE_MESSAGES.some((msg) => e.message.includes(msg))) {
+      if (errors.isFetchNetworkFailure({ error: e })) {
         // Self-hosters and local devs are the system operators – give them the
         // actionable hint (backend not running, CORS misconfigured). Cloud users
         // can't act on either and should see a generic message.
@@ -269,6 +270,8 @@ class ApiCaller {
               'errors.api.failedToFetchSelfHost',
               'Cannot reach the server. The backend may still be starting (~30s after startup), or your ALLOWED_ORIGINS env var does not include this URL.',
             );
+        void recoverFromExpiredCloudflareSession();
+
         if (!isSilent) {
           addNotification({
             id: 'api-fetching-error',

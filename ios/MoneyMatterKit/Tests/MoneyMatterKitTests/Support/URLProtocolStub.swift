@@ -121,7 +121,8 @@ extension APIClient {
     static func stubbed(
         server: ServerEndpoint,
         token: String? = nil,
-        onUnauthenticated: (@Sendable (String) -> Void)? = nil
+        onUnauthenticated: (@Sendable (String) -> Void)? = nil,
+        cloudflareAccess: (any CloudflareAccessProviding)? = nil
     ) -> APIClient {
         APIClient(
             server: server,
@@ -129,9 +130,15 @@ extension APIClient {
             session: APIClient.makeURLSession(configuration: URLProtocolStub.configuration()),
             acceptLanguage: { "uk-UA" },
             onUnauthenticated: onUnauthenticated,
-            ceremonyConfiguration: { URLProtocolStub.configuration() }
+            ceremonyConfiguration: { URLProtocolStub.configuration() },
+            cloudflareAccess: cloudflareAccess
         )
     }
+}
+
+struct FixedCloudflareAccess: CloudflareAccessProviding {
+    let credentials: CloudflareAccessCredentials?
+    func cloudflareAccessCredentials() -> CloudflareAccessCredentials? { credentials }
 }
 
 struct FixedToken: AccessTokenProviding {

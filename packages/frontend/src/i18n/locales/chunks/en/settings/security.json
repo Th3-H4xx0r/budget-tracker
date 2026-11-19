@@ -3,6 +3,17 @@
     "security": {
       "title": "Security Settings",
       "description": "Manage your login methods, active sessions, and password",
+      "iphoneAccess": {
+        "title": "iPhone access",
+        "description": "Scan this in the MoneyMatter iPhone app to let it through Cloudflare Access.",
+        "show": "Show code",
+        "hide": "Hide",
+        "clientId": "Client ID",
+        "clientSecret": "Client secret",
+        "copy": "Copy",
+        "warning": "Anyone with this code can reach your server's sign-in page. Don't share it.",
+        "qrLabel": "QR code for the iPhone app"
+      },
       "tabs": {
         "loginMethods": "Login Methods",
         "activeSessions": "Active Sessions",
@@ -46,6 +57,7 @@
           "oauthDisconnectFailed": "Failed to disconnect {provider} account",
           "passkeyAddSuccess": "Passkey added successfully",
           "passkeyAddFailed": "Failed to add passkey. Make sure your device supports passkeys.",
+          "passkeyAlreadyRegistered": "This device already has a passkey for your account.",
           "passkeyRemoveSuccess": "Passkey removed",
           "passkeyRemoveFailed": "Failed to remove passkey",
           "passkeyRenameFailed": "Failed to rename passkey"

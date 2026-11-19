@@ -3,6 +3,17 @@
     "security": {
       "title": "Налаштування безпеки",
       "description": "Керуйте способами входу, активними сесіями та паролем",
+      "iphoneAccess": {
+        "title": "Доступ для iPhone",
+        "description": "Скануйте це в застосунку MoneyMatter для iPhone, щоб він міг пройти через Cloudflare Access.",
+        "show": "Показати код",
+        "hide": "Сховати",
+        "clientId": "Client ID",
+        "clientSecret": "Client secret",
+        "copy": "Копіювати",
+        "warning": "Будь-хто з цим кодом зможе дістатися сторінки входу на вашому сервері. Нікому його не передавайте.",
+        "qrLabel": "QR-код для застосунку iPhone"
+      },
       "tabs": {
         "loginMethods": "Способи входу",
         "activeSessions": "Активні сесії",
@@ -46,6 +57,7 @@
           "oauthDisconnectFailed": "Не вдалося відключити обліковий запис {provider}",
           "passkeyAddSuccess": "Ключ доступу успішно додано",
           "passkeyAddFailed": "Не вдалося додати ключ доступу. Переконайтеся, що ваш пристрій підтримує ключі доступу.",
+          "passkeyAlreadyRegistered": "Цей пристрій уже має ключ доступу для вашого облікового запису.",
           "passkeyRemoveSuccess": "Ключ доступу видалено",
           "passkeyRemoveFailed": "Не вдалося видалити ключ доступу",
           "passkeyRenameFailed": "Не вдалося перейменувати ключ доступу"

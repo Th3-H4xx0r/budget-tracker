@@ -152,6 +152,115 @@ struct SessionStoreTests {
         #expect(ErrorMessage.message(for: .serverOutdated).contains("older version of MoneyMatter"))
     }
 
+    @Test("Connect saves Cloudflare credentials before probing")
+    func connectSavesCloudflareBeforeProbing() async throws {
+        let harness = SessionHarness()
+        await harness.store.restore()
+        let credentials = try #require(CloudflareAccessCredentials(clientId: "id.access", clientSecret: "secret"))
+        var seenDuringProbe: CloudflareAccessCredentials?
+        harness.api.onSignupsOpen = { seenDuringProbe = harness.cloudflare.credentials(for: server) }
+
+        try await harness.store.connect(toServer: "budget.example.com", cloudflareAccess: credentials)
+
+        #expect(seenDuringProbe == credentials)
+        #expect(harness.cloudflare.credentials(for: server) == credentials)
+        #expect(harness.store.cloudflareAccessCredentials == credentials)
+    }
+
+    @Test("Connect removes credentials when the probe fails")
+    func connectRemovesCloudflareOnFailure() async throws {
+        let harness = SessionHarness()
+        await harness.store.restore()
+        let credentials = try #require(CloudflareAccessCredentials(clientId: "id.access", clientSecret: "secret"))
+        harness.api.signupsOpenResult = .failure(.cloudflareBlocked)
+
+        await #expect(throws: APIError.self) {
+            try await harness.store.connect(toServer: "budget.example.com", cloudflareAccess: credentials)
+        }
+        #expect(harness.cloudflare.credentials(for: server) == nil)
+    }
+
+    @Test("Connect restores the previous credentials when the probe fails")
+    func connectRestoresPreviousCloudflareOnFailure() async throws {
+        let harness = SessionHarness()
+        await harness.store.restore()
+        let previous = try #require(CloudflareAccessCredentials(clientId: "old.access", clientSecret: "old-secret"))
+        let replacement = try #require(CloudflareAccessCredentials(clientId: "new.access", clientSecret: "new-secret"))
+        harness.cloudflare.stored[server.hostAndPort] = previous
+        harness.api.signupsOpenResult = .failure(.cloudflareBlocked)
+
+        await #expect(throws: APIError.self) {
+            try await harness.store.connect(toServer: "budget.example.com", cloudflareAccess: replacement)
+        }
+        #expect(harness.cloudflare.credentials(for: server) == previous)
+    }
+
+    @Test("Restore with no saved server clears Cloudflare credentials")
+    func restoreWithoutServerClearsCloudflare() async throws {
+        let harness = SessionHarness()
+        let credentials = try #require(CloudflareAccessCredentials(clientId: "id.access", clientSecret: "secret"))
+        harness.cloudflare.stored[server.hostAndPort] = credentials
+
+        await harness.store.restore()
+
+        #expect(harness.store.state == .needsServer)
+        #expect(harness.cloudflare.stored.isEmpty)
+    }
+
+    @Test("A Cloudflare rejection during restore keeps the session and sets launchError")
+    func restoreCloudflareBlocked() async {
+        let harness = SessionHarness(server: server, token: "signed.saved")
+        harness.api.sessionResult = .failure(.cloudflareBlocked)
+
+        await harness.store.restore()
+
+        #expect(harness.store.state == .launching)
+        #expect(harness.token() == "signed.saved")
+        #expect(harness.sessionEndedCount() == 0)
+        if case .cloudflareBlocked? = harness.store.launchError {} else {
+            Issue.record("launchError was \(String(describing: harness.store.launchError))")
+        }
+    }
+
+    @Test("Updating the Cloudflare token retries the launch")
+    func updatingCloudflareRetriesLaunch() async throws {
+        let harness = SessionHarness(server: server, token: "signed.saved")
+        harness.api.sessionResult = .failure(.cloudflareBlocked)
+        await harness.store.restore()
+        harness.api.sessionResult = .success(StubSessionAPI.validSession)
+        let credentials = try #require(CloudflareAccessCredentials(clientId: "id.access", clientSecret: "secret"))
+
+        try await harness.store.updateCloudflareAccess(credentials)
+
+        #expect(harness.cloudflare.credentials(for: server) == credentials)
+        #expect(harness.store.launchError == nil)
+        #expect(harness.store.state == .signedIn(StubSessionAPI.user, baseCurrency: StubSessionAPI.euro))
+    }
+
+    @Test("Changing server deletes the old server's credentials")
+    func changeServerDeletesCloudflare() async throws {
+        let harness = SessionHarness(server: server, token: "signed.saved")
+        let credentials = try #require(CloudflareAccessCredentials(clientId: "id.access", clientSecret: "secret"))
+        harness.cloudflare.stored[server.hostAndPort] = credentials
+        await harness.store.restore()
+
+        await harness.store.changeServer()
+
+        #expect(harness.cloudflare.credentials(for: server) == nil)
+    }
+
+    @Test("OAuth sign-in passes Cloudflare headers to the web authenticator")
+    func oauthPassesCloudflareHeaders() async throws {
+        let harness = SessionHarness(server: server)
+        await harness.store.restore()
+        let headers = ["CF-Access-Client-Id": "id.access", "CF-Access-Client-Secret": "secret"]
+        harness.api.cloudflareHeaders = headers
+
+        try await harness.store.signIn(with: .github)
+
+        #expect(harness.web.headers == [headers])
+    }
+
     @Test("Changing the server revokes the token and forgets the server")
     func changeServer() async {
         let harness = SessionHarness(server: server, token: "signed.saved")

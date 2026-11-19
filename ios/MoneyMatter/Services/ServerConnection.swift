@@ -41,13 +41,15 @@ final class ServerConnection: SessionConnecting {
         }
     }
 
-    /// Live services: one cookie-less `APIClient` reading the token from the Keychain.
-    static func live(tokenStore: KeychainTokenStore) -> ServerConnection {
+    /// Live services: one cookie-less `APIClient` reading the token and the Cloudflare Access
+    /// token from the Keychain.
+    static func live(tokenStore: KeychainTokenStore, cloudflareAccessStore: any CloudflareAccessStoring) -> ServerConnection {
         ServerConnection { endpoint, onUnauthenticated in
             let client = APIClient(
                 server: endpoint,
                 tokenProvider: tokenStore.tokenProvider(for: endpoint),
-                onUnauthenticated: onUnauthenticated
+                onUnauthenticated: onUnauthenticated,
+                cloudflareAccess: cloudflareAccessStore.provider(for: endpoint)
             )
             return AppServices(client: client)
         }

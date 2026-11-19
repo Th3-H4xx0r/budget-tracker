@@ -159,6 +159,7 @@ struct SettingsView: View {
         Section("Security") {
             NavigationLink { LoginMethodsScreen() } label: { SettingsHubRow("Login Methods & Passkeys", systemImage: "person.badge.key", color: .green) }
             NavigationLink { SessionsScreen() } label: { SettingsHubRow("Sessions", systemImage: "iphone", color: .gray) }
+            NavigationLink { CloudflareAccessScreen() } label: { SettingsHubRow("Cloudflare Access", systemImage: "lock.shield", color: .orange) }
             NavigationLink { PasswordScreen() } label: { SettingsHubRow("Password", systemImage: "lock", color: .yellow) }
             NavigationLink { DangerZoneScreen() } label: { SettingsHubRow("Danger Zone", systemImage: "exclamationmark.triangle", color: .red) }
         }

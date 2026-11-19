@@ -174,7 +174,11 @@ enum MonthlyBudgetAlerts {
         guard let server = SharedContainer.server() else { return }
         let tokenReader = SharedKeychainTokenReader(server: server)
         guard tokenReader.accessToken() != nil else { return }
-        await refreshAndCheck(client: APIClient(server: server, tokenProvider: tokenReader))
+        await refreshAndCheck(client: APIClient(
+            server: server,
+            tokenProvider: tokenReader,
+            cloudflareAccess: KeychainCloudflareAccessStore().provider(for: server)
+        ))
     }
 
     /// On sign-out: the widget and the background refresh stop using the old account.

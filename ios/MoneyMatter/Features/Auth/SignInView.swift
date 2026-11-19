@@ -8,6 +8,7 @@ struct SignInView: View {
     @State private var model = SignInViewModel()
     @State private var showsSignUp = false
     @State private var confirmsChangeServer = false
+    @State private var showsCloudflareAccess = false
     @FocusState private var focusedField: Field?
 
     private enum Field {
@@ -33,6 +34,9 @@ struct SignInView: View {
         } message: {
             Text("You'll choose a different MoneyMatter server.")
         }
+        .sheet(isPresented: $showsCloudflareAccess) {
+            CloudflareAccessSheet()
+        }
         .sensoryFeedback(.error, trigger: model.errorMessage) { _, new in new != nil }
         .onAppear { model.prefill(email: session.prefilledEmail) }
         .task { await session.refreshSignupsOpen() }
@@ -47,6 +51,12 @@ struct SignInView: View {
                 ServerChip(host: server.hostAndPort) {
                     confirmsChangeServer = true
                 }
+                .disabled(model.isWorking)
+
+                Button("Cloudflare Access", systemImage: "lock.shield") {
+                    showsCloudflareAccess = true
+                }
+                .font(.footnote)
                 .disabled(model.isWorking)
             }
         }

@@ -14,6 +14,7 @@ final class AppDependencies {
         connection: ServerConnection,
         serverStore: any ServerStoring,
         tokenStore: any TokenStoring,
+        cloudflareAccessStore: any CloudflareAccessStoring,
         webAuthenticator: any WebAuthenticating,
         passkeyAuthenticator: any PasskeyAuthenticating
     ) {
@@ -24,6 +25,7 @@ final class AppDependencies {
             connection: connection,
             serverStore: serverStore,
             tokenStore: tokenStore,
+            cloudflareAccessStore: cloudflareAccessStore,
             webAuthenticator: webAuthenticator,
             passkeyAuthenticator: passkeyAuthenticator
         )
@@ -40,14 +42,16 @@ final class AppDependencies {
 
     static func live() -> AppDependencies {
         let tokenStore = KeychainTokenStore()
+        let cloudflareAccessStore = KeychainCloudflareAccessStore()
         let serverStore = UserDefaultsServerStore()
         #if DEBUG
         DebugLaunch.seedSession(serverStore: serverStore, tokenStore: tokenStore)
         #endif
         return AppDependencies(
-            connection: .live(tokenStore: tokenStore),
+            connection: .live(tokenStore: tokenStore, cloudflareAccessStore: cloudflareAccessStore),
             serverStore: serverStore,
             tokenStore: tokenStore,
+            cloudflareAccessStore: cloudflareAccessStore,
             webAuthenticator: WebAuthenticator(),
             passkeyAuthenticator: PasskeyAuthenticator()
         )

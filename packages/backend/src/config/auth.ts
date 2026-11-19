@@ -4,6 +4,7 @@ import { OAUTH_PROVIDER, OAUTH_PROVIDERS_LIST } from '@bt/shared/types';
 import { EnvVar, isEnvConfigured } from '@common/utils/env';
 import { createSessionHooks } from '@config/auth-hooks/session-hooks';
 import { getOAuthProviderConfig } from '@config/oauth-providers';
+import { resolvePasskeyRpId } from '@config/resolve-passkey-rp-id';
 import { shouldUseSecureCookies } from '@config/should-use-secure-cookies';
 import { logger } from '@js/utils/logger';
 import { identifyUser, trackSignup } from '@js/utils/posthog';
@@ -62,7 +63,7 @@ const DEV_TRUSTED_ORIGINS =
 export const AUTH_COOKIE_PREFIX = process.env.BETTER_AUTH_COOKIE_PREFIX || 'bt_auth';
 
 const AUTH_ORIGIN = process.env.AUTH_ORIGIN || 'https://localhost:8100';
-const AUTH_RP_ID = process.env.AUTH_RP_ID || 'localhost';
+const AUTH_RP_ID = resolvePasskeyRpId({ rpId: process.env.AUTH_RP_ID, authOrigin: AUTH_ORIGIN });
 
 // A web assertion's clientDataJSON origin is the frontend origin; a native iOS
 // assertion's is `https://<rpID>`. Both must pass passkey verification.

@@ -225,6 +225,9 @@ export const VUE_QUERY_CACHE_KEYS = Object.freeze({
   // MCP connected apps
   mcpConnectedApps: ['mcp-connected-apps'] as const,
 
+  // Cloudflare Access device setup (admin-only)
+  cloudflareAccessDeviceSetup: ['admin', 'cloudflare-access'] as const,
+
   // AI settings
   aiApiKeyStatus: ['ai-settings', 'api-keys'] as const,
   aiFeaturesStatus: ['ai-settings', 'features'] as const,

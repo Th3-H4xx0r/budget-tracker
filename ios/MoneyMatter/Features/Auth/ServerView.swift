@@ -7,6 +7,10 @@ struct ServerView: View {
     @State private var address = AppConfig.defaultServerAddress
     @State private var isConnecting = false
     @State private var errorMessage: String?
+    @State private var clientId = ""
+    @State private var clientSecret = ""
+    @State private var showsCloudflareAccess = false
+    @State private var showsScanner = false
     @FocusState private var isFieldFocused: Bool
 
     var body: some View {
@@ -30,6 +34,8 @@ struct ServerView: View {
                                 .onSubmit { Task { await connect() } }
                         }
                     }
+
+                    cloudflareAccessFields
 
                     if let errorMessage {
                         AuthBanner(message: errorMessage)
@@ -56,17 +62,61 @@ struct ServerView: View {
                 .accessibilityElement(children: .combine)
             }
             .toolbarVisibility(.hidden, for: .navigationBar)
+            .sheet(isPresented: $showsScanner) {
+                CloudflareAccessScanner(expectedServer: nil) { payload in
+                    address = payload.server.originString
+                    clientId = payload.credentials.clientId
+                    clientSecret = payload.credentials.clientSecret
+                    showsCloudflareAccess = true
+                }
+            }
             .sensoryFeedback(.error, trigger: errorMessage) { _, new in new != nil }
         }
     }
 
+    private var cloudflareAccessFields: some View {
+        DisclosureGroup("Cloudflare Access", isExpanded: $showsCloudflareAccess) {
+            VStack(spacing: 12) {
+                AuthFieldCard {
+                    AuthFieldRow(systemImage: "person.badge.key", isActive: false) {
+                        TextField("Client ID", text: $clientId)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                    }
+                    AuthFieldRow(systemImage: "lock.shield", isActive: false) {
+                        SecureField("Client Secret", text: $clientSecret)
+                    }
+                }
+
+                Button("Scan QR Code", systemImage: "qrcode.viewfinder") {
+                    showsScanner = true
+                }
+                .buttonStyle(.glass)
+
+                Text("Only needed if your server is behind Cloudflare Access.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+            }
+            .padding(.top, 12)
+        }
+        .disabled(isConnecting)
+    }
+
     private func connect() async {
         guard !isConnecting else { return }
+        let credentials = CloudflareAccessCredentials(clientId: clientId, clientSecret: clientSecret)
+        let isBlank = { (text: String) in text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        if credentials == nil, !(isBlank(clientId) && isBlank(clientSecret)) {
+            showsCloudflareAccess = true
+            errorMessage = String(localized: "Fill in both the Client ID and the Client Secret.")
+            return
+        }
         isConnecting = true
         errorMessage = nil
         defer { isConnecting = false }
         do {
-            try await session.connect(toServer: address)
+            try await session.connect(toServer: address, cloudflareAccess: credentials)
         } catch {
             errorMessage = Self.message(for: error)
         }
@@ -82,6 +132,8 @@ struct ServerView: View {
             switch apiError {
             case .network:
                 return String(localized: "Can't reach this server. Check the address and your connection.")
+            case .cloudflareBlocked:
+                return String(localized: "Cloudflare blocked this request. Check the Cloudflare Access token.")
             case .notFound, .decoding:
                 return String(localized: "This address doesn't look like a MoneyMatter server.")
             default:

@@ -58,6 +58,9 @@ public enum APIError: Error, Sendable, Equatable {
     case decoding(String)
     /// The server predates the routes the app needs (native sign-in, the review queue).
     case serverOutdated
+    /// Cloudflare Access refused the request before it reached the server: the token is
+    /// missing, wrong, or revoked. Not an app sign-out.
+    case cloudflareBlocked
 
     /// The server's own (already localized) message, when it sent one.
     public var serverMessage: String? {
@@ -69,7 +72,7 @@ public enum APIError: Error, Sendable, Equatable {
             message
         case .server(_, _, let message):
             message
-        case .network, .decoding, .serverOutdated:
+        case .network, .decoding, .serverOutdated, .cloudflareBlocked:
             nil
         }
     }

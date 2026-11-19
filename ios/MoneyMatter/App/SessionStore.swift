@@ -43,6 +43,7 @@ final class SessionStore {
     @ObservationIgnored private let connection: any SessionConnecting
     @ObservationIgnored private let serverStore: any ServerStoring
     @ObservationIgnored private let tokenStore: any TokenStoring
+    @ObservationIgnored private let cloudflareAccessStore: any CloudflareAccessStoring
     @ObservationIgnored private let webAuthenticator: any WebAuthenticating
     @ObservationIgnored private let passkeyAuthenticator: any PasskeyAuthenticating
     @ObservationIgnored private let passkeyHosts: Set<String>
@@ -51,6 +52,7 @@ final class SessionStore {
         connection: any SessionConnecting,
         serverStore: any ServerStoring,
         tokenStore: any TokenStoring,
+        cloudflareAccessStore: any CloudflareAccessStoring,
         webAuthenticator: any WebAuthenticating,
         passkeyAuthenticator: any PasskeyAuthenticating,
         passkeyHosts: Set<String> = AppConfig.passkeyHosts
@@ -58,6 +60,7 @@ final class SessionStore {
         self.connection = connection
         self.serverStore = serverStore
         self.tokenStore = tokenStore
+        self.cloudflareAccessStore = cloudflareAccessStore
         self.webAuthenticator = webAuthenticator
         self.passkeyAuthenticator = passkeyAuthenticator
         self.passkeyHosts = passkeyHosts
@@ -82,6 +85,11 @@ final class SessionStore {
         return nil
     }
 
+    /// The Cloudflare Access token saved for the current server.
+    var cloudflareAccessCredentials: CloudflareAccessCredentials? {
+        server.flatMap { cloudflareAccessStore.credentials(for: $0) }
+    }
+
     /// Passkeys only work for hosts in the app's Associated Domains.
     var supportsPasskeys: Bool {
         server.map { passkeyHosts.contains($0.host) } ?? false
@@ -92,8 +100,9 @@ final class SessionStore {
     func restore() async {
         launchError = nil
         guard let server = serverStore.loadServer() else {
-            // The Keychain outlives a reinstall but UserDefaults doesn't; drop orphaned tokens.
+            // The Keychain outlives a reinstall but UserDefaults doesn't; drop orphaned tokens and Cloudflare Access credentials.
             tokenStore.deleteAllTokens()
+            cloudflareAccessStore.deleteAll()
             state = .needsServer
             return
         }
@@ -122,9 +131,14 @@ final class SessionStore {
     /// Validates the address by calling `GET /auth/signups-open` and checking the server is new
     /// enough for the app, then saves it. Throws `ServerURLError` for a malformed address,
     /// `APIError.serverOutdated` for an older server, `APIError` if the server doesn't answer.
-    func connect(toServer address: String) async throws {
+    ///
+    /// `cloudflareAccess` is saved for the server (or removed when `nil`) before the probe so
+    /// the probe carries it; a failed probe puts back what was stored before.
+    func connect(toServer address: String, cloudflareAccess: CloudflareAccessCredentials? = nil) async throws {
         let server = try ServerEndpoint(validating: address)
         let previous = connection.endpoint
+        let previousCredentials = cloudflareAccessStore.credentials(for: server)
+        try storeCloudflareAccess(cloudflareAccess, for: server)
         connection.connect(to: server)
         do {
             guard let api = connection.sessionAPI else { throw SignInFailure.noServer }
@@ -132,6 +146,7 @@ final class SessionStore {
             try await api.checkAppSupport()
             signupsOpen = open
         } catch {
+            try? storeCloudflareAccess(previousCredentials, for: server)
             connection.connect(to: previous)
             throw error
         }
@@ -142,12 +157,24 @@ final class SessionStore {
 
     /// Signs out (revoking the token) and forgets the server.
     func changeServer() async {
+        let leftServer = connection.endpoint
         await endSession(revoke: true)
+        if let leftServer { try? cloudflareAccessStore.delete(for: leftServer) }
         serverStore.clearServer()
         connection.connect(to: nil)
         signupsOpen = nil
         prefilledEmail = nil
         state = .needsServer
+    }
+
+    /// Saves (or removes, when `nil`) the Cloudflare Access token for the current server, then
+    /// retries the launch if Cloudflare was what stopped it.
+    func updateCloudflareAccess(_ credentials: CloudflareAccessCredentials?) async throws {
+        guard let server = connection.endpoint else { throw SignInFailure.noServer }
+        try storeCloudflareAccess(credentials, for: server)
+        if case .cloudflareBlocked? = launchError {
+            await retryLaunch()
+        }
     }
 
     func refreshSignupsOpen() async {
@@ -187,7 +214,11 @@ final class SessionStore {
         let api = try requireAPI()
         let pkce = PKCE.generate()
         let startURL = api.oauthStartURL(provider: provider, codeChallenge: pkce.challenge)
-        let callbackURL = try await webAuthenticator.authenticate(url: startURL, callbackScheme: AppConfig.oauthCallbackScheme)
+        let callbackURL = try await webAuthenticator.authenticate(
+            url: startURL,
+            callbackScheme: AppConfig.oauthCallbackScheme,
+            additionalHeaders: api.cloudflareAccessHeaders(for: startURL)
+        )
 
         switch OAuthCallback(url: callbackURL) {
         case .code(let code):
@@ -243,6 +274,14 @@ final class SessionStore {
     }
 
     // MARK: Private
+
+    private func storeCloudflareAccess(_ credentials: CloudflareAccessCredentials?, for server: ServerEndpoint) throws {
+        if let credentials {
+            try cloudflareAccessStore.save(credentials, for: server)
+        } else {
+            try cloudflareAccessStore.delete(for: server)
+        }
+    }
 
     private func requireAPI() throws -> any SessionAPI {
         guard let api = connection.sessionAPI else { throw SignInFailure.noServer }

@@ -31,6 +31,10 @@ extension LiveAPI: AuthServicing {
         Endpoints.nativeOAuthStartURL(server: client.server, provider: provider, codeChallenge: codeChallenge)
     }
 
+    func cloudflareAccessHeaders(for url: URL) -> [String: String] {
+        client.cloudflareAccessHeaders(for: url)
+    }
+
     func exchangeOAuthCode(_ code: String, codeVerifier: String) async throws -> String {
         try await client.exchangeOAuthCode(code, codeVerifier: codeVerifier)
     }

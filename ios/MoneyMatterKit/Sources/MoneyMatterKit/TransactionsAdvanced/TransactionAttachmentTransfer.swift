@@ -54,12 +54,12 @@ extension APIClient {
     }
 
     private func perform(_ request: URLRequest) async throws -> Data {
-        let session = URLSession(configuration: sessionConfiguration)
+        let session = Self.makeSession(configuration: sessionConfiguration)
         defer { session.finishTasksAndInvalidate() }
         let data: Data
         let response: URLResponse
         do {
-            (data, response) = try await session.data(for: request)
+            (data, response) = try await Self.perform(request, on: session)
         } catch let error as URLError {
             throw APIError.network(error)
         } catch {
@@ -69,6 +69,7 @@ extension APIClient {
             throw APIError.decoding("The response wasn't HTTP.")
         }
         guard (200..<300).contains(http.statusCode) else {
+            if let rejection = Self.cloudflareRejection(http) { throw rejection }
             throw Self.mapError(statusCode: http.statusCode, data: data)
         }
         return data

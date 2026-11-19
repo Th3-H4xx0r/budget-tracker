@@ -1,5 +1,7 @@
 import { API_HTTP, API_VER } from '@/api/api-base-url';
 import { getCurrentLocale } from '@/i18n';
+import { isFetchNetworkFailure } from '@/js/errors/network.error';
+import { recoverFromExpiredCloudflareSession } from '@/js/helpers/cloudflare-session-recovery';
 import { passkeyClient } from '@better-auth/passkey/client';
 import { createAuthClient } from 'better-auth/vue';
 
@@ -29,6 +31,17 @@ export const authClient = createAuthClient({
   plugins: [passkeyClient()],
   // Send current locale to backend for locale-aware operations (e.g., category creation)
   fetchOptions: {
+    // A fetch rejected by a Cloudflare Access login redirect surfaces as a network failure.
+    customFetchImpl: async (input, init) => {
+      try {
+        return await fetch(input, init);
+      } catch (e) {
+        if (isFetchNetworkFailure({ error: e })) {
+          void recoverFromExpiredCloudflareSession();
+        }
+        throw e;
+      }
+    },
     headers: {
       // Use a getter function to get the current locale at request time
       get 'Accept-Language'() {

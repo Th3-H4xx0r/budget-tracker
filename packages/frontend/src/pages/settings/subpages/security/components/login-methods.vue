@@ -199,6 +199,8 @@
         <AlertTriangleIcon class="mr-1 inline size-4" />
         {{ $t('settings.security.loginMethods.warningOneMethod') }}
       </p>
+
+      <IphoneAccessSection />
     </template>
   </div>
 </template>
@@ -211,6 +213,7 @@ import { InputField } from '@/components/fields';
 import { Button } from '@/components/lib/ui/button';
 import { DesktopOnlyTooltip } from '@/components/lib/ui/tooltip';
 import { useNotificationCenter } from '@/components/notification-center';
+import { UnexpectedError } from '@/js/errors';
 import { authClient } from '@/lib/auth-client';
 import { useAuthStore, useUserStore } from '@/stores';
 import { OAUTH_PROVIDER, OAUTH_PROVIDERS_LIST } from '@bt/shared/types';
@@ -230,6 +233,12 @@ import { storeToRefs } from 'pinia';
 import { type Component, computed, onMounted, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRoute, useRouter } from 'vue-router';
+
+import IphoneAccessSection from './iphone-access-section.vue';
+
+// WebAuthn error codes returned by @better-auth/passkey's addPasskey.
+const PASSKEY_CEREMONY_ABORTED_CODE = 'ERROR_CEREMONY_ABORTED';
+const PASSKEY_PREVIOUSLY_REGISTERED_CODE = 'ERROR_AUTHENTICATOR_PREVIOUSLY_REGISTERED';
 
 const providerConfig: Record<OAUTH_PROVIDER, { name: string; icon: Component }> = {
   [OAUTH_PROVIDER.google]: { name: 'Google', icon: GoogleIcon },
@@ -362,8 +371,16 @@ const handleAddPasskey = async () => {
     await authStore.registerPasskey();
     addSuccessNotification(t('settings.security.loginMethods.notifications.passkeyAddSuccess'));
     await loadPasskeys();
-  } catch {
-    addErrorNotification(t('settings.security.loginMethods.notifications.passkeyAddFailed'));
+  } catch (error) {
+    const code = error instanceof UnexpectedError ? (error.data as { code?: string } | undefined)?.code : undefined;
+    if (code === PASSKEY_CEREMONY_ABORTED_CODE) return;
+
+    if (code === PASSKEY_PREVIOUSLY_REGISTERED_CODE) {
+      addErrorNotification(t('settings.security.loginMethods.notifications.passkeyAlreadyRegistered'));
+    } else {
+      const text = t('settings.security.loginMethods.notifications.passkeyAddFailed');
+      addErrorNotification(error instanceof Error && error.message ? `${text} (${error.message})` : text);
+    }
   } finally {
     isAddingPasskey.value = false;
   }

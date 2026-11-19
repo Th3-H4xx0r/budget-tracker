@@ -1,7 +1,13 @@
 import { PLANS } from '@bt/shared/types';
 import { createController } from '@controllers/helpers/controller-factory';
 import { updateUserPlan } from '@services/admin/user-plan.service';
+import { getCloudflareAccessDeviceSetup } from '@services/cloudflare-access/get-device-setup.service';
 import { z } from 'zod';
+
+export const adminGetCloudflareAccessDeviceSetup = createController(z.object({}), async ({ res }) => {
+  res.set('Cache-Control', 'no-store');
+  return { data: getCloudflareAccessDeviceSetup() };
+});
 
 export const adminUpdateUserPlan = createController(
   z.object({

@@ -49,7 +49,11 @@ nonisolated struct MonthlyBudgetProvider: TimelineProvider {
         if let server = SharedContainer.server() {
             let tokenReader = SharedKeychainTokenReader(server: server)
             if tokenReader.accessToken() != nil {
-                let client = APIClient(server: server, tokenProvider: tokenReader)
+                let client = APIClient(
+                    server: server,
+                    tokenProvider: tokenReader,
+                    cloudflareAccess: KeychainCloudflareAccessStore().provider(for: server)
+                )
                 if let fresh = try? await MonthlySpendingLoader(client: client).load(now: now) {
                     store.saveSnapshot(fresh)
                     return fresh

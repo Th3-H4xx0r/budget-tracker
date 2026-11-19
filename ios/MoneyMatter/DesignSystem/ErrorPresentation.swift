@@ -14,6 +14,7 @@ enum ErrorMessage {
         case .server: String(localized: "Something Went Wrong")
         case .decoding: String(localized: "Unexpected Response")
         case .serverOutdated: String(localized: "Server Needs Updating")
+        case .cloudflareBlocked: String(localized: "Blocked by Cloudflare")
         }
     }
 
@@ -37,6 +38,8 @@ enum ErrorMessage {
             String(localized: "The server sent a response the app can't read. Make sure the app and server are up to date.")
         case .serverOutdated:
             String(localized: "This server is running an older version of MoneyMatter that doesn't support the iOS app yet. Update the server, then try again.")
+        case .cloudflareBlocked:
+            String(localized: "Cloudflare blocked this request. Update the Cloudflare token.")
         }
     }
 

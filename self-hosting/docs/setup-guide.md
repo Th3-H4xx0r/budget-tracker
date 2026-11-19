@@ -68,6 +68,7 @@ rate-data sidecar are reachable only from the `budget-tracker` network.
 
 Reference docs: [reverse proxies](reverse-proxies.md) ·
 [Traefik overlay](traefik-overlay.md) ·
+[Cloudflare Access](cloudflare-access.md) ·
 [environment variables](environment-reference.md) ·
 [troubleshooting](troubleshooting.md)
 

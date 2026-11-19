@@ -22,13 +22,13 @@ extension APIClient {
         var (request, _) = try makeRequest(for: endpoint)
         request.setValue(accept, forHTTPHeaderField: "Accept")
 
-        let session = URLSession(configuration: sessionConfiguration)
+        let session = Self.makeSession(configuration: sessionConfiguration)
         defer { session.finishTasksAndInvalidate() }
 
         let data: Data
         let urlResponse: URLResponse
         do {
-            (data, urlResponse) = try await session.data(for: request)
+            (data, urlResponse) = try await Self.perform(request, on: session)
         } catch let error as URLError {
             throw APIError.network(error)
         } catch is CancellationError {
@@ -41,6 +41,7 @@ extension APIClient {
             throw APIError.decoding("The response wasn't HTTP.")
         }
         guard (200..<300).contains(http.statusCode) else {
+            if let rejection = Self.cloudflareRejection(http) { throw rejection }
             throw Self.mapError(statusCode: http.statusCode, data: data)
         }
         let disposition = http.value(forHTTPHeaderField: "Content-Disposition")

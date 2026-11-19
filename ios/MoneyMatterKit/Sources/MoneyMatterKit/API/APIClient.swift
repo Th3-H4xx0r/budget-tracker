@@ -24,6 +24,46 @@ public struct APIResponse<Value: Sendable>: Sendable {
     }
 }
 
+/// Per-task delegate that declines redirects to Cloudflare Access's login host and strips
+/// credentials from redirects that leave the original request's origin. URLSession copies custom
+/// headers onto redirected requests, so `CF-Access-Client-Secret` would otherwise follow them.
+/// Passed per task (not as a session delegate), so a session never retains it.
+final class CloudflareRedirectGuard: NSObject, URLSessionTaskDelegate, Sendable {
+    private static let credentialHeaders = [
+        CloudflareAccessCredentials.clientIdHeader,
+        CloudflareAccessCredentials.clientSecretHeader,
+        "Authorization",
+    ]
+
+    static func isCloudflareAccessHost(_ host: String) -> Bool {
+        let host = host.lowercased()
+        return host == "cloudflareaccess.com" || host.hasSuffix(".cloudflareaccess.com")
+    }
+
+    /// The request to follow: `nil` for Cloudflare Access's login host, otherwise `new`, without
+    /// credential headers unless it stays on `original`'s scheme, host, and port.
+    static func redirectedRequest(_ new: URLRequest, original: URL?) -> URLRequest? {
+        guard let url = new.url else { return nil }
+        if let host = url.host(), isCloudflareAccessHost(host) { return nil }
+        var request = new
+        let sameOrigin = original.flatMap(APIClient.origin(of:)).map { $0 == APIClient.origin(of: url) } ?? false
+        if !sameOrigin {
+            for header in credentialHeaders { request.setValue(nil, forHTTPHeaderField: header) }
+        }
+        return request
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        task: URLSessionTask,
+        willPerformHTTPRedirection response: HTTPURLResponse,
+        newRequest request: URLRequest,
+        completionHandler: @escaping @Sendable (URLRequest?) -> Void
+    ) {
+        completionHandler(Self.redirectedRequest(request, original: task.originalRequest?.url))
+    }
+}
+
 /// Talks to one server's `/api/v1`.
 ///
 /// - The default `URLSession` never stores or sends cookies, so better-auth's origin check
@@ -34,6 +74,7 @@ public struct APIResponse<Value: Sendable>: Sendable {
 public struct APIClient: Sendable {
     public let server: ServerEndpoint
     private let tokenProvider: (any AccessTokenProviding)?
+    private let cloudflareAccess: (any CloudflareAccessProviding)?
     private let session: URLSession
     private let acceptLanguage: @Sendable () -> String
     private let onUnauthenticated: (@Sendable (_ rejectedToken: String) -> Void)?
@@ -44,15 +85,18 @@ public struct APIClient: Sendable {
     ///     app can end that session. A late reply for a token that was already replaced can be
     ///     told apart by comparing tokens. Not called for requests without a token, like sign-in.
     ///   - ceremonyConfiguration: The base configuration for `withEphemeralCookieJar()`.
+    ///   - cloudflareAccess: The Cloudflare Access token, sent only to `server`'s origin.
     public init(
         server: ServerEndpoint,
         tokenProvider: (any AccessTokenProviding)? = nil,
         session: URLSession = APIClient.makeURLSession(),
         acceptLanguage: @escaping @Sendable () -> String = APIClient.preferredLanguage,
         onUnauthenticated: (@Sendable (_ rejectedToken: String) -> Void)? = nil,
-        ceremonyConfiguration: @escaping @Sendable () -> URLSessionConfiguration = { .ephemeral }
+        ceremonyConfiguration: @escaping @Sendable () -> URLSessionConfiguration = { .ephemeral },
+        cloudflareAccess: (any CloudflareAccessProviding)? = nil
     ) {
         self.server = server
+        self.cloudflareAccess = cloudflareAccess
         self.tokenProvider = tokenProvider
         self.session = session
         self.acceptLanguage = acceptLanguage
@@ -71,7 +115,17 @@ public struct APIClient: Sendable {
         configuration.httpCookieAcceptPolicy = .never
         configuration.urlCache = nil
         configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
-        return URLSession(configuration: configuration)
+        return makeSession(configuration: configuration)
+    }
+
+    static func makeSession(configuration: URLSessionConfiguration) -> URLSession {
+        URLSession(configuration: configuration)
+    }
+
+    /// Sends `request` with the redirect guard attached to the task, so a redirect to Cloudflare
+    /// Access reaches the caller as a response and credentials never follow a redirect off-origin.
+    static func perform(_ request: URLRequest, on session: URLSession) async throws -> (Data, URLResponse) {
+        try await session.data(for: request, delegate: CloudflareRedirectGuard())
     }
 
     /// A client with its own in-memory cookie jar and no bearer token, for a single passkey
@@ -86,10 +140,11 @@ public struct APIClient: Sendable {
         return APIClient(
             server: server,
             tokenProvider: nil,
-            session: URLSession(configuration: configuration),
+            session: Self.makeSession(configuration: configuration),
             acceptLanguage: acceptLanguage,
             onUnauthenticated: nil,
-            ceremonyConfiguration: ceremonyConfiguration
+            ceremonyConfiguration: ceremonyConfiguration,
+            cloudflareAccess: cloudflareAccess
         )
     }
 
@@ -101,7 +156,8 @@ public struct APIClient: Sendable {
             session: session,
             acceptLanguage: acceptLanguage,
             onUnauthenticated: nil,
-            ceremonyConfiguration: ceremonyConfiguration
+            ceremonyConfiguration: ceremonyConfiguration,
+            cloudflareAccess: cloudflareAccess
         )
     }
 
@@ -121,7 +177,7 @@ public struct APIClient: Sendable {
         let data: Data
         let urlResponse: URLResponse
         do {
-            (data, urlResponse) = try await session.data(for: request)
+            (data, urlResponse) = try await Self.perform(request, on: session)
         } catch let error as URLError {
             throw APIError.network(error)
         } catch is CancellationError {
@@ -135,6 +191,7 @@ public struct APIClient: Sendable {
         }
 
         guard (200..<300).contains(http.statusCode) else {
+            if let rejection = Self.cloudflareRejection(http) { throw rejection }
             let error = Self.mapError(statusCode: http.statusCode, data: data)
             if error.isUnauthenticated, let sentToken { onUnauthenticated?(sentToken) }
             throw error
@@ -183,7 +240,45 @@ public struct APIClient: Sendable {
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
             sentToken = token
         }
+        for (name, value) in cloudflareAccessHeaders(for: finalURL) {
+            request.setValue(value, forHTTPHeaderField: name)
+        }
         return (request, sentToken)
+    }
+
+    /// The Cloudflare Access headers for `url`: empty unless a token exists, `url` is https, and
+    /// it has the server's scheme, host, and port. The secret never travels in cleartext.
+    public func cloudflareAccessHeaders(for url: URL) -> [String: String] {
+        guard url.scheme?.lowercased() == "https",
+              let credentials = cloudflareAccess?.cloudflareAccessCredentials(),
+              Self.origin(of: url) == Self.origin(of: server.origin)
+        else { return [:] }
+        return credentials.headers
+    }
+
+    static func origin(of url: URL) -> String? {
+        guard let scheme = url.scheme?.lowercased(), let host = url.host()?.lowercased() else { return nil }
+        let port = url.port ?? (scheme == "https" ? 443 : 80)
+        return "\(scheme)://\(host):\(port)"
+    }
+
+    /// `.cloudflareBlocked` when Cloudflare Access answered instead of the app: a redirect to
+    /// its login host, or a 401/403 that is an HTML page and carries `cf-ray`.
+    static func cloudflareRejection(_ response: HTTPURLResponse) -> APIError? {
+        switch response.statusCode {
+        case 300..<400:
+            guard let location = response.value(forHTTPHeaderField: "Location"),
+                  let host = URL(string: location, relativeTo: response.url)?.host(),
+                  CloudflareRedirectGuard.isCloudflareAccessHost(host)
+            else { return nil }
+            return .cloudflareBlocked
+        case 401, 403:
+            let contentType = response.value(forHTTPHeaderField: "Content-Type")?.lowercased() ?? ""
+            guard contentType.contains("text/html"), response.value(forHTTPHeaderField: "cf-ray") != nil else { return nil }
+            return .cloudflareBlocked
+        default:
+            return nil
+        }
     }
 
     static func mapError(statusCode: Int, data: Data) -> APIError {

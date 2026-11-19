@@ -3,7 +3,8 @@ import Foundation
 
 /// Runs a browser sign-in and returns the callback URL.
 protocol WebAuthenticating: AnyObject {
-    func authenticate(url: URL, callbackScheme: String) async throws -> URL
+    /// `additionalHeaders` go on the initial request, e.g. the Cloudflare Access token.
+    func authenticate(url: URL, callbackScheme: String, additionalHeaders: [String: String]) async throws -> URL
 }
 
 /// `ASWebAuthenticationSession` with an ephemeral browser session, so no provider cookies
@@ -12,7 +13,7 @@ final class WebAuthenticator: NSObject, WebAuthenticating, ASWebAuthenticationPr
     /// Retained while the browser sheet is up.
     private var session: ASWebAuthenticationSession?
 
-    func authenticate(url: URL, callbackScheme: String) async throws -> URL {
+    func authenticate(url: URL, callbackScheme: String, additionalHeaders: [String: String]) async throws -> URL {
         // Only one sign-in at a time: a new one cancels the sheet still on screen.
         session?.cancel()
 
@@ -34,6 +35,9 @@ final class WebAuthenticator: NSObject, WebAuthenticating, ASWebAuthenticationPr
                 }
                 session.presentationContextProvider = self
                 session.prefersEphemeralWebBrowserSession = true
+                if !additionalHeaders.isEmpty {
+                    session.additionalHeaderFields = additionalHeaders
+                }
                 self.session = session
                 startedSession = session
                 if !session.start() {

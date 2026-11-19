@@ -166,7 +166,7 @@ extension APIClient {
         let data: Data
         let response: URLResponse
         do {
-            (data, response) = try await dataSession.data(for: request)
+            (data, response) = try await Self.perform(request, on: dataSession)
         } catch let error as URLError {
             throw APIError.network(error)
         } catch {
@@ -176,6 +176,7 @@ extension APIClient {
             throw APIError.decoding("The response wasn't HTTP.")
         }
         guard (200..<300).contains(http.statusCode) else {
+            if let rejection = Self.cloudflareRejection(http) { throw rejection }
             throw mapError(statusCode: http.statusCode, data: data)
         }
         return (data, http)

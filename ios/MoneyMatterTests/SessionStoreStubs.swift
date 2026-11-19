@@ -15,6 +15,9 @@ final class StubSessionAPI: AuthServicing, UserServicing {
     var passkeyResult: Result<String, APIError> = .success("signed.passkey")
     var userResult: Result<User, APIError> = .success(StubSessionAPI.user)
     var baseCurrencyResult: Result<UserCurrency?, APIError> = .success(StubSessionAPI.euro)
+    var cloudflareHeaders: [String: String] = [:]
+    /// Called when the server is probed, e.g. to look at what was stored by then.
+    var onSignupsOpen: (() -> Void)?
     var setBaseCurrencyResult: Result<UserCurrency, APIError> = .success(StubSessionAPI.euro)
     /// Applied after `setBaseCurrency` is called, e.g. to model another device having set it.
     var baseCurrencyAfterSet: UserCurrency??
@@ -31,7 +34,10 @@ final class StubSessionAPI: AuthServicing, UserServicing {
         return try! JSONCoding.makeDecoder().decode(AuthSession.self, from: Data(json.utf8))
     }()
 
-    func signupsOpen() async throws -> Bool { try signupsOpenResult.get() }
+    func signupsOpen() async throws -> Bool {
+        onSignupsOpen?()
+        return try signupsOpenResult.get()
+    }
     func checkAppSupport() async throws { try appSupportResult.get() }
     func currentSession() async throws -> AuthSession? { try sessionResult.get() }
 
@@ -47,6 +53,8 @@ final class StubSessionAPI: AuthServicing, UserServicing {
     func oauthStartURL(provider: OAuthProvider, codeChallenge: String) -> URL {
         URL(string: "https://budget.example.com/api/v1/auth/native/oauth/start?provider=\(provider.rawValue)&code_challenge=\(codeChallenge)")!
     }
+
+    func cloudflareAccessHeaders(for url: URL) -> [String: String] { cloudflareHeaders }
 
     func exchangeOAuthCode(_ code: String, codeVerifier: String) async throws -> String {
         exchangeCalls.append((code, codeVerifier))
@@ -120,13 +128,24 @@ final class InMemoryTokenStore: TokenStoring {
     func deleteAllTokens() { tokens.removeAll() }
 }
 
+final class InMemoryCloudflareAccessStore: CloudflareAccessStoring, @unchecked Sendable {
+    var stored: [String: CloudflareAccessCredentials] = [:]
+
+    func credentials(for server: ServerEndpoint) -> CloudflareAccessCredentials? { stored[server.hostAndPort] }
+    func save(_ credentials: CloudflareAccessCredentials, for server: ServerEndpoint) throws { stored[server.hostAndPort] = credentials }
+    func delete(for server: ServerEndpoint) throws { stored[server.hostAndPort] = nil }
+    func deleteAll() { stored.removeAll() }
+}
+
 final class StubWebAuthenticator: WebAuthenticating {
     var callback: Result<URL, any Error> = .success(URL(string: "moneymatter://auth-callback?code=one-time")!)
     private(set) var openedURLs: [URL] = []
     private(set) var callbackSchemes: [String] = []
+    private(set) var headers: [[String: String]] = []
 
-    func authenticate(url: URL, callbackScheme: String) async throws -> URL {
+    func authenticate(url: URL, callbackScheme: String, additionalHeaders: [String: String]) async throws -> URL {
         openedURLs.append(url)
+        headers.append(additionalHeaders)
         callbackSchemes.append(callbackScheme)
         return try callback.get()
     }
@@ -148,6 +167,7 @@ struct SessionHarness {
     let connection: StubConnection
     let servers: InMemoryServerStore
     let tokens: InMemoryTokenStore
+    let cloudflare: InMemoryCloudflareAccessStore
     let web: StubWebAuthenticator
     let passkeys: StubPasskeyAuthenticator
     /// How many times the store reported a session ending.
@@ -161,6 +181,7 @@ struct SessionHarness {
         connection = StubConnection(api: api)
         servers = InMemoryServerStore(server: server)
         tokens = InMemoryTokenStore()
+        cloudflare = InMemoryCloudflareAccessStore()
         web = StubWebAuthenticator()
         passkeys = StubPasskeyAuthenticator()
         if let server, let token {
@@ -170,6 +191,7 @@ struct SessionHarness {
             connection: connection,
             serverStore: servers,
             tokenStore: tokens,
+            cloudflareAccessStore: cloudflare,
             webAuthenticator: web,
             passkeyAuthenticator: passkeys,
             passkeyHosts: passkeyHosts

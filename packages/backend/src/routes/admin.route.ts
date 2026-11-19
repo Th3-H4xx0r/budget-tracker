@@ -1,10 +1,18 @@
-import { adminUpdateUserPlan } from '@controllers/admin.controller';
+import { adminGetCloudflareAccessDeviceSetup, adminUpdateUserPlan } from '@controllers/admin.controller';
 import { adminOnly } from '@middlewares/admin-only';
 import { authenticateSession } from '@middlewares/better-auth';
 import { validateEndpoint } from '@middlewares/validations';
 import { Router } from 'express';
 
 const router = Router();
+
+router.get(
+  '/cloudflare-access',
+  authenticateSession,
+  adminOnly,
+  validateEndpoint(adminGetCloudflareAccessDeviceSetup.schema),
+  adminGetCloudflareAccessDeviceSetup.handler,
+);
 
 router.patch(
   '/users/:id/plan',

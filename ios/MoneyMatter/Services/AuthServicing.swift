@@ -13,6 +13,8 @@ protocol AuthServicing: Sendable {
     func signUp(name: String, email: String, password: String) async throws -> SignUpResult
     /// The page `ASWebAuthenticationSession` opens to start Google or GitHub sign-in.
     func oauthStartURL(provider: OAuthProvider, codeChallenge: String) -> URL
+    /// The Cloudflare Access headers to send when opening `url`; empty for any other origin.
+    func cloudflareAccessHeaders(for url: URL) -> [String: String]
     func exchangeOAuthCode(_ code: String, codeVerifier: String) async throws -> String
     func signInWithPasskey(
         assert: @Sendable (PasskeyRequestOptions) async throws -> PasskeyAssertion

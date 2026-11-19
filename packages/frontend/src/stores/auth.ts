@@ -206,7 +206,8 @@ export const useAuthStore = defineStore('auth', () => {
     });
 
     if (result.error) {
-      throw new UnexpectedError(result.error.message || 'Failed to register passkey');
+      const code = 'code' in result.error ? result.error.code : undefined;
+      throw new UnexpectedError(result.error.message || 'Failed to register passkey', { code });
     }
 
     return result;
