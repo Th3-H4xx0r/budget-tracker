@@ -166,7 +166,7 @@ Key environment variables in `.env.development`:
 
 - `ALLOWED_ORIGINS`: CORS allowed origins (comma-separated)
 - `APP_SESSION_ID_SECRET`: Session secret
-- `ADMIN_USERS`: usernames of users that should be considered as admins. Admins have extra functionality available
+- `ADMIN_USERS`: usernames or account emails of users that should be considered as admins (an email matches case-insensitively and grants admin to whichever account owns it). Admins have extra functionality available
 - `NATIVE_APP_URL_SCHEME`: URL scheme the iOS app registers for its OAuth callback (`<scheme>://auth-callback`). The native Google/GitHub sign-in endpoints redirect there with a one-time code. Default `moneymatter`
 
 ### Database Configuration

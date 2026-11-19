@@ -10,12 +10,21 @@ const parseAdminUsers = (): string[] =>
     .filter(Boolean);
 
 /**
- * Whether a username is an admin, per the ADMIN_USERS env list. Single source of truth: the
- * middleware, the profile `isAdmin` flag, and the reserved-username guard all route through
- * here so the parsing cannot drift and a mismatch cannot open an escalation.
+ * Whether a user is an admin, per the ADMIN_USERS env list. An entry matches the username
+ * exactly, or the account email case-insensitively. Single source of truth: the middleware,
+ * the profile `isAdmin` flag, and the reserved-username guard all route through here so the
+ * parsing cannot drift and a mismatch cannot open an escalation.
  */
-export const isAdminUsername = ({ username }: { username?: string | null }): boolean =>
-  Boolean(username) && parseAdminUsers().includes(username as string);
+export const isAdminUser = ({ username, email }: { username?: string | null; email?: string | null }): boolean => {
+  const entries = parseAdminUsers();
+  const normalizedEmail = email?.trim().toLowerCase();
+
+  return entries.some(
+    (entry) =>
+      (Boolean(username) && entry === username) ||
+      (Boolean(normalizedEmail) && entry.toLowerCase() === normalizedEmail),
+  );
+};
 
 /**
  * Middleware to ensure an endpoint is only accessible by admin users.
@@ -34,6 +43,7 @@ export const adminOnly = (req: Request, res: Response, next: NextFunction) => {
 
   // Assumes user is already authenticated via authenticateSession middleware
   const username = (req.user as Users)?.username;
+  const email = req.authEmail;
 
   if (!username) {
     return res.status(ERROR_CODES.Unauthorized).json({
@@ -45,7 +55,7 @@ export const adminOnly = (req: Request, res: Response, next: NextFunction) => {
     });
   }
 
-  if (!isAdminUsername({ username })) {
+  if (!isAdminUser({ username, email })) {
     return res.status(ERROR_CODES.Unauthorized).json({
       status: API_RESPONSE_STATUS.error,
       response: {

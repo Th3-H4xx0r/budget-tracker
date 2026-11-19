@@ -20,6 +20,8 @@ declare global {
   namespace Express {
     interface Request {
       user?: AppUser | null;
+      /** Email of the signed-in auth account, taken from the session. */
+      authEmail?: string;
       entitlements?: Entitlements;
       stripeEvent?: Stripe.Event;
     }

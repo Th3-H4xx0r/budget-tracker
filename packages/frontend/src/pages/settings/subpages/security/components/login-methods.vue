@@ -3,6 +3,10 @@
     <div>
       <h3 class="mb-1 text-lg font-medium">{{ $t('settings.security.loginMethods.title') }}</h3>
       <p class="text-muted-foreground text-sm">{{ $t('settings.security.loginMethods.description') }}</p>
+      <p v-if="user?.username" class="mt-3 text-sm">
+        <span class="text-muted-foreground">{{ $t('settings.security.loginMethods.username') }}</span>
+        <span class="ml-2 font-medium">@{{ user.username }}</span>
+      </p>
     </div>
 
     <!-- Loading state -->
@@ -262,7 +266,7 @@ const route = useRoute();
 const router = useRouter();
 const authStore = useAuthStore();
 const userStore = useUserStore();
-const { isDemo } = storeToRefs(userStore);
+const { isDemo, user } = storeToRefs(userStore);
 const { t } = useI18n();
 const { addErrorNotification, addSuccessNotification } = useNotificationCenter();
 

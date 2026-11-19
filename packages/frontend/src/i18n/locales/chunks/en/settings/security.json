@@ -24,6 +24,7 @@
       "loginMethods": {
         "title": "Login Methods",
         "description": "Manage how you sign in to your account",
+        "username": "Username",
         "oauth": {
           "connectedAs": "Connected as {email}",
           "accountName": "{provider} Account",

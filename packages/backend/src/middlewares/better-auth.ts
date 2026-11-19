@@ -79,6 +79,7 @@ export const authenticateSession = async (req: Request, res: Response, next: Nex
 
     // Attach user to request for downstream handlers
     req.user = user;
+    req.authEmail = session.user.email;
 
     // Set user context for Sentry error tracking (includes sessionId for correlation)
     setSentryUser({

@@ -3,7 +3,7 @@ import { currencyCode } from '@common/lib/zod/custom-types';
 import { createController } from '@controllers/helpers/controller-factory';
 import { t } from '@i18n/index';
 import { ConflictError, NotFoundError, ValidationError } from '@js/errors';
-import { isAdminUsername } from '@middlewares/admin-only';
+import { isAdminUser } from '@middlewares/admin-only';
 import { invalidateAppUserCache } from '@middlewares/better-auth';
 import { ExchangeRatePair } from '@models/user-exchange-rates.model';
 import { resolveEntitlements } from '@services/entitlements/resolve-entitlements.service';
@@ -32,7 +32,7 @@ export const getUser = createController(z.object({}), async ({ user }) => {
       ...userData,
       email,
       entitlements,
-      isAdmin: isAdminUsername({ username: user.username }),
+      isAdmin: isAdminUser({ username: user.username, email }),
     } satisfies UserInfoResponse,
   };
 });
@@ -62,7 +62,7 @@ export const updateUser = createController(
   async ({ user, body }) => {
     // adminOnly gates its endpoints on username, so renaming into ADMIN_USERS would be
     // privilege escalation. A no-op rename to the user's own current name is fine.
-    if (body.username && body.username !== user.username && isAdminUsername({ username: body.username })) {
+    if (body.username && body.username !== user.username && isAdminUser({ username: body.username })) {
       throw new ValidationError({
         message: 'This username is reserved and cannot be used.',
       });

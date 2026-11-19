@@ -24,6 +24,7 @@
       "loginMethods": {
         "title": "Способи входу",
         "description": "Керуйте способами входу до вашого облікового запису",
+        "username": "Ім'я користувача",
         "oauth": {
           "connectedAs": "Підключено як {email}",
           "accountName": "Обліковий запис {provider}",
